@@ -400,9 +400,81 @@ public class GeneratorTests
         var asm = Harness.Compile(sources.Select(s => s.Text), out var ctx);
         try
         {
-            var cb = asm.GetType("PrebuiltSample.Shaders.Sprite+event")!;
-            Assert.NotNull(cb.GetProperty("class")); // a column-major matrix is a property
-            Assert.NotNull(asm.GetType("PrebuiltSample.Shaders.Sprite+namespace"));
+            var cb = asm.GetType("PrebuiltSample.Shaders.Sprite+Event")!;
+            Assert.NotNull(cb.GetProperty("class")); // a column-major matrix is a property; members keep their HLSL spelling
+            Assert.NotNull(asm.GetType("PrebuiltSample.Shaders.Sprite+Namespace"));
+        }
+        finally
+        {
+            ctx.Unload();
+        }
+    }
+
+    // ---- names that are all lower-case (C# warns about those type names, CS8981) ----
+
+    private static string WithSourceName(string text, string source) =>
+        text.Replace("source name=\"Shaders/" + "Sprite.hlsl\"", "source name=\"" + source + "\"", StringComparison.Ordinal);
+
+    [Theory]
+    [InlineData("Shaders/sprite.hlsl", "Sprite")]
+    [InlineData("Shaders/msdf_text.hlsl", "MsdfText")]
+    [InlineData("Shaders/ui-rect.hlsl", "UiRect")]
+    [InlineData("Shaders/2d_sprite.hlsl", "_2dSprite")]
+    [InlineData("Shaders/a.b.c.hlsl", "ABC")]
+    [InlineData("Shaders/Quad.hlsl", "Quad")]
+    [InlineData("Shaders/Tile.hlsl", "Tile")]
+    [InlineData("Shaders/Ui.hlsl", "Ui")]
+    [InlineData("Shaders/UiRect.hlsl", "UiRect")]
+    [InlineData("Shaders/UI-rect.hlsl", "UI_rect")]
+    public void ClassNamesComeFromFileNamesAsPascalCase(string source, string expected)
+    {
+        string text = WithSourceName(GoldenModels.FileText("Sprite"), source);
+        var (sources, errors) = GenerateFrom(text);
+        Assert.Empty(errors);
+        Assert.Contains("public static partial class " + expected + "\n", Assert.Single(sources).Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ExplicitClassNameIsUsedAsWritten()
+    {
+        string text = WithSourceName(GoldenModels.FileText("Sprite"), "Shaders/sprite.hlsl").Replace("class=\"\"", "class=\"my_sprite\"", StringComparison.Ordinal);
+        var (sources, _) = GenerateFrom(text);
+        Assert.Contains("public static partial class my_sprite\n", Assert.Single(sources).Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FilesThatMapToTheSameClassAreDiagnosed()
+    {
+        string a = WithSourceName(GoldenModels.FileText("Sprite"), "Shaders/ui-rect.hlsl");
+        string b = WithSourceName(GoldenModels.FileText("Sprite"), "Shaders/ui_rect.hlsl");
+        var (sources, diagnostics) = Harness.Generate(("obj/a.oneshader", a), ("obj/b.oneshader", b));
+        Assert.Single(sources);
+        var d = Assert.Single(diagnostics);
+        Assert.Equal("OSH0951", d.Id);
+        Assert.Contains("UiRect", d.GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
+    }
+
+    private static string SnakeCase(string text) =>
+        System.Text.RegularExpressions.Regex.Replace(
+            text,
+            "(?<key>\\b(?:name|entry)=)\"(?<v>[A-Za-z][A-Za-z0-9]*)\"",
+            m => m.Groups["key"].Value + "\"" + System.Text.RegularExpressions.Regex.Replace(m.Groups["v"].Value, "(?<=[a-z0-9])(?=[A-Z])", "_").ToLowerInvariant() + "\"");
+
+    [Theory]
+    [InlineData("Sprite", "sprite_batch", "SpriteBatch")]
+    [InlineData("Particles", "particles", "Particles")]
+    [InlineData("Matrices", "matrices", "Matrices")]
+    public void LowerCaseSnakeCaseNamesCompileCleanWithWarningsAsErrors(string model, string file, string cls)
+    {
+        // Every HLSL name (file, cbuffer, resource, struct, member, entry point) is lower snake case.
+        string text = SnakeCase(GoldenModels.FileText(model)).Replace("source name=\"Shaders/" + model + ".hlsl\"", "source name=\"Shaders/" + file + ".hlsl\"", StringComparison.Ordinal);
+        var (sources, errors) = GenerateFrom(text, file);
+        Assert.Empty(errors);
+        Harness.AssertGolden(file + ".g.cs", Assert.Single(sources).Text);
+        var asm = Harness.Compile(sources.Select(s => s.Text), out var ctx);
+        try
+        {
+            Assert.NotNull(asm.GetType("PrebuiltSample.Shaders." + cls));
         }
         finally
         {

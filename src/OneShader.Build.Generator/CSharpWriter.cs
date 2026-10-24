@@ -83,7 +83,7 @@ internal sealed class CSharpWriter
             name = name.Substring(0, dot);
         }
 
-        return Sanitize(name);
+        return TypeName(name);
     }
 
     /// <summary>Generates the source; returns null when <paramref name="problems"/> holds errors.</summary>
@@ -93,6 +93,46 @@ internal sealed class CSharpWriter
         string? text = w.Run();
         problems = w._problems;
         return w._problems.Count == 0 ? text : null;
+    }
+
+    /// <summary>
+    /// The C# type name for an HLSL or file name. The C# compiler warns (CS8981, an error when
+    /// warnings are errors) about type names made only of lower-case ASCII letters, so such names
+    /// become PascalCase: split at every character that cannot be in an identifier (and at '_'),
+    /// upper-case the first letter of each part, join (<c>msdf_text</c> gives <c>MsdfText</c>,
+    /// <c>ui-rect</c> gives <c>UiRect</c>). A name that already has an upper-case letter keeps its
+    /// spelling, with only invalid characters turned into '_' (<c>Quad</c>, <c>UiRect</c>, <c>UI_rect</c>
+    /// are unchanged). A leading digit gets a '_' in front (<c>2d</c> gives <c>_2d</c>).
+    /// </summary>
+    internal static string TypeName(string name)
+    {
+        bool hasUpper = false;
+        foreach (char c in name)
+        {
+            hasUpper |= char.IsUpper(c);
+        }
+
+        if (hasUpper)
+        {
+            return Sanitize(name);
+        }
+
+        var sb = new StringBuilder(name.Length + 1);
+        bool startOfPart = true;
+        foreach (char c in name)
+        {
+            if (char.IsLetterOrDigit(c))
+            {
+                sb.Append(startOfPart ? char.ToUpperInvariant(c) : c);
+                startOfPart = false;
+            }
+            else
+            {
+                startOfPart = true;
+            }
+        }
+
+        return Sanitize(sb.ToString());
     }
 
     internal static string Sanitize(string name)
@@ -158,9 +198,9 @@ internal sealed class CSharpWriter
         _topNames.Add(_className);
         foreach (var e in f.Entries)
         {
-            if (!_topNames.Add(e.Name) || EntryMembers.Contains(e.Name))
+            if (!_topNames.Add(TypeName(e.Name)) || EntryMembers.Contains(TypeName(e.Name)))
             {
-                Problem(Codes.NameClash, "Entry point '" + e.Name + "' in " + f.Source + " clashes with another generated name (a constant buffer, a struct or 'Bindings'). Rename the HLSL function or the other declaration.");
+                Problem(Codes.NameClash, "Entry point '" + e.Name + "' (C# class '" + TypeName(e.Name) + "') in " + f.Source + " clashes with another generated name (a constant buffer, a struct or 'Bindings'). Rename the HLSL function or the other declaration.");
             }
         }
 
@@ -169,9 +209,9 @@ internal sealed class CSharpWriter
         {
             if (r.Kind == "ConstantBuffer" && r.Layout is { Kind: "Struct" })
             {
-                if (!_topNames.Add(r.Name))
+                if (!_topNames.Add(TypeName(r.Name)))
                 {
-                    Problem(Codes.NameClash, "Constant buffer '" + r.Name + "' in " + f.Source + " clashes with an entry point or another generated name. Rename the cbuffer, the function or the struct.");
+                    Problem(Codes.NameClash, "Constant buffer '" + r.Name + "' (C# struct '" + TypeName(r.Name) + "') in " + f.Source + " clashes with an entry point or another generated name. Rename the cbuffer, the function or the struct.");
                 }
 
                 cbuffers.Add(r);
@@ -212,14 +252,14 @@ internal sealed class CSharpWriter
         foreach (var cb in cbuffers)
         {
             Separator(ref first);
-            EmitStruct(Esc(cb.Name), cb.Name, cb.Layout!, false);
+            EmitStruct(TypeName(cb.Name), cb.Layout!);
         }
 
         // The queue grows while structs are emitted (a struct can contain another).
         for (int i = 0; i < _structQueue.Count; i++)
         {
             Separator(ref first);
-            EmitStruct(Esc(_structQueue[i].Key), _structQueue[i].Key, _structQueue[i].Value, true);
+            EmitStruct(_structQueue[i].Key, _structQueue[i].Value);
         }
 
         Separator(ref first);
@@ -255,7 +295,7 @@ internal sealed class CSharpWriter
             return existing;
         }
 
-        string baseName = Sanitize(s.Name.Length == 0 ? "Struct" : s.Name);
+        string baseName = TypeName(s.Name.Length == 0 ? "Struct" : s.Name);
         string name = baseName;
         for (int n = 1; !_topNames.Add(name); n++)
         {
@@ -306,10 +346,9 @@ internal sealed class CSharpWriter
         public bool Failed { get; set; }
     }
 
-    private void EmitStruct(string csName, string hlslName, TypeNode layout, bool nested)
+    private void EmitStruct(string csName, TypeNode layout)
     {
-        _ = nested;
-        var ctx = new StructContext(hlslName);
+        var ctx = new StructContext(csName);
         foreach (var m in layout.Members)
         {
             AddMember(ctx, m.Name, m.Offset, m.Type, 0);
@@ -596,9 +635,9 @@ internal sealed class CSharpWriter
                 continue;
             }
 
-            if (!used.Add(r.Name))
+            if (!used.Add(TypeName(r.Name)))
             {
-                Problem(Codes.NameClash, "Resource '" + r.Name + "' in " + _file.Source + " clashes with another generated name in 'Bindings'. Rename the resource.");
+                Problem(Codes.NameClash, "Resource '" + r.Name + "' (C# class '" + TypeName(r.Name) + "') in " + _file.Source + " clashes with another generated name in 'Bindings'. Rename the resource.");
                 continue;
             }
 
@@ -609,7 +648,7 @@ internal sealed class CSharpWriter
 
             first = false;
             listed.Add(r);
-            Line("public static class " + Esc(r.Name));
+            Line("public static class " + TypeName(r.Name));
             Line("{");
             _indent++;
             Line("public const uint Set = " + Num(r.Set) + ", Binding = " + Num(r.Binding) + ", Count = " + Num(r.Count) + ";");
@@ -660,7 +699,7 @@ internal sealed class CSharpWriter
 
     private void EmitEntry(EntryNode e)
     {
-        Line("public static class " + Esc(e.Name));
+        Line("public static class " + TypeName(e.Name));
         Line("{");
         _indent++;
         Line("public const global::OneShader.ShaderStage Stage = global::OneShader.ShaderStage." + e.Stage + ";");
