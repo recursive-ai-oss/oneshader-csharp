@@ -1,3 +1,44 @@
 <Project>
+  <!--
+    Compiles every OneShader item before the C# compiler runs and passes the results to the
+    source generator as additional files.
+
+    Item metadata (all optional):
+      EntryPoints         Name:Stage;Name:Stage  - instead of finding [shader("...")] attributes
+      Defines             NAME;NAME=value        - preprocessor definitions
+      IncludeDirectories  dir;dir                - searched for #include after the including file's folder
+      Namespace           overrides $(OneShaderNamespace) for this file
+      ClassName           overrides the class name taken from the file name
+
+    Project properties:
+      EnableDefaultOneShaderItems  false stops **/*.hlsl from being added as OneShader items
+      OneShaderNamespace           default namespace of generated code (default: $(RootNamespace).Shaders)
+      OneShaderDefines, OneShaderIncludeDirectories  applied to every shader
+  -->
   <UsingTask TaskName="OneShader.Build.Tasks.CompileShaders" AssemblyFile="$(OneShaderTaskAssembly)" />
+
+  <PropertyGroup>
+    <EnableDefaultOneShaderItems Condition="'$(EnableDefaultOneShaderItems)' == ''">true</EnableDefaultOneShaderItems>
+    <OneShaderNamespace Condition="'$(OneShaderNamespace)' == ''">$(RootNamespace).Shaders</OneShaderNamespace>
+    <OneShaderOutputDirectory Condition="'$(OneShaderOutputDirectory)' == ''">$(IntermediateOutputPath)oneshader/</OneShaderOutputDirectory>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(EnableDefaultOneShaderItems)' == 'true'">
+    <OneShader Include="**/*.hlsl" Exclude="$(DefaultItemExcludes);$(DefaultExcludesInProjectFolder)" />
+  </ItemGroup>
+
+  <Target Name="OneShaderCompile" BeforeTargets="CoreCompile" Condition="'@(OneShader)' != ''">
+    <CompileShaders Shaders="@(OneShader)"
+                    OutputDirectory="$(OneShaderOutputDirectory)"
+                    ProjectDirectory="$(MSBuildProjectDirectory)"
+                    DefaultNamespace="$(OneShaderNamespace)"
+                    DefaultDefines="$(OneShaderDefines)"
+                    DefaultIncludeDirectories="$(OneShaderIncludeDirectories)">
+      <Output TaskParameter="GeneratedFiles" ItemName="_OneShaderOutput" />
+    </CompileShaders>
+    <ItemGroup>
+      <AdditionalFiles Include="@(_OneShaderOutput)" />
+      <FileWrites Include="@(_OneShaderOutput)" />
+    </ItemGroup>
+  </Target>
 </Project>

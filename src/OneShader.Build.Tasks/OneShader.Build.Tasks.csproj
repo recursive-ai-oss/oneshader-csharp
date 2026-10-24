@@ -27,5 +27,6 @@
       <Private>false</Private>
     </Reference>
     <ProjectReference Include="../OneShader/OneShader.csproj" />
+    <InternalsVisibleTo Include="OneShader.Build.Tests" />
   </ItemGroup>
 </Project>

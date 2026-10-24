@@ -35,6 +35,14 @@ module.Functions.Add(f);
 new IrBuilder(f) { Block = f.AddBlock() }.Return();
 Console.WriteLine(IrPrinter.Print(module).Length > 0 ? "ir ok" : "ir empty");
 
+module.EntryPoints.Add(new EntryPoint(f, ShaderStage.Compute) { WorkgroupSize = (1, 1, 1) });
+byte[]? spirv = OneShader.SpirV.SpirvBackend.Emit(module, "main", null, new DiagnosticBag());
+if (spirv is null || spirv.Length < 20 || spirv[0] != 0x03 || spirv[1] != 0x02)
+{
+    Console.Error.WriteLine("SPIR-V smoke test failed");
+    return 4;
+}
+
 var reflection = new ShaderReflection { SourceName = "smoke.hlsl", Resources = [new ResourceInfo { Name = "Frame", Kind = ResourceKind.ConstantBuffer, Layout = ReflectedType.FromLayout(layout!) }] };
 if (!ReflectionFormat.TryRead(ReflectionFormat.Write(reflection), out var back, out _) || !ReflectionFormat.AreEqual(reflection, back!))
 {
