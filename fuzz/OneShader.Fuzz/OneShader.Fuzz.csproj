@@ -1,10 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- Fuzz targets (shell). The fuzzing package is added here once there is a target. -->
+  <!-- Fuzz targets. SharpFuzz is allowed here only: it instruments for libFuzzer/AFL and is never shipped. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="SharpFuzz" Version="2.*" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/OneShader/OneShader.csproj" />
   </ItemGroup>
