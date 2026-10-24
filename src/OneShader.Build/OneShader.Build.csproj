@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Packs the MSBuild task, the source generator and the build/ props and targets into one
+    package. It has no code of its own, so no assembly goes under lib/. Layout:
+      build/            props and targets MSBuild imports automatically
+      tasks/net10.0/    the task and the compiler library it carries
+      analyzers/dotnet/cs/   the generator (NuGet hands it to the C# compiler)
+  -->
+  <PropertyGroup>
+    <PackageId>$(OneShaderBuildPackageId)</PackageId>
+    <Description>MSBuild integration for OneShader: compiles *.hlsl during dotnet build and generates C# bindings.</Description>
+    <PackageTags>hlsl;shader;msbuild;sourcegenerator</PackageTags>
+    <PackageProjectUrl>https://github.com/recursive-ai-oss/oneshader-csharp</PackageProjectUrl>
+    <IsPackable>true</IsPackable>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <IsAotCompatible>false</IsAotCompatible>
+    <IsTrimmable>false</IsTrimmable>
+    <EnableSingleFileAnalyzer>false</EnableSingleFileAnalyzer>
+    <!-- NU5100 warns about assemblies outside lib/. For an MSBuild task package that is the
+         point: the task must not become a compile reference of the consuming project. -->
+    <NoWarn>$(NoWarn);NU5100</NoWarn>
+    <!-- Where the referenced projects put their output (ArtifactsPath layout). -->
+    <_TasksOut>$(ArtifactsPath)/bin/OneShader.Build.Tasks/$(Configuration.ToLowerInvariant())</_TasksOut>
+    <_GeneratorOut>$(ArtifactsPath)/bin/OneShader.Build.Generator/$(Configuration.ToLowerInvariant())</_GeneratorOut>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../OneShader.Build.Tasks/OneShader.Build.Tasks.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../OneShader.Build.Generator/OneShader.Build.Generator.csproj" ReferenceOutputAssembly="false" />
+    <None Include="build/*" Pack="true" PackagePath="build/" />
+    <None Include="$(_TasksOut)/OneShader.Build.Tasks.dll" Pack="true" PackagePath="tasks/net10.0/" Visible="false" />
+    <None Include="$(_TasksOut)/OneShader.dll" Pack="true" PackagePath="tasks/net10.0/" Visible="false" />
+    <None Include="$(_GeneratorOut)/OneShader.Build.Generator.dll" Pack="true" PackagePath="analyzers/dotnet/cs/" Visible="false" />
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+</Project>

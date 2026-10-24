@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/OneShader/OneShader.csproj" />
+    <Project Path="src/OneShader.Build.Tasks/OneShader.Build.Tasks.csproj" />
+    <Project Path="src/OneShader.Build.Generator/OneShader.Build.Generator.csproj" />
+    <Project Path="src/OneShader.Build/OneShader.Build.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/OneShader.Tests/OneShader.Tests.csproj" />
+    <Project Path="tests/AotSmoke/AotSmoke.csproj" />
+  </Folder>
+  <Folder Name="/fuzz/">
+    <Project Path="fuzz/OneShader.Fuzz/OneShader.Fuzz.csproj" />
+  </Folder>
+</Solution>

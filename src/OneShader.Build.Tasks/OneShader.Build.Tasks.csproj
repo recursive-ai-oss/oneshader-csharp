@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The MSBuild task. It runs inside `dotnet build` (MSBuild on .NET), so net10.0 is enough and
+    lets it carry the compiler library next to it. Visual Studio's own MSBuild runs on .NET
+    Framework and cannot load it; builds from the dotnet CLI are the supported path.
+
+    The MSBuild API assemblies come from the SDK that is running the build, not from a package,
+    so this project has no PackageReference.
+  -->
+  <PropertyGroup>
+    <AssemblyName>OneShader.Build.Tasks</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <!-- MSBuild loads the task by path; trimming and AOT do not apply to it. -->
+    <IsAotCompatible>false</IsAotCompatible>
+    <IsTrimmable>false</IsTrimmable>
+    <EnableSingleFileAnalyzer>false</EnableSingleFileAnalyzer>
+    <!-- Copy the task's dependencies (the compiler) next to it so they can be packed. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Microsoft.Build.Framework">
+      <HintPath>$(MSBuildToolsPath)/Microsoft.Build.Framework.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Microsoft.Build.Utilities.Core">
+      <HintPath>$(MSBuildToolsPath)/Microsoft.Build.Utilities.Core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <ProjectReference Include="../OneShader/OneShader.csproj" />
+  </ItemGroup>
+</Project>

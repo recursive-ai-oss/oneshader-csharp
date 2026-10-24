@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The compiler and runtime API. Depends on the shared framework only: no PackageReference. -->
+  <PropertyGroup>
+    <AssemblyName>OneShader</AssemblyName>
+    <PackageId>$(OneShaderLibraryPackageId)</PackageId>
+    <Description>A BCL-only HLSL compiler for .NET: SPIR-V, MSL and WGSL output with reflection.</Description>
+    <PackageTags>hlsl;shader;spirv;msl;wgsl;compiler</PackageTags>
+    <PackageProjectUrl>https://github.com/recursive-ai-oss/oneshader-csharp</PackageProjectUrl>
+    <PackageLicenseExpression>MIT OR Apache-2.0</PackageLicenseExpression>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+    <InternalsVisibleTo Include="OneShader.Tests" />
+  </ItemGroup>
+</Project>

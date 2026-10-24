@@ -1,0 +1,46 @@
+<Project>
+  <!-- Package identity and version: the only place they are defined. -->
+  <PropertyGroup>
+    <OneShaderVersion>0.1.0-dev</OneShaderVersion>
+    <OneShaderLibraryPackageId>RecursiveAI.OneShader</OneShaderLibraryPackageId>
+    <OneShaderBuildPackageId>RecursiveAI.OneShader.Build</OneShaderBuildPackageId>
+    <RootNamespace>OneShader</RootNamespace>
+    <Version>$(OneShaderVersion)</Version>
+    <Authors>Recursive AI, LLC</Authors>
+    <Company>Recursive AI, LLC</Company>
+    <Copyright>Copyright (c) Recursive AI, LLC</Copyright>
+    <PackageLicenseExpression>MIT OR Apache-2.0</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <!--
+    Build output location. Order: the ONESHADER_ARTIFACTS environment variable (or an
+    /p:OneShaderArtifacts=... argument), then the default scratch directory below when its
+    parent exists on this machine, then .artifacts next to this file. The last step is what a
+    fresh clone or a remote checkout gets, so nothing ever needs a particular machine layout.
+  -->
+  <PropertyGroup>
+    <OneShaderDefaultArtifacts>$(MSBuildThisFileDirectory).artifacts</OneShaderDefaultArtifacts>
+    <OneShaderArtifacts Condition="'$(OneShaderArtifacts)' == ''">$(ONESHADER_ARTIFACTS)</OneShaderArtifacts>
+    <OneShaderArtifacts Condition="'$(OneShaderArtifacts)' == '' And Exists('$([System.IO.Path]::GetDirectoryName($(OneShaderDefaultArtifacts)))')">$(OneShaderDefaultArtifacts)</OneShaderArtifacts>
+    <OneShaderArtifacts Condition="'$(OneShaderArtifacts)' == ''">$(MSBuildThisFileDirectory).artifacts</OneShaderArtifacts>
+    <ArtifactsPath>$(OneShaderArtifacts)</ArtifactsPath>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <MSBuildTreatWarningsAsErrors>true</MSBuildTreatWarningsAsErrors>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,3 @@
+<Project>
+  <UsingTask TaskName="OneShader.Build.Tasks.CompileShaders" AssemblyFile="$(OneShaderTaskAssembly)" />
+</Project>

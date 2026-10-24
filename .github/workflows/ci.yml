@@ -1,0 +1,59 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.rid }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, rid: win-x64 }
+          - { os: ubuntu-latest, rid: linux-x64 }
+          - { os: ubuntu-24.04-arm, rid: linux-arm64 }
+          - { os: macos-latest, rid: osx-arm64 }
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      DOTNET_NOLOGO: 1
+      MSBUILDDISABLENODEREUSE: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Build
+        run: dotnet build OneShader.slnx -c Release
+
+      - name: Test
+        run: dotnet test --solution OneShader.slnx -c Release --no-build
+
+      - name: Pack
+        run: dotnet pack OneShader.slnx -c Release --no-build
+
+      - name: Publish AOT smoke app (warnings are errors)
+        run: dotnet publish tests/AotSmoke -c Release -r ${{ matrix.rid }}
+
+      - name: Cache reference tools
+        if: matrix.rid == 'linux-x64'
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/oracles
+          key: oracles-${{ hashFiles('tools/oracles.env', 'tools/fetch-oracles.sh') }}
+
+      - name: Fetch reference tools (dxc, spirv-val)
+        if: matrix.rid == 'linux-x64'
+        shell: bash
+        run: |
+          tools/fetch-oracles.sh "$RUNNER_TEMP/oracles"
+          "$RUNNER_TEMP/oracles/bin/spirv-val" --version
+          "$RUNNER_TEMP/oracles/bin/dxc" --version
+          echo "$RUNNER_TEMP/oracles/bin" >> "$GITHUB_PATH"

@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The source generator. It targets netstandard2.0, not net10.0: compilers hosted by Visual
+    Studio and other IDEs run on .NET Framework and only load netstandard2.0 analyzers, so a
+    net10.0 generator would silently produce no code (and no IntelliSense) there. It reads the
+    task's reflection output and never references the compiler library.
+
+    Roslyn is a compile-time reference only (PrivateAssets=all): it is not shipped and not a
+    dependency of the package, because the compiler host supplies it at run time. Referencing
+    the SDK's own Roslyn assemblies instead does not work from netstandard2.0: they drag in
+    net10.0 framework assemblies and the reference resolution fails with MSB3277 conflicts.
+    4.14 is the oldest Roslyn this targets, so it loads in current Visual Studio and the SDK.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <AssemblyName>OneShader.Build.Generator</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <IsAotCompatible>false</IsAotCompatible>
+    <IsTrimmable>false</IsTrimmable>
+    <EnableSingleFileAnalyzer>false</EnableSingleFileAnalyzer>
+    <!-- Generators must not take a dependency on the consuming project's framework. -->
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,25 @@
+# Allowlist: every new top-level path needs an explicit "!/path" line.
+/*
+!/.gitignore
+!/.github
+!/global.json
+!/Directory.Build.props
+!/OneShader.slnx
+!/LICENSE-MIT
+!/LICENSE-APACHE
+!/README.md
+!/src
+!/tests
+!/fuzz
+!/tools
+!/corpus
+
+# Build output and downloaded tools, wherever they land inside the allowed paths.
+bin/
+obj/
+.artifacts/
+*.nupkg
+*.snupkg
+.oracles/
+TestResults/
+*.user
