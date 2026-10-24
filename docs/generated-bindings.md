@@ -25,14 +25,14 @@ One `static partial class` per HLSL file, named after the file, in the namespace
 deterministic.
 
 - **Constant buffers**: one blittable struct per `cbuffer` / `ConstantBuffer<T>`, named after it,
-  with `[StructLayout(LayoutKind.Explicit)]`, a `Size` constant, and field offsets equal to the
+  with `[StructLayout(LayoutKind.Explicit)]`, a `uint Size` constant, and field offsets equal to the
   offsets in the compiled shader. Float vectors and matrices use `System.Numerics` types.
 - **Bindings**: a nested `Bindings` class with, per resource, `const uint Set`, `Binding`,
   `Count` and `const ResourceKind Kind`, plus `All`, a span of `ResourceBinding` that also says
   which stages use each resource.
 - **Entry points**: one nested class per entry point, named after the function, with
   `Stage`, `EntryPoint`, and `SpirV` (a `ReadOnlySpan<byte>` over data embedded in the assembly).
-  - Vertex entry points add a blittable `Vertex` struct, `Stride`, and `Inputs`, a span of
+  - Vertex entry points add a blittable `Vertex` struct, `uint Stride`, and `Inputs`, a span of
     `VertexAttribute` (location, `VertexFormat`, offset).
   - Compute entry points add `ThreadGroupSizeX`, `ThreadGroupSizeY` and `ThreadGroupSizeZ`.
   - Metal and WebGPU outputs will be added as sibling members (`Msl`, `Wgsl`).
@@ -90,7 +90,7 @@ namespace MyGame.Shaders;
 public static partial class Sprite
 {
     [StructLayout(LayoutKind.Explicit, Size = 64)]
-    public struct Frame { public const int Size = 64; /* ViewProjection at offset 0 */ }
+    public struct Frame { public const uint Size = 64; /* ViewProjection at offset 0 */ }
 
     public static class Bindings
     {
@@ -108,7 +108,7 @@ public static partial class Sprite
 
         [StructLayout(LayoutKind.Explicit, Size = 32)]
         public struct Vertex { /* Position @0 Vector2, Uv @8 Vector2, Color @16 Vector4 */ }
-        public const int Stride = 32;
+        public const uint Stride = 32;
         public static ReadOnlySpan<VertexAttribute> Inputs => /* (0, Float32x2, 0), (1, Float32x2, 8), (2, Float32x4, 16) */;
     }
 
