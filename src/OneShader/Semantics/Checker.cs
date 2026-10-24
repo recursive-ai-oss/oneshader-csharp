@@ -653,7 +653,7 @@ internal sealed partial class Checker
             var type = ApplyDims(baseType, d.ArrayDimensions, unsizedOk, d.Span);
             if (d.Initializer is InitializerListExpression il && type is ArrayType { Length: 0 } ua)
             {
-                type = HlslType.Array(ua.Element, il.Elements.Count);
+                type = HlslType.Array(ua.Element, InferListLength(il, ua.Element));
             }
 
             DeclareOneGlobal(v, d, type, scope);

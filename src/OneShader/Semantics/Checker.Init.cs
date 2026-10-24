@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using OneShader.Syntax;
 using OneShader.Types;
@@ -24,6 +25,62 @@ internal sealed partial class Checker
         public bool Short { get; set; }
 
         public bool Exhausted => Pos >= Elems.Count && Pending == 0;
+    }
+
+    private static int FlatCount(HlslType t) => t switch
+    {
+        ArrayType a => a.Length * FlatCount(a.Element),
+        StructType st => FlatSum(st),
+        _ => Math.Max(1, TypeOps.Count(t)),
+    };
+
+    private static int FlatSum(StructType st)
+    {
+        int n = 0;
+        foreach (var f in st.Fields)
+        {
+            n += FlatCount(f.Type);
+        }
+
+        return n;
+    }
+
+    /// <summary>Length of an unsized array initialized from a list: flat values fill elements in order, so the count is not the number of list items.</summary>
+    private int InferListLength(InitializerListExpression il, HlslType element)
+    {
+        int per = FlatCount(element);
+        int slots = 0;
+        int partial = 0;
+        foreach (var e in il.Elements)
+        {
+            if (e is InitializerListExpression)
+            {
+                slots += partial > 0 ? 2 : 1;
+                partial = 0;
+                continue;
+            }
+
+            var t = e.Type ?? CheckExpr(e);
+            if (t.IsError)
+            {
+                continue;
+            }
+
+            if (partial == 0 && element is not ScalarType && t.Equals(element))
+            {
+                slots++;
+                continue;
+            }
+
+            partial += Math.Max(1, TypeOps.Count(t));
+            while (partial >= per)
+            {
+                slots++;
+                partial -= per;
+            }
+        }
+
+        return partial > 0 ? slots + 1 : slots;
     }
 
     private void CheckInitializerList(InitializerListExpression il, HlslType target)

@@ -370,6 +370,16 @@ RWByteAddressBuffer Bytes;
     }
 
     [Fact]
+    public void UnsizedArrayLengthCountsFlatValues()
+    {
+        var r = FrontendCorpusTests.Run("static const float2 A[] = { 1, 2, 3, 4 };\nstatic const float2 B[] = { float2(1, 2), float2(3, 4), float2(5, 6) };\nstatic const float2 C[] = { { 1, 2 }, { 3, 4 } };\n[shader(\"pixel\")] float4 PS() : SV_Target { float2 L[] = { 1, 2, 3, 4, 5, 6 }; return float4(A[1], B[2].x, C[1].y + L[2].x); }", "c.hlsl");
+        Assert.Empty(r.Diagnostics.Items);
+        string ir = IrPrinter.Print(r.Module!);
+        Assert.Contains("[2]", ir);
+        Assert.Contains("[3]", ir);
+    }
+
+    [Fact]
     public void FlatInitializerListErrorsCountValues()
     {
         Assert.Equal(
