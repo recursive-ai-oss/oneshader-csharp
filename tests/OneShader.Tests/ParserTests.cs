@@ -16,6 +16,9 @@ internal static class CorpusFiles
     public static string Root([CallerFilePath] string here = "") =>
         Path.GetFullPath(Path.Combine(Path.GetDirectoryName(here)!, "..", "..", "corpus"));
 
+    /// <summary>The 2D graphics shaders: the main set and the renderer set.</summary>
+    public static IEnumerable<string> Graphics() => Shaders("2d").Concat(Shaders("2d/renderer"));
+
     public static IEnumerable<string> Shaders(string subdir) =>
         Directory.GetFiles(Path.Combine(Root(), subdir), "*.hlsl").OrderBy(p => p, StringComparer.Ordinal);
 }
@@ -32,7 +35,7 @@ public class ParserTests
     private static string[] Errors(DiagnosticBag bag) => Pp.Errors(bag);
 
     public static IEnumerable<object[]> CorpusFileNames() =>
-        CorpusFiles.Shaders("2d").Concat(CorpusFiles.Shaders("compute")).Select(p => new object[] { p });
+        CorpusFiles.Graphics().Concat(CorpusFiles.Shaders("compute")).Select(p => new object[] { p });
 
     [Theory]
     [MemberData(nameof(CorpusFileNames))]

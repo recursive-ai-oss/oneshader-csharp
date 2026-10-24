@@ -1,0 +1,23 @@
+# The renderer's tilemap, far zoom: one colour per coarse tile from an array texture, two chunks.
+case tile_flat
+shader 2d/renderer/tile.hlsl
+graphics vs=VSMain ps=PSFlat
+target 128 64 background=solid(0.05,0.05,0.05,1.0)
+blend premul
+tolerance 2
+vertexbuffer 0 48 instance :
+  0.0 0.0  64.0 0.0  0.0 64.0  0.0 0.0 32.0 32.0  0xFFFFFFFFu  0u
+  64.0 0.0  64.0 0.0  0.0 64.0  16.5 24.5 32.0 32.0  0xCCFFFFFFu  1u
+attr 0 float2 0
+attr 1 float2 8
+attr 2 float2 16
+attr 3 float4 24
+attr 4 unorm8x4 40
+attr 5 uint 44
+draw vertices=6 instances=2
+uniform 0 0 : 128.0 64.0 0.0 0.0
+texture 1 0 64x64 rgba8 tiles
+sampler 1 1 nearest clamp
+uniform 2 0 : 4.0 4.0 16.0 16.0
+texture 2 1 64x64x2 r32uint ids(16,7)
+texture 2 2 64x64x2 rgba8 noise(3)
