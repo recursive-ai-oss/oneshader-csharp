@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Uses OneShader straight from the repository's projects instead of a package, which is handy
+    while working on the compiler itself. It builds the same program as the Prebuilt sample.
+    The package form (see the other samples) is the one to copy into a real project.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>PrebuiltSample</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <EnableDefaultOneShaderItems>false</EnableDefaultOneShaderItems>
+    <SrcDir>$(MSBuildThisFileDirectory)../../src/</SrcDir>
+    <!-- Where the task project writes its output (see the repository's Directory.Build.props). -->
+    <OneShaderTaskAssembly>$(ArtifactsPath)/bin/OneShader.Build.Tasks/$(Configuration.ToLowerInvariant())/OneShader.Build.Tasks.dll</OneShaderTaskAssembly>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- The support types the generated code uses. -->
+    <ProjectReference Include="$(SrcDir)OneShader/OneShader.csproj" />
+    <!-- The task is built first, then loaded by path; the generator is handed to the C# compiler. -->
+    <ProjectReference Include="$(SrcDir)OneShader.Build.Tasks/OneShader.Build.Tasks.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="$(SrcDir)OneShader.Build.Generator/OneShader.Build.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <AdditionalFiles Include="../Prebuilt/*.oneshader" />
+    <Compile Include="../Prebuilt/Program.cs" />
+  </ItemGroup>
+  <Import Project="$(SrcDir)OneShader.Build/build/RecursiveAI.OneShader.Build.props" />
+  <Import Project="$(SrcDir)OneShader.Build/build/RecursiveAI.OneShader.Build.targets" />
+</Project>

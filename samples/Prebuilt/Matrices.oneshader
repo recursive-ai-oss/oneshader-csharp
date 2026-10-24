@@ -1,0 +1,29 @@
+oneshader-reflection 1
+source name="Shaders/Matrices.hlsl"
+targets list=SpirV
+resource name="Mats" kind=ConstantBuffer count=1 stages=Vertex rtype=ConstantBuffer hlsl=""
+  slot target=SpirV set=0 binding=0
+  layout
+    type kind=Struct scalar=Bool rows=0 cols=0 name="Mats" size=448 align=16 length=0 stride=0 mstride=0 packing=ColumnMajor
+      member name="ColumnMajor4x4" offset=0
+        type kind=Matrix scalar=Float rows=4 cols=4 name="" size=64 align=16 length=0 stride=0 mstride=16 packing=ColumnMajor
+      member name="RowMajor4x4" offset=64
+        type kind=Matrix scalar=Float rows=4 cols=4 name="" size=64 align=16 length=0 stride=0 mstride=16 packing=RowMajor
+      member name="ColumnMajor4x3" offset=128
+        type kind=Matrix scalar=Float rows=4 cols=3 name="" size=48 align=16 length=0 stride=0 mstride=16 packing=ColumnMajor
+      member name="RowMajor4x3" offset=176
+        type kind=Matrix scalar=Float rows=4 cols=3 name="" size=64 align=16 length=0 stride=0 mstride=16 packing=RowMajor
+      member name="Default3x3" offset=240
+        type kind=Matrix scalar=Float rows=3 cols=3 name="" size=48 align=16 length=0 stride=0 mstride=16 packing=ColumnMajor
+      member name="RowMajor2x4" offset=288
+        type kind=Matrix scalar=Float rows=2 cols=4 name="" size=32 align=16 length=0 stride=0 mstride=16 packing=RowMajor
+      member name="Bones" offset=320
+        type kind=Array scalar=Bool rows=0 cols=0 name="" size=128 align=16 length=2 stride=64 mstride=0 packing=ColumnMajor
+          element
+            type kind=Matrix scalar=Float rows=4 cols=4 name="" size=64 align=16 length=0 stride=0 mstride=16 packing=ColumnMajor
+entry name="VSMain" stage=Vertex workgroup=0,0,0 stride=0
+  uses name="Mats"
+generate namespace="PrebuiltSample.Shaders" class=""
+blob entry="VSMain" target=SpirV data="AwIjByIpMDc+RUxTWmFob3Z9hIuSmaCnrrW8ww=="
+options hash=0
+dep file="Shaders/Matrices.hlsl" sha=missing

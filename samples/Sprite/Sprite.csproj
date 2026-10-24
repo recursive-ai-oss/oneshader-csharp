@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The minimal consumer: reference the build package and put HLSL files in the project.
+    Every *.hlsl file is compiled during dotnet build; shader errors are build errors on the HLSL line.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>SpriteSample</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="RecursiveAI.OneShader.Build" Version="0.1.0-dev.*" />
+  </ItemGroup>
+</Project>

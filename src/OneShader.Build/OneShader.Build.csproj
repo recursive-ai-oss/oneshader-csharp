@@ -13,8 +13,6 @@
     <PackageProjectUrl>https://github.com/recursive-ai-oss/oneshader-csharp</PackageProjectUrl>
     <IsPackable>true</IsPackable>
     <IncludeBuildOutput>false</IncludeBuildOutput>
-    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
-    <DevelopmentDependency>true</DevelopmentDependency>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <IsAotCompatible>false</IsAotCompatible>
     <IsTrimmable>false</IsTrimmable>
@@ -27,9 +25,13 @@
     <_GeneratorOut>$(ArtifactsPath)/bin/OneShader.Build.Generator/$(Configuration.ToLowerInvariant())</_GeneratorOut>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Makes the package depend on the library, which holds the support types generated code uses. -->
+    <ProjectReference Include="../OneShader/OneShader.csproj" />
     <ProjectReference Include="../OneShader.Build.Tasks/OneShader.Build.Tasks.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../OneShader.Build.Generator/OneShader.Build.Generator.csproj" ReferenceOutputAssembly="false" />
     <None Include="build/*" Pack="true" PackagePath="build/" />
+    <!-- Empty marker so the dependency on the library has a matching lib/net10.0 folder (NU5128). -->
+    <None Include="_._" Pack="true" PackagePath="lib/net10.0/" />
     <None Include="$(_TasksOut)/OneShader.Build.Tasks.dll" Pack="true" PackagePath="tasks/net10.0/" Visible="false" />
     <None Include="$(_TasksOut)/OneShader.dll" Pack="true" PackagePath="tasks/net10.0/" Visible="false" />
     <None Include="$(_GeneratorOut)/OneShader.Build.Generator.dll" Pack="true" PackagePath="analyzers/dotnet/cs/" Visible="false" />

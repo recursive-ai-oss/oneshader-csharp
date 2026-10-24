@@ -1,0 +1,27 @@
+oneshader-reflection 1
+source name="Shaders/Sprite.hlsl"
+targets list=SpirV
+resource name="Frame" kind=ConstantBuffer count=1 stages=Vertex rtype=ConstantBuffer hlsl=""
+  slot target=SpirV set=0 binding=0
+  layout
+    type kind=Struct scalar=Bool rows=0 cols=0 name="Frame" size=64 align=16 length=0 stride=0 mstride=0 packing=ColumnMajor
+      member name="ViewProjection" offset=0
+        type kind=Matrix scalar=Float rows=4 cols=4 name="" size=64 align=16 length=0 stride=0 mstride=16 packing=ColumnMajor
+resource name="Atlas" kind=SampledTexture count=1 stages=Pixel rtype=Texture2D hlsl="Texture2D<float4>"
+  slot target=SpirV set=0 binding=1
+resource name="AtlasSampler" kind=Sampler count=1 stages=Pixel rtype=Texture1D hlsl="SamplerState"
+  slot target=SpirV set=0 binding=2
+entry name="VSMain" stage=Vertex workgroup=0,0,0 stride=32
+  input name="i.Position" semantic="POSITION" index=0 location=0 builtin=None scalar=Float components=2 format=Float32x2 offset=0 interp=Default
+  input name="i.Uv" semantic="TEXCOORD" index=0 location=1 builtin=None scalar=Float components=2 format=Float32x2 offset=8 interp=Default
+  input name="i.Color" semantic="COLOR" index=0 location=2 builtin=None scalar=Float components=4 format=Float32x4 offset=16 interp=Default
+  output name="Position" semantic="SV_Position" index=0 location=- builtin=Position scalar=Float components=4 format=None offset=0 interp=Default
+  uses name="Frame"
+entry name="PSMain" stage=Pixel workgroup=0,0,0 stride=0
+  uses name="Atlas"
+  uses name="AtlasSampler"
+generate namespace="PrebuiltSample.Shaders" class=""
+blob entry="VSMain" target=SpirV data="AwIjByIpMDc+RUxTWmFob3Z9hIuSmaCnrrW8ww=="
+blob entry="PSMain" target=SpirV data="AwIjByMqMTg/Rk1UW2JpcHd+hYyTmqGor7a9xA=="
+options hash=0
+dep file="Shaders/Sprite.hlsl" sha=missing
