@@ -1,0 +1,8 @@
+# Block-wise exclusive scan of 1024 values in 4 groups of 256, plus per-block sums.
+case prefix_sum
+shader compute/prefix_sum.hlsl
+dispatch CSMain 4 1 1
+storage 0 0 : @u32(1,1024,1000)
+storage 0 1 out size=4096
+storage 0 2 out size=16
+expect prefix_sum

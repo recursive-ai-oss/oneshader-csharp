@@ -1,0 +1,20 @@
+# Multi-channel SDF glyph quads at two sizes with an outline.
+case msdf_text
+shader 2d/msdf_text.hlsl
+graphics vs=VSMain ps=PSMain
+target 128 64 background=solid(0.1,0.1,0.15,1.0)
+blend premul
+tolerance 1
+vertexbuffer 0 16 :
+  4.0 4.0 0.0 0.0    60.0 4.0 1.0 0.0    4.0 60.0 0.0 1.0    60.0 60.0 1.0 1.0
+  72.0 12.0 0.0 0.0  104.0 12.0 1.0 0.0  72.0 44.0 0.0 1.0   104.0 44.0 1.0 1.0
+attr 0 float2 0
+attr 1 float2 8
+index u16 : @quadindex(2)
+draw indexed=12
+uniform 0 0 :
+  0.015625 0.0 0.0 0.0  0.0 0.03125 0.0 0.0  0.0 0.0 1.0 0.0  -1.0 -1.0 0.0 1.0
+uniform 0 1 :
+  1.0 1.0 1.0 1.0   0.1 0.1 0.9 1.0   64.0 64.0 16.0 1.5
+texture 0 2 64x64 rgba8 msdf_glyph
+sampler 0 3 linear clamp

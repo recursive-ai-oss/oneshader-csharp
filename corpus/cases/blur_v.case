@@ -1,0 +1,10 @@
+# Separable gaussian blur, one direction per case: radius 6, sigma 2.5.
+case blur_v
+shader 2d/blur.hlsl
+graphics vs=VSMain ps=PSMain
+target 64 64
+tolerance 1
+draw vertices=3
+uniform 0 0 : 0.0 1.0 6i 2.5
+texture 0 1 64x64 rgba8 photo
+sampler 0 2 linear clamp

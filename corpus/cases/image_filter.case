@@ -1,0 +1,7 @@
+# Tiled sharpen over a 64x64 storage image through group-shared memory.
+case image_filter
+shader compute/image_filter.hlsl
+dispatch CSMain 8 8 1
+texture 0 0 64x64 rgba8 photo
+image 0 1 64x64 rgba8 solid(0,0,0,0) out
+expect image_filter

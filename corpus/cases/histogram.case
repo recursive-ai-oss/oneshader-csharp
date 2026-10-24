@@ -1,0 +1,8 @@
+# 256-bin luminance histogram of 4000 pixels (4096 threads, so the bounds check is exercised).
+case histogram
+shader compute/histogram.hlsl
+dispatch CSMain 16 1 1
+uniform 0 0 : 4000u 0u 0u 0u
+storage 0 1 : @u32(5,4096)
+storage 0 2 out size=1024
+expect histogram

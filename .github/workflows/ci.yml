@@ -57,3 +57,9 @@ jobs:
           "$RUNNER_TEMP/oracles/bin/spirv-val" --version
           "$RUNNER_TEMP/oracles/bin/dxc" --version
           echo "$RUNNER_TEMP/oracles/bin" >> "$GITHUB_PATH"
+
+      - name: Parity tests (compile and validate the corpus; GPU cases skip without a Vulkan device)
+        if: matrix.rid == 'linux-x64'
+        env:
+          ONESHADER_TOOLS: ${{ runner.temp }}/oracles
+        run: dotnet test --project tests/OneShader.ParityTests -c Release --no-build

@@ -7,6 +7,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/OneShader.Tests/OneShader.Tests.csproj" />
+    <Project Path="tests/OneShader.ParityTests/OneShader.ParityTests.csproj" />
     <Project Path="tests/AotSmoke/AotSmoke.csproj" />
   </Folder>
   <Folder Name="/fuzz/">
