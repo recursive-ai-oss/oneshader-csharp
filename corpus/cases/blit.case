@@ -1,0 +1,9 @@
+# Fullscreen triangle copying a texture (32x32 up to 64x64, linear).
+case blit
+shader 2d/blit.hlsl
+graphics vs=VSMain ps=PSMain
+target 64 64
+tolerance 1
+draw vertices=3
+texture 0 0 32x32 rgba8 photo
+sampler 0 1 linear clamp

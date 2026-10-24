@@ -1,0 +1,12 @@
+# Exposure, filmic tone map, colour matrix, gamma and vignette over a 64x64 scene.
+case color_grade
+shader 2d/color_grade.hlsl
+graphics vs=VSMain ps=PSMain
+target 64 64
+tolerance 1
+draw vertices=3
+uniform 0 0 :
+  1.1 -0.05 -0.05 0.0  -0.05 1.1 -0.05 0.0  -0.05 -0.05 1.1 0.0  0.0 0.0 0.0 1.0
+  0.5 0.6 0.35 2.2
+texture 0 1 64x64 rgba8 photo
+sampler 0 2 linear clamp

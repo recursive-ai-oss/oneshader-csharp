@@ -1,0 +1,913 @@
+using System;
+using System.Buffers.Binary;
+using System.Collections.Generic;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Text;
+using Silk.NET.Vulkan;
+using VkBuffer = Silk.NET.Vulkan.Buffer;
+using VkImage = Silk.NET.Vulkan.Image;
+using VkSampler = Silk.NET.Vulkan.Sampler;
+
+namespace OneShader.ParityTests;
+
+/// <summary>One value read back from the GPU after a run.</summary>
+public sealed class OutputBlob
+{
+    public OutputBlob(string key, byte[] bytes, int width, int height, PixelFormat format, bool isImage)
+    {
+        Key = key;
+        Bytes = bytes;
+        Width = width;
+        Height = height;
+        Format = format;
+        IsImage = isImage;
+    }
+
+    /// <summary><c>buffer:SET.BINDING</c>, <c>image:SET.BINDING</c> or <c>target</c>.</summary>
+    public string Key { get; }
+
+    public byte[] Bytes { get; }
+
+    public int Width { get; }
+
+    public int Height { get; }
+
+    public PixelFormat Format { get; }
+
+    public bool IsImage { get; }
+}
+
+/// <summary>Everything a run produced: outputs in declaration order plus validation messages.</summary>
+public sealed class RunResult
+{
+    public RunResult(List<OutputBlob> outputs, IReadOnlyList<string> validationMessages)
+    {
+        Outputs = outputs;
+        ValidationMessages = validationMessages;
+    }
+
+    public List<OutputBlob> Outputs { get; }
+
+    public IReadOnlyList<string> ValidationMessages { get; }
+
+    public OutputBlob Get(string key) => Outputs.First(o => o.Key == key);
+}
+
+/// <summary>
+/// Runs a case on the GPU: a compute dispatch sequence over storage buffers and images, or one
+/// offscreen draw into an RGBA8 image, then reads the outputs back.
+/// </summary>
+public static unsafe class VkRunner
+{
+    /// <summary>Runs <paramref name="model"/> with SPIR-V supplied by <paramref name="spirv"/> (entry point name, stage).</summary>
+    public static RunResult Run(VkContext ctx, CaseModel model, CaseData data, Func<string, ShaderStage, byte[]> spirv)
+    {
+        ctx.DrainMessages();
+        using var run = new RunState(ctx, model, data, spirv);
+        var outputs = run.Execute();
+        ctx.Api.DeviceWaitIdle(ctx.Device);
+        return new RunResult(outputs, ctx.DrainMessages());
+    }
+
+    /// <summary>Reads the name of the first OpEntryPoint of a SPIR-V module.</summary>
+    internal static string EntryPointName(byte[] spirv)
+    {
+        // Header is 5 words; each instruction starts with (wordCount << 16 | opcode). OpEntryPoint = 15:
+        // execution model, id, then the name as a nul-terminated UTF-8 literal.
+        int pos = 5 * 4;
+        while (pos + 4 <= spirv.Length)
+        {
+            uint head = BinaryPrimitives.ReadUInt32LittleEndian(spirv.AsSpan(pos));
+            int words = (int)(head >> 16);
+            if (words == 0)
+            {
+                break;
+            }
+            if ((head & 0xFFFF) == 15)
+            {
+                int start = pos + 12;
+                int end = Array.IndexOf(spirv, (byte)0, start);
+                return Encoding.UTF8.GetString(spirv, start, end - start);
+            }
+            pos += words * 4;
+        }
+        throw new InvalidOperationException("SPIR-V module has no OpEntryPoint");
+    }
+
+    private sealed class RunState : IDisposable
+    {
+        private readonly VkContext ctx;
+        private readonly Vk vk;
+        private readonly Device dev;
+        private readonly CaseModel model;
+        private readonly CaseData data;
+        private readonly Func<string, ShaderStage, byte[]> spirv;
+        private readonly List<Action> cleanup = new();
+        private readonly Dictionary<int, (VkBuffer Buffer, nint Map, int Size)> buffers = new();
+        private readonly Dictionary<int, (VkImage Image, ImageView View, int Layers)> images = new();
+        private readonly Dictionary<int, VkSampler> samplers = new();
+
+        public RunState(VkContext ctx, CaseModel model, CaseData data, Func<string, ShaderStage, byte[]> spirv)
+        {
+            this.ctx = ctx;
+            vk = ctx.Api;
+            dev = ctx.Device;
+            this.model = model;
+            this.data = data;
+            this.spirv = spirv;
+        }
+
+        public void Dispose()
+        {
+            vk.DeviceWaitIdle(dev);
+            for (int i = cleanup.Count - 1; i >= 0; i--)
+            {
+                cleanup[i]();
+            }
+        }
+
+        private static void Check(Result r, string what)
+        {
+            if (r != Result.Success)
+            {
+                throw new InvalidOperationException($"{what} failed: {r}");
+            }
+        }
+
+        public List<OutputBlob> Execute()
+        {
+            CreateResources();
+            var (layouts, sets, pipelineLayout) = CreateDescriptors();
+            _ = layouts;
+            var outputs = new List<OutputBlob>();
+            var readbacks = new List<(string Key, VkBuffer Buffer, nint Map, int Size, int W, int H, PixelFormat F, bool Image)>();
+
+            if (model.Graphics is { } g)
+            {
+                var (target, targetView) = CreateTarget(g);
+                Submit(cb =>
+                {
+                    // Draw into the uploaded background.
+                    DrawGraphics(cb, g, pipelineLayout, sets, target, targetView);
+                    // The render pass leaves the target in TransferSrcOptimal.
+                    int size = g.Width * g.Height * 4;
+                    var (buf, map) = CreateHostBuffer(size, BufferUsageFlags.TransferDstBit);
+                    var region = ImageCopyRegion(g.Width, g.Height, 1);
+                    vk.CmdCopyImageToBuffer(cb, target, ImageLayout.TransferSrcOptimal, buf, 1, &region);
+                    readbacks.Add(("target", buf, map, size, g.Width, g.Height, PixelFormat.Rgba8, true));
+                    HostBarrier(cb, PipelineStageFlags.TransferBit, AccessFlags.TransferWriteBit);
+                });
+            }
+            else
+            {
+                var pipelines = new Dictionary<string, Pipeline>();
+                foreach (var d in model.Dispatches)
+                {
+                    if (!pipelines.ContainsKey(d.Entry))
+                    {
+                        pipelines[d.Entry] = CreateComputePipeline(d.Entry, pipelineLayout);
+                    }
+                }
+                Submit(cb =>
+                {
+                    bool first = true;
+                    foreach (var d in model.Dispatches)
+                    {
+                        if (!first)
+                        {
+                            var mb = new MemoryBarrier
+                            {
+                                SType = StructureType.MemoryBarrier,
+                                SrcAccessMask = AccessFlags.ShaderWriteBit,
+                                DstAccessMask = AccessFlags.ShaderReadBit | AccessFlags.ShaderWriteBit,
+                            };
+                            vk.CmdPipelineBarrier(cb, PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit, 0, 1, &mb, 0, null, 0, null);
+                        }
+                        first = false;
+                        vk.CmdBindPipeline(cb, PipelineBindPoint.Compute, pipelines[d.Entry]);
+                        BindSets(cb, PipelineBindPoint.Compute, pipelineLayout, sets);
+                        vk.CmdDispatch(cb, (uint)d.X, (uint)d.Y, (uint)d.Z);
+                    }
+
+                    // Outputs: images go to a host buffer through a transfer; buffers are host-visible already.
+                    for (int i = 0; i < model.Resources.Count; i++)
+                    {
+                        var r = model.Resources[i];
+                        if (!r.Output)
+                        {
+                            continue;
+                        }
+                        if (r.Kind == ResourceKind.StorageImage)
+                        {
+                            var img = images[i];
+                            ImageBarrier(cb, img.Image, ImageLayout.General, ImageLayout.TransferSrcOptimal,
+                                PipelineStageFlags.ComputeShaderBit, AccessFlags.ShaderWriteBit,
+                                PipelineStageFlags.TransferBit, AccessFlags.TransferReadBit, 1);
+                            int size = r.Width * r.Height * IBytes(r.Format);
+                            var (buf, map) = CreateHostBuffer(size, BufferUsageFlags.TransferDstBit);
+                            var region = ImageCopyRegion(r.Width, r.Height, 1);
+                            vk.CmdCopyImageToBuffer(cb, img.Image, ImageLayout.TransferSrcOptimal, buf, 1, &region);
+                            readbacks.Add((r.OutputKey, buf, map, size, r.Width, r.Height, r.Format, true));
+                        }
+                    }
+                    var hb = new MemoryBarrier
+                    {
+                        SType = StructureType.MemoryBarrier,
+                        SrcAccessMask = AccessFlags.ShaderWriteBit | AccessFlags.TransferWriteBit,
+                        DstAccessMask = AccessFlags.HostReadBit,
+                    };
+                    vk.CmdPipelineBarrier(cb, PipelineStageFlags.ComputeShaderBit | PipelineStageFlags.TransferBit,
+                        PipelineStageFlags.HostBit, 0, 1, &hb, 0, null, 0, null);
+                });
+                foreach (var kv in pipelines)
+                {
+                    vk.DestroyPipeline(dev, kv.Value, null);
+                }
+            }
+
+            // Collect in resource order, target (if any) first.
+            foreach (var rb in readbacks)
+            {
+                outputs.Add(new OutputBlob(rb.Key, CopyOut(rb.Map, rb.Size), rb.W, rb.H, rb.F, rb.Image));
+            }
+            for (int i = 0; i < model.Resources.Count; i++)
+            {
+                var r = model.Resources[i];
+                if (r.Output && r.Kind == ResourceKind.Storage)
+                {
+                    var b = buffers[i];
+                    outputs.Add(new OutputBlob(r.OutputKey, CopyOut(b.Map, b.Size), 0, 0, PixelFormat.R8, false));
+                }
+            }
+            return outputs;
+        }
+
+        private static int IBytes(PixelFormat f) => ImageGen.BytesPerTexel(f);
+
+        private static byte[] CopyOut(nint map, int size)
+        {
+            byte[] bytes = new byte[size];
+            Marshal.Copy(map, bytes, 0, size);
+            return bytes;
+        }
+
+        private void HostBarrier(CommandBuffer cb, PipelineStageFlags srcStage, AccessFlags srcAccess)
+        {
+            var hb = new MemoryBarrier { SType = StructureType.MemoryBarrier, SrcAccessMask = srcAccess, DstAccessMask = AccessFlags.HostReadBit };
+            vk.CmdPipelineBarrier(cb, srcStage, PipelineStageFlags.HostBit, 0, 1, &hb, 0, null, 0, null);
+        }
+
+        private static BufferImageCopy ImageCopyRegion(int w, int h, int layers) => new()
+        {
+            ImageSubresource = new ImageSubresourceLayers { AspectMask = ImageAspectFlags.ColorBit, LayerCount = (uint)layers },
+            ImageExtent = new Extent3D((uint)w, (uint)h, 1),
+        };
+
+        // --- one-shot submission -------------------------------------------------------------
+
+        private void Submit(Action<CommandBuffer> record)
+        {
+            var ai = new CommandBufferAllocateInfo
+            {
+                SType = StructureType.CommandBufferAllocateInfo,
+                CommandPool = ctx.Pool,
+                Level = CommandBufferLevel.Primary,
+                CommandBufferCount = 1,
+            };
+            Check(vk.AllocateCommandBuffers(dev, &ai, out CommandBuffer cb), "vkAllocateCommandBuffers");
+            var bi = new CommandBufferBeginInfo { SType = StructureType.CommandBufferBeginInfo, Flags = CommandBufferUsageFlags.OneTimeSubmitBit };
+            Check(vk.BeginCommandBuffer(cb, &bi), "vkBeginCommandBuffer");
+            record(cb);
+            Check(vk.EndCommandBuffer(cb), "vkEndCommandBuffer");
+            var fi = new FenceCreateInfo { SType = StructureType.FenceCreateInfo };
+            Check(vk.CreateFence(dev, &fi, null, out Fence fence), "vkCreateFence");
+            var si = new SubmitInfo { SType = StructureType.SubmitInfo, CommandBufferCount = 1, PCommandBuffers = &cb };
+            Check(vk.QueueSubmit(ctx.Queue, 1, &si, fence), "vkQueueSubmit");
+            Check(vk.WaitForFences(dev, 1, &fence, true, 60_000_000_000UL), "vkWaitForFences");
+            vk.DestroyFence(dev, fence, null);
+            vk.FreeCommandBuffers(dev, ctx.Pool, 1, &cb);
+        }
+
+        // --- buffers and images --------------------------------------------------------------
+
+        private (VkBuffer, nint) CreateHostBuffer(int size, BufferUsageFlags usage)
+        {
+            var bi = new BufferCreateInfo
+            {
+                SType = StructureType.BufferCreateInfo,
+                Size = (ulong)size,
+                Usage = usage,
+                SharingMode = SharingMode.Exclusive,
+            };
+            Check(vk.CreateBuffer(dev, &bi, null, out VkBuffer buf), "vkCreateBuffer");
+            vk.GetBufferMemoryRequirements(dev, buf, out MemoryRequirements req);
+            var ai = new MemoryAllocateInfo
+            {
+                SType = StructureType.MemoryAllocateInfo,
+                AllocationSize = req.Size,
+                MemoryTypeIndex = ctx.FindMemoryType(req.MemoryTypeBits, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit),
+            };
+            Check(vk.AllocateMemory(dev, &ai, null, out DeviceMemory mem), "vkAllocateMemory");
+            Check(vk.BindBufferMemory(dev, buf, mem, 0), "vkBindBufferMemory");
+            void* map;
+            Check(vk.MapMemory(dev, mem, 0, req.Size, 0, &map), "vkMapMemory");
+            new Span<byte>(map, (int)req.Size).Clear();
+            cleanup.Add(() =>
+            {
+                vk.UnmapMemory(dev, mem);
+                vk.DestroyBuffer(dev, buf, null);
+                vk.FreeMemory(dev, mem, null);
+            });
+            return (buf, (nint)map);
+        }
+
+        private (VkBuffer, nint) CreateFilledBuffer(byte[] bytes, BufferUsageFlags usage)
+        {
+            var (buf, map) = CreateHostBuffer(bytes.Length, usage);
+            Marshal.Copy(bytes, 0, map, bytes.Length);
+            return (buf, map);
+        }
+
+        private (VkImage, ImageView) CreateImage(Format format, int w, int h, int layers, bool array, ImageUsageFlags usage)
+        {
+            var ii = new ImageCreateInfo
+            {
+                SType = StructureType.ImageCreateInfo,
+                ImageType = ImageType.Type2D,
+                Format = format,
+                Extent = new Extent3D((uint)w, (uint)h, 1),
+                MipLevels = 1,
+                ArrayLayers = (uint)layers,
+                Samples = SampleCountFlags.Count1Bit,
+                Tiling = ImageTiling.Optimal,
+                Usage = usage,
+                SharingMode = SharingMode.Exclusive,
+                InitialLayout = ImageLayout.Undefined,
+            };
+            Check(vk.CreateImage(dev, &ii, null, out VkImage image), "vkCreateImage");
+            vk.GetImageMemoryRequirements(dev, image, out MemoryRequirements req);
+            var ai = new MemoryAllocateInfo
+            {
+                SType = StructureType.MemoryAllocateInfo,
+                AllocationSize = req.Size,
+                MemoryTypeIndex = ctx.FindMemoryType(req.MemoryTypeBits, MemoryPropertyFlags.DeviceLocalBit),
+            };
+            Check(vk.AllocateMemory(dev, &ai, null, out DeviceMemory mem), "vkAllocateMemory");
+            Check(vk.BindImageMemory(dev, image, mem, 0), "vkBindImageMemory");
+            var vi = new ImageViewCreateInfo
+            {
+                SType = StructureType.ImageViewCreateInfo,
+                Image = image,
+                ViewType = array ? ImageViewType.Type2DArray : ImageViewType.Type2D,
+                Format = format,
+                SubresourceRange = new ImageSubresourceRange(ImageAspectFlags.ColorBit, 0, 1, 0, (uint)layers),
+            };
+            Check(vk.CreateImageView(dev, &vi, null, out ImageView view), "vkCreateImageView");
+            cleanup.Add(() =>
+            {
+                vk.DestroyImageView(dev, view, null);
+                vk.DestroyImage(dev, image, null);
+                vk.FreeMemory(dev, mem, null);
+            });
+            return (image, view);
+        }
+
+        private static Format ToVk(PixelFormat f) => f switch
+        {
+            PixelFormat.R8 => Format.R8Unorm,
+            PixelFormat.Rgba8 => Format.R8G8B8A8Unorm,
+            PixelFormat.R32F => Format.R32Sfloat,
+            _ => Format.R32G32B32A32Sfloat,
+        };
+
+        private void ImageBarrier(CommandBuffer cb, VkImage image, ImageLayout from, ImageLayout to,
+            PipelineStageFlags srcStage, AccessFlags srcAccess, PipelineStageFlags dstStage, AccessFlags dstAccess, int layers)
+        {
+            var b = new ImageMemoryBarrier
+            {
+                SType = StructureType.ImageMemoryBarrier,
+                SrcAccessMask = srcAccess,
+                DstAccessMask = dstAccess,
+                OldLayout = from,
+                NewLayout = to,
+                SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
+                DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
+                Image = image,
+                SubresourceRange = new ImageSubresourceRange(ImageAspectFlags.ColorBit, 0, 1, 0, (uint)layers),
+            };
+            vk.CmdPipelineBarrier(cb, srcStage, dstStage, 0, 0, null, 0, null, 1, &b);
+        }
+
+        /// <summary>Uploads texel bytes into an image and leaves it in <paramref name="finalLayout"/>.</summary>
+        private void Upload(VkImage image, byte[] bytes, int w, int h, int layers, ImageLayout finalLayout)
+        {
+            var (staging, _) = CreateFilledBuffer(bytes, BufferUsageFlags.TransferSrcBit);
+            Submit(cb =>
+            {
+                ImageBarrier(cb, image, ImageLayout.Undefined, ImageLayout.TransferDstOptimal,
+                    PipelineStageFlags.TopOfPipeBit, 0, PipelineStageFlags.TransferBit, AccessFlags.TransferWriteBit, layers);
+                var region = ImageCopyRegion(w, h, layers);
+                vk.CmdCopyBufferToImage(cb, staging, image, ImageLayout.TransferDstOptimal, 1, &region);
+                ImageBarrier(cb, image, ImageLayout.TransferDstOptimal, finalLayout,
+                    PipelineStageFlags.TransferBit, AccessFlags.TransferWriteBit,
+                    PipelineStageFlags.AllCommandsBit, AccessFlags.MemoryReadBit | AccessFlags.MemoryWriteBit, layers);
+            });
+        }
+
+        private void CreateResources()
+        {
+            for (int i = 0; i < model.Resources.Count; i++)
+            {
+                var r = model.Resources[i];
+                switch (r.Kind)
+                {
+                    case ResourceKind.Uniform:
+                    case ResourceKind.Storage:
+                        {
+                            byte[] bytes = data.Buffers[i];
+                            var usage = r.Kind == ResourceKind.Uniform ? BufferUsageFlags.UniformBufferBit : BufferUsageFlags.StorageBufferBit;
+                            var (buf, map) = CreateFilledBuffer(bytes, usage);
+                            buffers[i] = (buf, map, bytes.Length);
+                            break;
+                        }
+                    case ResourceKind.Texture:
+                    case ResourceKind.StorageImage:
+                        {
+                            bool storage = r.Kind == ResourceKind.StorageImage;
+                            int layers = Math.Max(r.Layers, 1);
+                            var usage = storage
+                                ? ImageUsageFlags.StorageBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.TransferSrcBit
+                                : ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit;
+                            var (img, view) = CreateImage(ToVk(r.Format), r.Width, r.Height, layers, r.Layers > 0, usage);
+                            Upload(img, data.Images[i], r.Width, r.Height, layers, storage ? ImageLayout.General : ImageLayout.ShaderReadOnlyOptimal);
+                            images[i] = (img, view, layers);
+                            break;
+                        }
+                    case ResourceKind.Sampler:
+                        {
+                            var filter = r.Linear ? Filter.Linear : Filter.Nearest;
+                            var mode = r.Repeat ? SamplerAddressMode.Repeat : SamplerAddressMode.ClampToEdge;
+                            var si = new SamplerCreateInfo
+                            {
+                                SType = StructureType.SamplerCreateInfo,
+                                MagFilter = filter,
+                                MinFilter = filter,
+                                MipmapMode = SamplerMipmapMode.Nearest,
+                                AddressModeU = mode,
+                                AddressModeV = mode,
+                                AddressModeW = mode,
+                                MaxLod = 0f,
+                                BorderColor = BorderColor.FloatTransparentBlack,
+                            };
+                            Check(vk.CreateSampler(dev, &si, null, out VkSampler s), "vkCreateSampler");
+                            samplers[i] = s;
+                            cleanup.Add(() => vk.DestroySampler(dev, s, null));
+                            break;
+                        }
+                }
+            }
+        }
+
+        // --- descriptors ---------------------------------------------------------------------
+
+        private (DescriptorSetLayout[] Layouts, DescriptorSet?[] Sets, PipelineLayout Layout) CreateDescriptors()
+        {
+            var stages = model.Graphics is not null
+                ? ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit
+                : ShaderStageFlags.ComputeBit;
+            int setCount = model.Resources.Count == 0 ? 0 : model.Resources.Max(r => r.Set) + 1;
+            var layouts = new DescriptorSetLayout[setCount];
+            var sets = new DescriptorSet?[setCount];
+            var typeCounts = new Dictionary<DescriptorType, uint>();
+            for (int s = 0; s < setCount; s++)
+            {
+                var bindings = model.Resources.Where(r => r.Set == s).Select(r => new DescriptorSetLayoutBinding
+                {
+                    Binding = (uint)r.Binding,
+                    DescriptorType = TypeOf(r.Kind),
+                    DescriptorCount = 1,
+                    StageFlags = stages,
+                }).ToArray();
+                fixed (DescriptorSetLayoutBinding* pb = bindings)
+                {
+                    var li = new DescriptorSetLayoutCreateInfo
+                    {
+                        SType = StructureType.DescriptorSetLayoutCreateInfo,
+                        BindingCount = (uint)bindings.Length,
+                        PBindings = pb,
+                    };
+                    Check(vk.CreateDescriptorSetLayout(dev, &li, null, out layouts[s]), "vkCreateDescriptorSetLayout");
+                }
+                var layoutCopy = layouts[s];
+                cleanup.Add(() => vk.DestroyDescriptorSetLayout(dev, layoutCopy, null));
+                foreach (var b in bindings)
+                {
+                    typeCounts[b.DescriptorType] = typeCounts.GetValueOrDefault(b.DescriptorType) + 1;
+                }
+            }
+
+            fixed (DescriptorSetLayout* pl = layouts)
+            {
+                var pi = new PipelineLayoutCreateInfo
+                {
+                    SType = StructureType.PipelineLayoutCreateInfo,
+                    SetLayoutCount = (uint)setCount,
+                    PSetLayouts = pl,
+                };
+                Check(vk.CreatePipelineLayout(dev, &pi, null, out PipelineLayout pipelineLayout), "vkCreatePipelineLayout");
+                cleanup.Add(() => vk.DestroyPipelineLayout(dev, pipelineLayout, null));
+
+                if (setCount > 0)
+                {
+                    var poolSizes = typeCounts.Select(kv => new DescriptorPoolSize(kv.Key, kv.Value)).ToArray();
+                    DescriptorPool pool;
+                    fixed (DescriptorPoolSize* pp = poolSizes)
+                    {
+                        var ci = new DescriptorPoolCreateInfo
+                        {
+                            SType = StructureType.DescriptorPoolCreateInfo,
+                            MaxSets = (uint)setCount,
+                            PoolSizeCount = (uint)poolSizes.Length,
+                            PPoolSizes = pp,
+                        };
+                        Check(vk.CreateDescriptorPool(dev, &ci, null, out pool), "vkCreateDescriptorPool");
+                    }
+                    cleanup.Add(() => vk.DestroyDescriptorPool(dev, pool, null));
+                    var allocated = new DescriptorSet[setCount];
+                    fixed (DescriptorSet* pa = allocated)
+                    {
+                        var ai = new DescriptorSetAllocateInfo
+                        {
+                            SType = StructureType.DescriptorSetAllocateInfo,
+                            DescriptorPool = pool,
+                            DescriptorSetCount = (uint)setCount,
+                            PSetLayouts = pl,
+                        };
+                        Check(vk.AllocateDescriptorSets(dev, &ai, pa), "vkAllocateDescriptorSets");
+                    }
+                    for (int s = 0; s < setCount; s++)
+                    {
+                        sets[s] = allocated[s];
+                    }
+                    WriteDescriptors(allocated);
+                }
+                return (layouts, sets, pipelineLayout);
+            }
+        }
+
+        private static DescriptorType TypeOf(ResourceKind k) => k switch
+        {
+            ResourceKind.Uniform => DescriptorType.UniformBuffer,
+            ResourceKind.Storage => DescriptorType.StorageBuffer,
+            ResourceKind.Texture => DescriptorType.SampledImage,
+            ResourceKind.Sampler => DescriptorType.Sampler,
+            _ => DescriptorType.StorageImage,
+        };
+
+        private void WriteDescriptors(DescriptorSet[] sets)
+        {
+            var bufferInfos = new DescriptorBufferInfo[model.Resources.Count];
+            var imageInfos = new DescriptorImageInfo[model.Resources.Count];
+            var writes = new WriteDescriptorSet[model.Resources.Count];
+            fixed (DescriptorBufferInfo* pb = bufferInfos)
+            fixed (DescriptorImageInfo* pi = imageInfos)
+            {
+                for (int i = 0; i < model.Resources.Count; i++)
+                {
+                    var r = model.Resources[i];
+                    var w = new WriteDescriptorSet
+                    {
+                        SType = StructureType.WriteDescriptorSet,
+                        DstSet = sets[r.Set],
+                        DstBinding = (uint)r.Binding,
+                        DescriptorCount = 1,
+                        DescriptorType = TypeOf(r.Kind),
+                    };
+                    switch (r.Kind)
+                    {
+                        case ResourceKind.Uniform:
+                        case ResourceKind.Storage:
+                            bufferInfos[i] = new DescriptorBufferInfo(buffers[i].Buffer, 0, (ulong)buffers[i].Size);
+                            w.PBufferInfo = pb + i;
+                            break;
+                        case ResourceKind.Texture:
+                            imageInfos[i] = new DescriptorImageInfo { ImageView = images[i].View, ImageLayout = ImageLayout.ShaderReadOnlyOptimal };
+                            w.PImageInfo = pi + i;
+                            break;
+                        case ResourceKind.StorageImage:
+                            imageInfos[i] = new DescriptorImageInfo { ImageView = images[i].View, ImageLayout = ImageLayout.General };
+                            w.PImageInfo = pi + i;
+                            break;
+                        default:
+                            imageInfos[i] = new DescriptorImageInfo { Sampler = samplers[i] };
+                            w.PImageInfo = pi + i;
+                            break;
+                    }
+                    writes[i] = w;
+                }
+                fixed (WriteDescriptorSet* pw = writes)
+                {
+                    vk.UpdateDescriptorSets(dev, (uint)writes.Length, pw, 0, null);
+                }
+            }
+        }
+
+        private void BindSets(CommandBuffer cb, PipelineBindPoint point, PipelineLayout layout, DescriptorSet?[] sets)
+        {
+            for (int s = 0; s < sets.Length; s++)
+            {
+                if (sets[s] is { } set && model.Resources.Any(r => r.Set == s))
+                {
+                    vk.CmdBindDescriptorSets(cb, point, layout, (uint)s, 1, &set, 0, null);
+                }
+            }
+        }
+
+        // --- shaders and pipelines -----------------------------------------------------------
+
+        private ShaderModule CreateModule(byte[] code)
+        {
+            fixed (byte* p = code)
+            {
+                var mi = new ShaderModuleCreateInfo
+                {
+                    SType = StructureType.ShaderModuleCreateInfo,
+                    CodeSize = (nuint)code.Length,
+                    PCode = (uint*)p,
+                };
+                Check(vk.CreateShaderModule(dev, &mi, null, out ShaderModule module), "vkCreateShaderModule");
+                cleanup.Add(() => vk.DestroyShaderModule(dev, module, null));
+                return module;
+            }
+        }
+
+        private Pipeline CreateComputePipeline(string entry, PipelineLayout layout)
+        {
+            byte[] code = spirv(entry, ShaderStage.Compute);
+            var module = CreateModule(code);
+            nint name = Marshal.StringToHGlobalAnsi(EntryPointName(code));
+            try
+            {
+                var ci = new ComputePipelineCreateInfo
+                {
+                    SType = StructureType.ComputePipelineCreateInfo,
+                    Layout = layout,
+                    Stage = new PipelineShaderStageCreateInfo
+                    {
+                        SType = StructureType.PipelineShaderStageCreateInfo,
+                        Stage = ShaderStageFlags.ComputeBit,
+                        Module = module,
+                        PName = (byte*)name,
+                    },
+                };
+                Check(vk.CreateComputePipelines(dev, default, 1, &ci, null, out Pipeline pipeline), "vkCreateComputePipelines");
+                return pipeline;
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(name);
+            }
+        }
+
+        private (VkImage, ImageView) CreateTarget(GraphicsDecl g)
+        {
+            var (image, view) = CreateImage(Format.R8G8B8A8Unorm, g.Width, g.Height, 1, false,
+                ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.TransferSrcBit);
+            Upload(image, data.Background!, g.Width, g.Height, 1, ImageLayout.ColorAttachmentOptimal);
+            return (image, view);
+        }
+
+        private static Format VertexFormatToVk(VertexFormat f) => f switch
+        {
+            VertexFormat.Float1 => Format.R32Sfloat,
+            VertexFormat.Float2 => Format.R32G32Sfloat,
+            VertexFormat.Float3 => Format.R32G32B32Sfloat,
+            VertexFormat.Float4 => Format.R32G32B32A32Sfloat,
+            VertexFormat.Unorm8x4 => Format.R8G8B8A8Unorm,
+            _ => Format.R32Uint,
+        };
+
+        private void DrawGraphics(CommandBuffer cb, GraphicsDecl g, PipelineLayout layout, DescriptorSet?[] sets, VkImage target, ImageView targetView)
+        {
+            // Render pass: one RGBA8 attachment that keeps its contents (the uploaded background).
+            var attachment = new AttachmentDescription
+            {
+                Format = Format.R8G8B8A8Unorm,
+                Samples = SampleCountFlags.Count1Bit,
+                LoadOp = AttachmentLoadOp.Load,
+                StoreOp = AttachmentStoreOp.Store,
+                StencilLoadOp = AttachmentLoadOp.DontCare,
+                StencilStoreOp = AttachmentStoreOp.DontCare,
+                InitialLayout = ImageLayout.ColorAttachmentOptimal,
+                FinalLayout = ImageLayout.TransferSrcOptimal,
+            };
+            var colorRef = new AttachmentReference(0, ImageLayout.ColorAttachmentOptimal);
+            var subpass = new SubpassDescription
+            {
+                PipelineBindPoint = PipelineBindPoint.Graphics,
+                ColorAttachmentCount = 1,
+                PColorAttachments = &colorRef,
+            };
+            var deps = stackalloc SubpassDependency[]
+            {
+                new SubpassDependency
+                {
+                    SrcSubpass = Vk.SubpassExternal,
+                    DstSubpass = 0,
+                    SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
+                    DstStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
+                    DstAccessMask = AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit,
+                },
+                new SubpassDependency
+                {
+                    SrcSubpass = 0,
+                    DstSubpass = Vk.SubpassExternal,
+                    SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
+                    DstStageMask = PipelineStageFlags.TransferBit,
+                    SrcAccessMask = AccessFlags.ColorAttachmentWriteBit,
+                    DstAccessMask = AccessFlags.TransferReadBit,
+                },
+            };
+            var rpi = new RenderPassCreateInfo
+            {
+                SType = StructureType.RenderPassCreateInfo,
+                AttachmentCount = 1,
+                PAttachments = &attachment,
+                SubpassCount = 1,
+                PSubpasses = &subpass,
+                DependencyCount = 2,
+                PDependencies = deps,
+            };
+            Check(vk.CreateRenderPass(dev, &rpi, null, out RenderPass renderPass), "vkCreateRenderPass");
+            cleanup.Add(() => vk.DestroyRenderPass(dev, renderPass, null));
+            var fbi = new FramebufferCreateInfo
+            {
+                SType = StructureType.FramebufferCreateInfo,
+                RenderPass = renderPass,
+                AttachmentCount = 1,
+                PAttachments = &targetView,
+                Width = (uint)g.Width,
+                Height = (uint)g.Height,
+                Layers = 1,
+            };
+            Check(vk.CreateFramebuffer(dev, &fbi, null, out Framebuffer framebuffer), "vkCreateFramebuffer");
+            cleanup.Add(() => vk.DestroyFramebuffer(dev, framebuffer, null));
+
+            // Shaders.
+            byte[] vsCode = spirv(g.VertexEntry, ShaderStage.Vertex);
+            byte[] psCode = spirv(g.PixelEntry, ShaderStage.Pixel);
+            var vsModule = CreateModule(vsCode);
+            var psModule = CreateModule(psCode);
+            nint vsName = Marshal.StringToHGlobalAnsi(EntryPointName(vsCode));
+            nint psName = Marshal.StringToHGlobalAnsi(EntryPointName(psCode));
+            var stages = stackalloc PipelineShaderStageCreateInfo[]
+            {
+                new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.VertexBit, Module = vsModule, PName = (byte*)vsName },
+                new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.FragmentBit, Module = psModule, PName = (byte*)psName },
+            };
+
+            // Fixed-function state.
+            var bindingDescs = g.VertexBuffers.Select(v => new VertexInputBindingDescription((uint)v.Binding, (uint)v.Stride, VertexInputRate.Vertex)).ToArray();
+            var attrDescs = g.Attributes.Select(a => new VertexInputAttributeDescription((uint)a.Location, (uint)a.Binding, VertexFormatToVk(a.Format), (uint)a.Offset)).ToArray();
+            var blendAttachment = new PipelineColorBlendAttachmentState
+            {
+                ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit,
+                BlendEnable = g.Blend != BlendMode.None,
+                SrcColorBlendFactor = g.Blend == BlendMode.Alpha ? BlendFactor.SrcAlpha : BlendFactor.One,
+                DstColorBlendFactor = BlendFactor.OneMinusSrcAlpha,
+                ColorBlendOp = BlendOp.Add,
+                SrcAlphaBlendFactor = BlendFactor.One,
+                DstAlphaBlendFactor = BlendFactor.OneMinusSrcAlpha,
+                AlphaBlendOp = BlendOp.Add,
+            };
+            var viewport = new Viewport(0, 0, g.Width, g.Height, 0, 1);
+            var scissor = new Rect2D(new Offset2D(0, 0), new Extent2D((uint)g.Width, (uint)g.Height));
+            Pipeline pipeline;
+            fixed (VertexInputBindingDescription* pbd = bindingDescs)
+            fixed (VertexInputAttributeDescription* pad = attrDescs)
+            {
+                var vertexInput = new PipelineVertexInputStateCreateInfo
+                {
+                    SType = StructureType.PipelineVertexInputStateCreateInfo,
+                    VertexBindingDescriptionCount = (uint)bindingDescs.Length,
+                    PVertexBindingDescriptions = pbd,
+                    VertexAttributeDescriptionCount = (uint)attrDescs.Length,
+                    PVertexAttributeDescriptions = pad,
+                };
+                var inputAssembly = new PipelineInputAssemblyStateCreateInfo
+                {
+                    SType = StructureType.PipelineInputAssemblyStateCreateInfo,
+                    Topology = PrimitiveTopology.TriangleList,
+                };
+                var viewportState = new PipelineViewportStateCreateInfo
+                {
+                    SType = StructureType.PipelineViewportStateCreateInfo,
+                    ViewportCount = 1,
+                    PViewports = &viewport,
+                    ScissorCount = 1,
+                    PScissors = &scissor,
+                };
+                var raster = new PipelineRasterizationStateCreateInfo
+                {
+                    SType = StructureType.PipelineRasterizationStateCreateInfo,
+                    PolygonMode = PolygonMode.Fill,
+                    CullMode = CullModeFlags.None,
+                    FrontFace = FrontFace.CounterClockwise,
+                    LineWidth = 1f,
+                };
+                var multisample = new PipelineMultisampleStateCreateInfo
+                {
+                    SType = StructureType.PipelineMultisampleStateCreateInfo,
+                    RasterizationSamples = SampleCountFlags.Count1Bit,
+                };
+                var blend = new PipelineColorBlendStateCreateInfo
+                {
+                    SType = StructureType.PipelineColorBlendStateCreateInfo,
+                    AttachmentCount = 1,
+                    PAttachments = &blendAttachment,
+                };
+                var gci = new GraphicsPipelineCreateInfo
+                {
+                    SType = StructureType.GraphicsPipelineCreateInfo,
+                    StageCount = 2,
+                    PStages = stages,
+                    PVertexInputState = &vertexInput,
+                    PInputAssemblyState = &inputAssembly,
+                    PViewportState = &viewportState,
+                    PRasterizationState = &raster,
+                    PMultisampleState = &multisample,
+                    PColorBlendState = &blend,
+                    Layout = layout,
+                    RenderPass = renderPass,
+                    Subpass = 0,
+                };
+                Check(vk.CreateGraphicsPipelines(dev, default, 1, &gci, null, out pipeline), "vkCreateGraphicsPipelines");
+            }
+            Marshal.FreeHGlobal(vsName);
+            Marshal.FreeHGlobal(psName);
+            cleanup.Add(() => vk.DestroyPipeline(dev, pipeline, null));
+
+            // Geometry buffers.
+            var vertexBuffers = new List<VkBuffer>();
+            var offsets = new List<ulong>();
+            foreach (var v in g.VertexBuffers.OrderBy(v => v.Binding))
+            {
+                vertexBuffers.Add(CreateFilledBuffer(PadTo4(data.VertexBuffers[v.Binding]), BufferUsageFlags.VertexBufferBit).Item1);
+                offsets.Add(0);
+            }
+            VkBuffer indexBuffer = default;
+            if (data.Indices is { } indices)
+            {
+                indexBuffer = CreateFilledBuffer(PadTo4(indices), BufferUsageFlags.IndexBufferBit).Item1;
+            }
+
+            var clear = default(ClearValue);
+            var rbi = new RenderPassBeginInfo
+            {
+                SType = StructureType.RenderPassBeginInfo,
+                RenderPass = renderPass,
+                Framebuffer = framebuffer,
+                RenderArea = scissor,
+                ClearValueCount = 0,
+                PClearValues = &clear,
+            };
+            vk.CmdBeginRenderPass(cb, &rbi, SubpassContents.Inline);
+            vk.CmdBindPipeline(cb, PipelineBindPoint.Graphics, pipeline);
+            BindSets(cb, PipelineBindPoint.Graphics, layout, sets);
+            if (vertexBuffers.Count > 0)
+            {
+                var vbs = vertexBuffers.ToArray();
+                var offs = offsets.ToArray();
+                fixed (VkBuffer* pvb = vbs)
+                fixed (ulong* po = offs)
+                {
+                    vk.CmdBindVertexBuffers(cb, 0, (uint)vbs.Length, pvb, po);
+                }
+            }
+            if (g.IndexData is not null)
+            {
+                vk.CmdBindIndexBuffer(cb, indexBuffer, 0, g.IndexIs16Bit ? IndexType.Uint16 : IndexType.Uint32);
+                vk.CmdDrawIndexed(cb, (uint)g.Count, (uint)g.Instances, 0, 0, 0);
+            }
+            else
+            {
+                vk.CmdDraw(cb, (uint)g.Count, (uint)g.Instances, 0, 0);
+            }
+            vk.CmdEndRenderPass(cb);
+            _ = target;
+        }
+
+        private static byte[] PadTo4(byte[] bytes)
+        {
+            int size = Math.Max((bytes.Length + 3) & ~3, 4);
+            if (size == bytes.Length)
+            {
+                return bytes;
+            }
+            byte[] padded = new byte[size];
+            bytes.CopyTo(padded, 0);
+            return padded;
+        }
+    }
+}

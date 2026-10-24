@@ -1,0 +1,25 @@
+# Instanced UI rectangles blended (premultiplied) over a checkerboard. Instances, in order:
+#  0 solid, zero radius          1 solid, mixed radii, translucent
+#  2 linear gradient + border    3 radial gradient, radii larger than the box, border
+#  4 border wider than radius    5 sub-pixel border
+#  6 mixed radii, border, linear 7 transparent fill, outline only
+#  8 translucent radial overlapping 0 and 1
+# Per instance: rect, radii, colour0, colour1, border colour, gradient, border width, mode, 2 pad.
+case ui_rect
+shader 2d/ui_rect.hlsl
+graphics vs=VSMain ps=PSMain
+target 192 128 background=checker(8)
+blend premul
+tolerance 2
+draw vertices=6 instances=9
+uniform 0 0 : 192.0 128.0 0.0 0.0
+storage 0 1 :
+  4.0 4.0 40.0 56.0     0.0 0.0 0.0 0.0       0.9 0.2 0.2 1.0   0.9 0.2 0.2 1.0   0.0 0.0 0.0 0.0   0.0 0.0 0.0 0.0     0.0 0u 0.0 0.0
+  52.0 4.0 40.0 56.0    20.0 0.0 8.0 14.0     0.1 0.7 0.7 0.8   0.1 0.7 0.7 0.8   0.0 0.0 0.0 0.0   0.0 0.0 0.0 0.0     0.0 0u 0.0 0.0
+  100.0 4.0 40.0 56.0   10.0 10.0 10.0 10.0   1.0 0.8 0.1 1.0   0.8 0.1 0.6 1.0   1.0 1.0 1.0 1.0   0.0 0.0 40.0 56.0   3.0 1u 0.0 0.0
+  148.0 4.0 40.0 56.0   100.0 100.0 100.0 100.0   1.0 1.0 1.0 1.0   0.1 0.3 0.9 1.0   0.0 0.0 0.0 1.0   20.0 28.0 28.0 0.0   2.0 2u 0.0 0.0
+  4.0 68.0 40.0 56.0    4.0 4.0 4.0 4.0       0.2 0.8 0.3 0.6   0.2 0.8 0.3 0.6   0.9 0.2 0.5 1.0   0.0 0.0 0.0 0.0     8.0 0u 0.0 0.0
+  52.0 68.0 40.0 56.0   6.0 6.0 6.0 6.0       0.95 0.95 0.95 1.0   0.95 0.95 0.95 1.0   0.0 0.0 0.0 1.0   0.0 0.0 0.0 0.0   0.4 0u 0.0 0.0
+  100.0 68.0 40.0 56.0  0.0 24.0 0.0 24.0     0.2 0.2 0.9 1.0   0.9 0.9 0.2 1.0   1.0 0.5 0.0 0.9   0.0 0.0 40.0 0.0     3.0 1u 0.0 0.0
+  148.0 68.0 40.0 56.0  6.0 6.0 6.0 6.0       0.0 0.0 0.0 0.0   0.0 0.0 0.0 0.0   1.0 1.0 1.0 1.0   0.0 0.0 0.0 0.0     2.0 0u 0.0 0.0
+  24.0 24.0 56.0 40.0   12.0 12.0 12.0 12.0   0.8 0.3 0.9 0.7   0.3 0.1 0.5 0.3   1.0 1.0 1.0 0.5   28.0 20.0 30.0 0.0   1.5 2u 0.0 0.0
