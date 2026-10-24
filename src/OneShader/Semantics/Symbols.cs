@@ -53,6 +53,12 @@ public static class SemanticCodes
     /// <summary><c>break</c>, <c>continue</c> or <c>discard</c> in the wrong place.</summary>
     public const string BadJump = "OSH0313";
 
+    /// <summary>An atomic operation or barrier is used incorrectly.</summary>
+    public const string BadAtomic = "OSH0314";
+
+    /// <summary>A function can fall off its end without returning a value.</summary>
+    public const string MissingReturn = "OSH0315";
+
     /// <summary>An entry point is invalid.</summary>
     public const string BadEntryPoint = "OSH0320";
 
@@ -172,6 +178,9 @@ internal sealed class ResourceDecl
     public int? ExplicitBinding { get; set; }
 
     public bool ExplicitFromVk { get; set; }
+
+    /// <summary>Lower-case <c>[[vk::image_format]]</c> name of a storage texture, or null.</summary>
+    public string? ImageFormat { get; set; }
 
     public int Set { get; set; }
 

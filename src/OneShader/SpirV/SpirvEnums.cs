@@ -11,7 +11,7 @@ internal static class Op
         TypeVector = 23, TypeMatrix = 24, TypeImage = 25, TypeSampler = 26, TypeSampledImage = 27, TypeArray = 28,
         TypeRuntimeArray = 29, TypeStruct = 30, TypePointer = 32, TypeFunction = 33, ConstantTrue = 41, ConstantFalse = 42,
         Constant = 43, ConstantComposite = 44, ConstantNull = 46, Function = 54, FunctionParameter = 55, FunctionEnd = 56,
-        FunctionCall = 57, Variable = 59, Load = 61, Store = 62, AccessChain = 65, ArrayLength = 68, Decorate = 71,
+        FunctionCall = 57, Variable = 59, ImageTexelPointer = 60, Load = 61, Store = 62, AccessChain = 65, ArrayLength = 68, Decorate = 71,
         MemberDecorate = 72, VectorExtractDynamic = 77, VectorInsertDynamic = 78, VectorShuffle = 79,
         CompositeConstruct = 80, CompositeExtract = 81, CompositeInsert = 82, Transpose = 84, SampledImage = 86,
         ImageSampleImplicitLod = 87, ImageSampleExplicitLod = 88, ImageSampleDrefImplicitLod = 89,
@@ -52,7 +52,7 @@ internal static class Cap
 {
     public const uint Matrix = 0, Shader = 1, Geometry = 2, Float16 = 9, Float64 = 10, Int64 = 11, Int16 = 22,
         ImageCubeArray = 34, SampleRateShading = 35, Sampled1D = 43, Image1D = 44, SampledCubeArray = 45,
-        SampledBuffer = 46, ImageBuffer = 47, ImageMSArray = 48, ImageQuery = 50, DerivativeControl = 51,
+        SampledBuffer = 46, ImageBuffer = 47, ImageMSArray = 48, StorageImageExtendedFormat = 49, ImageQuery = 50, DerivativeControl = 51,
         StorageImageReadWithoutFormat = 55, StorageImageWriteWithoutFormat = 56, ShaderLayer = 69, ShaderViewportIndex = 70;
 }
 
@@ -76,5 +76,5 @@ internal static class Bi
 internal static class Sc
 {
     public const uint UniformConstant = 0, Input = 1, Uniform = 2, Output = 3, Workgroup = 4, Private = 6, Function = 7,
-        StorageBuffer = 12;
+        Image = 11, StorageBuffer = 12;
 }

@@ -13,7 +13,7 @@ public class FrontendCorpusTests
     internal static FrontendResult Run(string text, string name = "a.hlsl", CompileOptions? options = null) =>
         Frontend.Run(text, name, options ?? new CompileOptions());
 
-    public static IEnumerable<object[]> GraphicsFiles() => CorpusFiles.Graphics().Select(p => new object[] { p });
+    public static IEnumerable<object[]> GraphicsFiles() => CorpusFiles.Graphics().Concat(CorpusFiles.Shaders("compute")).Select(p => new object[] { p });
 
     [Theory]
     [MemberData(nameof(GraphicsFiles))]

@@ -18,7 +18,9 @@ options always give the same bytes. Code is in `src/OneShader/SpirV/`.
 - **Resources.** A constant buffer is a `Block` struct in `Uniform`; a structured or byte-address buffer is a
   `Block` struct holding one runtime array in `StorageBuffer` (`NonWritable` when read-only). Access chains into
   a storage buffer get the leading `0` for that struct. Textures and samplers are separate variables combined
-  with `OpSampledImage` at each use. Storage images use format `Unknown`.
+  with `OpSampledImage` at each use. Storage images use the format from `[[vk::image_format]]` when the shader gives one (no read/write-without-format
+  capability then; formats outside the core set add `StorageImageExtendedFormat`) and `Unknown` otherwise. Atomics on a
+  texel go through `OpImageTexelPointer`; atomic scopes and barrier semantics match what DXC emits.
 - **Interface.** Every global variable the entry point references is listed on `OpEntryPoint`, as SPIR-V 1.4+
   requires, inputs first, then outputs, then the rest in module order. Integer and double fragment inputs (and the
   vertex outputs that feed them) are `Flat`. Pixel shaders get `OriginUpperLeft`, plus `DepthReplacing` when they

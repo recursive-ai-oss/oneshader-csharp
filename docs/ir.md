@@ -67,6 +67,13 @@ Texture operands, in order:
 | `TextureQueryLod` | texture, sampler, coordinate | |
 | `ByteAddressLoad` / `Store` | buffer, byte offset (, value) | |
 
+`AtomicRmw` and `AtomicCompareExchange` take a pointer to the target (a groupshared variable, a buffer element, or a
+one-index access chain into a byte-address buffer, which addresses a 32-bit word). On a read-write texture the first
+operand is the texture pointer and the second the integer coordinate; the values follow (`AtomicRmw`: value,
+`AtomicCompareExchange`: comparand, then new value). Both return the original value. `Barrier`'s immediate is a
+`BarrierFlags` combination. A global's `ImageFormat` (a name from `ImageFormats`, the `[[vk::image_format]]` value) says
+how a storage texture is laid out; without it the format is unspecified.
+
 Array textures put the layer in the last coordinate component. `CallIntrinsic` takes the operands of
 the HLSL intrinsic in HLSL order; intrinsics with `out` parameters (`modf`, `frexp`, `sincos`)
 take pointers. Functions with resource-pointer parameters must be inlined before a backend runs.
@@ -113,4 +120,6 @@ building and (once passes exist) after every pass.
   an element is an `AccessChain` with the index. Constant-buffer members are `AccessChain(global, type, memberIndex)`.
 - Non-constant `static` initializers run in a function `init_globals` that each wrapper calls first.
 - `&&`, `||` and non-pure `?:` are control flow with a `Phi`; pure `?:` is `Select`.
+- Initializer lists follow HLSL's flat rules: a run of values fills an aggregate in order (a vector-valued expression
+  supplies several scalars) and a braced sub-list starts a new element.
 - Dead code after `return`, `break`, `continue` and `discard` is not lowered; merge blocks nothing reaches end in `Unreachable`.

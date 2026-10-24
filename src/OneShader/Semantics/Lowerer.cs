@@ -81,6 +81,7 @@ internal sealed partial class Lowerer
                 Binding = r.Binding,
                 ResourceCount = r.Count,
                 Layout = r.Layout,
+                ImageFormat = r.ImageFormat,
                 Span = r.Span,
             };
             r.Global = g;
