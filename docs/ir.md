@@ -1,0 +1,105 @@
+# The intermediate representation
+
+One typed IR sits between the front end and every backend (SPIR-V, MSL, WGSL). Its types live in
+`src/OneShader/IR/`; the HLSL type system it shares is in `src/OneShader/Types/`.
+
+## Shape: SSA values, structured control flow, memory for locals
+
+- **Values are SSA.** Every instruction that yields a value defines it once; operands are
+  `IrValue`s (`Constant`, `Argument`, `GlobalVariable`, `Instruction`). `Phi` exists, but the lowering
+  from HLSL starts from the simplest form: each HLSL local is an `Alloca` in the entry block
+  accessed with `Load`/`Store`, and a later promotion pass can turn those into SSA with phis.
+  Backends must accept both forms.
+- **Control flow is a CFG that keeps its structure.** Blocks end in exactly one terminator (`Branch`,
+  `CondBranch`, `Switch`, `Return`, `Kill`, `Unreachable`). Header blocks carry the same markers
+  SPIR-V needs:
+  - `StructureKind.Selection`: ends in `CondBranch` or `Switch`; `MergeBlock` is where the arms rejoin.
+  - `StructureKind.Loop`: ends in `Branch`; `MergeBlock` is the exit, `ContinueBlock` is the block
+    that branches back to the header. `continue` is a branch to the continue block, `break` a
+    branch to the merge block of the innermost loop or switch.
+  - `ControlHint` carries `[unroll]`, `[loop]`, `[flatten]`, `[branch]`.
+  Passes must keep these markers valid (the verifier checks they exist and point into the function).
+  Because they are explicit, SPIR-V gets its `OpSelectionMerge`/`OpLoopMerge` directly and the text
+  backends can rebuild `if`/`for`/`switch` without a general structurizer.
+- **Addressing is logical.** `PointerType(AddressSpace, pointee)` values come only from `Alloca`,
+  globals and `AccessChain`. There is no pointer arithmetic or pointer-to-pointer. `AccessChain`
+  takes a base pointer plus indices (constant `int` for struct members, any integer for arrays and
+  vector components).
+- **Types are `HlslType`.** Scalars, vectors, matrices, arrays, structs, resources and
+  pointers are the same classes the front end uses, so lowering does not translate types. Matrix
+  constants are composites of rows.
+
+## Module layout
+
+`IrModule` holds `Globals`, `Functions` and `EntryPoints` in source order (the dump and every backend
+follow that order). An `EntryPoint` names a no-parameter void function and lists its `Inputs` and
+`Outputs`: stage variables are module globals (`GlobalKind.Input`/`Output`) with a `Location` or
+`BuiltIn`; the lowering wraps the HLSL entry function that takes and returns structs.
+
+Resources are globals of pointer-to-`ResourceType` in `AddressSpace.UniformConstant` (textures,
+samplers, typed buffers), `Uniform` (constant buffers) or `StorageBuffer` (structured and
+byte-address buffers), with `Set`/`Binding` and, for buffers, the `TypeLayout` from
+`BufferLayout`. A `cbuffer` is a `ConstantBuffer` resource whose element is a struct of its members.
+Access chains into `ConstantBuffer<T>` start inside `T` (the first index selects a member of `T`);
+chains into `StructuredBuffer<T>` start with the element index, then continue inside `T`; a chain
+with one index into a byte-address buffer addresses a 32-bit word (used for atomics).
+
+## Opcode conventions
+
+Arithmetic and comparisons are component-wise and typed by their operands; signedness and
+float-versus-integer come from the operand type, there are no separate `fadd`/`iadd` opcodes. `Mul`
+on matrices is component-wise; the matrix product is `MatMul`. `Precise` on an instruction forbids
+reassociation, fusing and algebraic rewrites. Resource operands of texture and buffer opcodes are
+pointers (the global, or an access chain into a resource array), never loaded handles.
+Texture operands, in order:
+
+| Opcode | Operands | Immediates |
+|---|---|---|
+| `TextureSample` | texture, sampler, coordinate | constant texel offset (0 to 3 values) |
+| `TextureSampleBias` / `Level` | texture, sampler, coordinate, bias or level | offset |
+| `TextureSampleGrad` | texture, sampler, coordinate, ddx, ddy | offset |
+| `TextureSampleCompare` / `CompareLevelZero` | texture, comparison sampler, coordinate, reference | offset |
+| `TextureGather` | texture, sampler, coordinate | component, then offset |
+| `TextureLoad` | texture, integer coordinate, optional level (or sample index when multisampled) | offset |
+| `TextureStore` | texture, integer coordinate, value | |
+| `TextureQuerySize` | texture, optional level | |
+| `TextureQueryLevels`, `TextureQuerySamples` | texture | |
+| `TextureQueryLod` | texture, sampler, coordinate | |
+| `ByteAddressLoad` / `Store` | buffer, byte offset (, value) | |
+
+Array textures put the layer in the last coordinate component. `CallIntrinsic` takes the operands of
+the HLSL intrinsic in HLSL order; intrinsics with `out` parameters (`modf`, `frexp`, `sincos`)
+take pointers. Functions with resource-pointer parameters must be inlined before a backend runs.
+
+## Dump format
+
+`IrPrinter.Print` is the textual form tests compare. Values are numbered in print order per function
+(`%0`, `%1`; parameters are `%arg0`), blocks by position (`bb0`), so output does not depend on object
+identity, hash order or names. Source names appear only in `;` comments. Example:
+
+```
+func @f(%arg0: int) -> int {
+bb0: ; (entry)
+  %0 = alloca : ptr<function, int> ; sum
+  store %0, 0:int
+  br bb1
+bb1: ; loop merge=bb5 continue=bb4 hint=dontunroll (for.header)
+  ...
+```
+
+## Verifier
+
+`IrVerifier.Verify` returns messages and never throws. It checks block shape (one terminator, last),
+parent links, operand ownership and in-block ordering, phi placement, the types of loads, stores,
+arithmetic, comparisons, selects, branches, calls and phis, and the structure markers. It does not
+compute dominance; a pass that moves code across blocks needs its own care. Tests run it after
+building and (once passes exist) after every pass.
+
+## Decisions worth knowing
+
+- One `Instruction` class for all opcodes, so passes can rewrite in place; `IrBuilder` provides typed
+  helpers. There are no use lists yet: `IrFunction.ReplaceUses` is linear. Add use lists when a pass
+  needs them.
+- Constants keep exact bits (`Constant.Bits`), so folding wraps integers as HLSL does and keeps float
+  results in the operand's own precision.
+- Block names and value names are hints and never take part in equality or output ordering.

@@ -1,0 +1,7 @@
+# These two naming rules fight the vocabulary of the domain this library models: HLSL's own scalar
+# names (int, float, double), WebGPU vertex format names (Float32, Uint32), the generated-bindings
+# type VertexAttribute, and flag enums named after what they flag. Renaming would make the public
+# model harder to read, so they are off for this project only.
+[*.cs]
+dotnet_diagnostic.CA1720.severity = none
+dotnet_diagnostic.CA1711.severity = none
