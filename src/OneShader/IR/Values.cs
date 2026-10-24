@@ -271,6 +271,9 @@ public sealed class GlobalVariable : IrValue
     /// <summary>Semantic text such as <c>TEXCOORD1</c>, kept for reflection and diagnostics.</summary>
     public string? Semantic { get; set; }
 
+    /// <summary>Name of the storage-image format (see <see cref="ImageFormats"/>) for read-write textures; null leaves it unspecified.</summary>
+    public string? ImageFormat { get; set; }
+
     /// <summary>Buffer byte layout for constant and storage buffer resources.</summary>
     public TypeLayout? Layout { get; set; }
 

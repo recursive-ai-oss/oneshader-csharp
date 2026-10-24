@@ -330,7 +330,9 @@ internal sealed partial class SpirvEmitter
 
     // ---- images and samplers ------------------------------------------------------------------
 
-    private uint ImageTypeId(ResourceType r)
+    private readonly HashSet<uint> _formattedImages = [];
+
+    private uint ImageTypeId(ResourceType r, int format = 0)
     {
         if (r.ResourceKind is ResourceTypeKind.ConstantBuffer || r.IsStorageBuffer)
         {
@@ -390,8 +392,23 @@ internal sealed partial class SpirvEmitter
                 break;
         }
 
-        string key = "img:" + Inv(sampled) + ":" + Inv(dim) + ":" + Inv(arrayed) + ":" + Inv(ms) + ":" + (rw ? "2" : "1");
-        return _s.DeclType(key, Op.TypeImage, sampled, dim, 0, arrayed, ms, rw ? 2u : 1u, 0);
+        if (format != 0)
+        {
+            // Vulkan: only a handful of formats are usable without the extended-format capability.
+            if (!ImageFormats.IsCore(format))
+            {
+                _s.Capabilities.Add(Cap.StorageImageExtendedFormat);
+            }
+        }
+
+        string key = "img:" + Inv(sampled) + ":" + Inv(dim) + ":" + Inv(arrayed) + ":" + Inv(ms) + ":" + (rw ? "2" : "1") + (format != 0 ? ":f" + Inv((uint)format) : "");
+        uint image = _s.DeclType(key, Op.TypeImage, sampled, dim, 0, arrayed, ms, rw ? 2u : 1u, (uint)format);
+        if (format != 0)
+        {
+            _formattedImages.Add(image);
+        }
+
+        return image;
     }
 
     private uint SampledImageTypeId(uint image) => _s.DeclType("simg:" + Inv(image), Op.TypeSampledImage, image);
@@ -768,7 +785,7 @@ internal sealed partial class SpirvEmitter
             else
             {
                 sc = Sc.UniformConstant;
-                pointee = TypeId(rt);
+                pointee = g.ImageFormat is { } fmtName && rt.IsReadWrite && rt.IsTexture ? ImageTypeId(rt, ImageFormats.Find(fmtName)) : TypeId(rt);
             }
         }
 

@@ -1344,17 +1344,33 @@ internal sealed partial class SpirvEmitter
 
     private void EmitAtomic(Instruction i)
     {
-        uint p = Ptr(i.Operands[0], out _);
-        uint scope = UIntConst(((PointerType)i.Operands[0].Type).Space == AddressSpace.Workgroup ? 2u : 1u);
+        // A texture operand (a pointer to a resource) means the atomic works on one texel: texture, coordinate, then the values.
+        bool texel = ResourceOf(i.Operands[0]) is not null;
+        int first = texel ? 2 : 1;
+        uint p;
+        uint scope;
+        if (texel)
+        {
+            uint imgPtr = Ptr(i.Operands[0], out _);
+            uint texelPtr = Emit(Op.ImageTexelPointer, PointerTo(Sc.Image, TypeId(i.Type)), imgPtr, Id(i.Operands[1]), UIntConst(0));
+            p = texelPtr;
+            scope = UIntConst(1u);
+        }
+        else
+        {
+            p = Ptr(i.Operands[0], out _);
+            scope = UIntConst(((PointerType)i.Operands[0].Type).Space == AddressSpace.Workgroup ? 2u : 1u);
+        }
+
         uint none = UIntConst(0);
         if (i.Op == Opcode.AtomicCompareExchange)
         {
-            // SPIR-V takes the new value before the comparand.
-            Direct(i, Op.AtomicCompareExchange, TypeId(i.Type), p, scope, none, none, Id(i.Operands[2]), Id(i.Operands[1]));
+            // SPIR-V takes the new value before the comparand; the IR keeps HLSL's order (comparand, value).
+            Direct(i, Op.AtomicCompareExchange, TypeId(i.Type), p, scope, none, none, Id(i.Operands[first + 1]), Id(i.Operands[first]));
             return;
         }
 
-        bool signed = KindOf(i.Operands[1].Type) == NK.SInt;
+        bool signed = KindOf(i.Operands[first].Type) == NK.SInt;
         uint op = (AtomicOp)i.Immediates[0] switch
         {
             AtomicOp.Add => Op.AtomicIAdd,
@@ -1365,7 +1381,7 @@ internal sealed partial class SpirvEmitter
             AtomicOp.Xor => Op.AtomicXor,
             _ => Op.AtomicExchange,
         };
-        Direct(i, op, TypeId(i.Type), p, scope, none, Id(i.Operands[1]));
+        Direct(i, op, TypeId(i.Type), p, scope, none, Id(i.Operands[first]));
     }
 
     private void EmitBarrier(Instruction i)
