@@ -13,6 +13,7 @@
 !/fuzz
 !/tools
 !/corpus
+!/docs
 
 # Build output and downloaded tools, wherever they land inside the allowed paths.
 bin/
