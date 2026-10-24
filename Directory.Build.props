@@ -14,15 +14,13 @@
   </PropertyGroup>
 
   <!--
-    Build output location. Order: the ONESHADER_ARTIFACTS environment variable (or an
-    /p:OneShaderArtifacts=... argument), then the default scratch directory below when its
-    parent exists on this machine, then .artifacts next to this file. The last step is what a
-    fresh clone or a remote checkout gets, so nothing ever needs a particular machine layout.
+    Build output location. Order: an /p:OneShaderArtifacts=... argument, then the
+    ONESHADER_ARTIFACTS environment variable, then .artifacts next to this file. Point the
+    variable outside the tree to keep build output away from the sources; a fresh clone needs
+    nothing set.
   -->
   <PropertyGroup>
-    <OneShaderDefaultArtifacts>$(MSBuildThisFileDirectory).artifacts</OneShaderDefaultArtifacts>
     <OneShaderArtifacts Condition="'$(OneShaderArtifacts)' == ''">$(ONESHADER_ARTIFACTS)</OneShaderArtifacts>
-    <OneShaderArtifacts Condition="'$(OneShaderArtifacts)' == '' And Exists('$([System.IO.Path]::GetDirectoryName($(OneShaderDefaultArtifacts)))')">$(OneShaderDefaultArtifacts)</OneShaderArtifacts>
     <OneShaderArtifacts Condition="'$(OneShaderArtifacts)' == ''">$(MSBuildThisFileDirectory).artifacts</OneShaderArtifacts>
     <ArtifactsPath>$(OneShaderArtifacts)</ArtifactsPath>
   </PropertyGroup>

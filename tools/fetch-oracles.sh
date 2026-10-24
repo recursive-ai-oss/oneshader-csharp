@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fetches the pinned reference tools (see oracles.env) into a directory:
-#   fetch-oracles.sh [DIR]      DIR defaults to $ONESHADER_TOOLS, then the shared local cache.
+#   fetch-oracles.sh [DIR]      DIR defaults to $ONESHADER_TOOLS, then .tools in the repo.
 # Result: DIR/bin/{dxc,spirv-val,spirv-dis,spirv-as,spirv-opt}, DIR/lib/ (DXC libraries).
 # Idempotent (a stamp file records the pinned versions), verifies SHA-256, needs no sudo and
 # installs nothing outside DIR. Linux x64 only.
@@ -10,7 +10,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=oracles.env
 . "$here/oracles.env"
 
-dir="${1:-${ONESHADER_TOOLS:-$PWD/.tools}}"
+dir="${1:-${ONESHADER_TOOLS:-$here/../.tools}}"
 mkdir -p "$dir"
 dir="$(cd "$dir" && pwd)"
 
