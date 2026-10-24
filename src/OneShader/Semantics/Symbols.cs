@@ -218,6 +218,8 @@ internal sealed class ParamInfo
     public Expression? Default { get; init; }
 
     public ParameterDeclaration? Decl { get; init; }
+
+    public VariableSymbol? Symbol { get; set; }
 }
 
 internal sealed class FunctionSymbol : Symbol

@@ -700,6 +700,9 @@ public sealed class Declarator(SourceSpan span, Identifier name, IReadOnlyList<E
 
     /// <summary>The declared type including array dimensions; set by semantic analysis.</summary>
     public HlslType? Type { get; set; }
+
+    /// <summary>The variable this declares, set by semantic analysis.</summary>
+    internal Semantics.VariableSymbol? Symbol { get; set; }
 }
 
 /// <summary>A variable declaration with one or more declarators: <c>static const float a = 1, b[2];</c>. Also a struct or cbuffer member, or a global.</summary>

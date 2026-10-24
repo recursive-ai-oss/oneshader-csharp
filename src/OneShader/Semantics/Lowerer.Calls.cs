@@ -1,0 +1,760 @@
+using System;
+using System.Collections.Generic;
+using OneShader.Diagnostics;
+using OneShader.IR;
+using OneShader.Syntax;
+using OneShader.Types;
+
+namespace OneShader.Semantics;
+
+internal sealed partial class Lowerer
+{
+    private void Br(BasicBlock target)
+    {
+        _b.Branch(target);
+        _reached.Add(target);
+    }
+
+    private void CondBr(IrValue cond, BasicBlock a, BasicBlock b)
+    {
+        _b.CondBranch(cond, a, b);
+        _reached.Add(a);
+        _reached.Add(b);
+    }
+
+    // ------------------------------------------------------------ calls
+
+    private IrValue RvCall(CallExpression c)
+    {
+        var info = c.Info!;
+        if (info.Function is not null)
+        {
+            return CallUser(c, info.Function);
+        }
+
+        if (info.Builtin is not null)
+        {
+            return CallBuiltin(c, info.Builtin);
+        }
+
+        if (info.TargetType is not null)
+        {
+            return RvConstruct(info.TargetType, c.Arguments);
+        }
+
+        Fail("This call cannot be compiled.", c.Span);
+        return Constant.Zero(c.Type ?? HlslType.Void);
+    }
+
+    private IrValue CallUser(CallExpression c, FunctionSymbol sym)
+    {
+        var target = sym.Definition ?? sym;
+        var irf = _fns[target];
+        var args = new List<IrValue>();
+        var copyOut = new List<(IrValue Temp, Expression Arg)>();
+        for (int i = 0; i < sym.Params.Count; i++)
+        {
+            var p = sym.Params[i];
+            if (p.Type is ResourceType or SamplerType or ArrayType { Element: ResourceType or SamplerType })
+            {
+                var rp = i < c.Arguments.Count ? ResourcePointer(c.Arguments[i]) : null;
+                if (rp is null)
+                {
+                    Fail("Resource arguments must be resource variables.", c.Span);
+                    rp = Constant.Zero(ScalarType.Int);
+                }
+
+                args.Add(rp);
+                continue;
+            }
+
+            if (i >= c.Arguments.Count)
+            {
+                args.Add(Coerce(Rv(p.Default!), p.Type));
+                continue;
+            }
+
+            var arg = c.Arguments[i];
+            if (!p.IsOut)
+            {
+                args.Add(Coerce(Rv(arg), p.Type));
+                continue;
+            }
+
+            var addr = Address(arg);
+            if (addr is not null && addr.Type is PointerType { Space: AddressSpace.Function } && arg.Type!.Equals(p.Type))
+            {
+                args.Add(addr);
+                continue;
+            }
+
+            var tmp = _b.Alloca(p.Type, "out");
+            if ((p.Mods & Modifiers.In) != 0)
+            {
+                _b.Store(tmp, Coerce(Rv(arg), p.Type));
+            }
+
+            args.Add(tmp);
+            copyOut.Add((tmp, arg));
+        }
+
+        var call = _b.Call(irf, [.. args]);
+        foreach (var (tmp, arg) in copyOut)
+        {
+            Store(arg, Coerce(_b.Load(tmp), arg.Type!));
+        }
+
+        return call;
+    }
+
+    private IrValue Arg(CallExpression c, BuiltinCall bi, int i) => Coerce(Rv(c.Arguments[i]), bi.ParamTypes[i]);
+
+    private IrValue CallBuiltin(CallExpression c, BuiltinCall bi)
+    {
+        switch (bi.Kind)
+        {
+            case BuiltinKind.Intrinsic:
+            {
+                var ops = new IrValue[bi.ParamTypes.Length];
+                for (int i = 0; i < ops.Length; i++)
+                {
+                    ops[i] = Arg(c, bi, i);
+                }
+
+                return _b.CallIntrinsic(bi.Ir, bi.Result, ops);
+            }
+
+            case BuiltinKind.Op:
+                return _b.Binary(bi.Op, Arg(c, bi, 0), Arg(c, bi, 1));
+            case BuiltinKind.Mad:
+            {
+                var a = Arg(c, bi, 0);
+                var b = Arg(c, bi, 1);
+                var d = Arg(c, bi, 2);
+                if (bi.Result.ScalarElement!.IsFloatingPoint)
+                {
+                    return _b.CallIntrinsic(Intrinsic.Fma, bi.Result, a, b, d);
+                }
+
+                return _b.Binary(Opcode.Add, _b.Binary(Opcode.Mul, a, b), d);
+            }
+
+            case BuiltinKind.Sign:
+            {
+                var v = Arg(c, bi, 0);
+                if (v.Type.ScalarElement!.IsFloatingPoint)
+                {
+                    var s = _b.CallIntrinsic(Intrinsic.Sign, v.Type, v);
+                    return _b.Convert(s, bi.Result);
+                }
+
+                return _b.CallIntrinsic(Intrinsic.Sign, v.Type, v);
+            }
+
+            case BuiltinKind.Transpose:
+                return _b.Emit(Opcode.Transpose, bi.Result, Arg(c, bi, 0));
+            case BuiltinKind.Mul:
+                return LowerMul(c, bi);
+            case BuiltinKind.AsType:
+            {
+                var v = Arg(c, bi, 0);
+                return v.Type.ScalarElement == bi.Result.ScalarElement ? v : _b.Bitcast(v, bi.Result);
+            }
+
+            case BuiltinKind.Select:
+                return _b.Select(Arg(c, bi, 0), Arg(c, bi, 1), Arg(c, bi, 2));
+            case BuiltinKind.Clip:
+                return LowerClip(c, bi);
+            case BuiltinKind.BufferLoad:
+                return LowerBufferLoad(c, bi);
+            case BuiltinKind.GetDimensions:
+                return LowerGetDimensions(c, bi);
+            default:
+                return LowerTexture(c, bi);
+        }
+    }
+
+    private IrValue LowerMul(CallExpression c, BuiltinCall bi)
+    {
+        var a = Arg(c, bi, 0);
+        var b = Arg(c, bi, 1);
+        if (a.Type is ScalarType)
+        {
+            return _b.Binary(Opcode.Mul, b.Type is ScalarType ? a : Splat(a, b.Type), b);
+        }
+
+        if (b.Type is ScalarType)
+        {
+            return _b.Binary(Opcode.Mul, a, Splat(b, a.Type));
+        }
+
+        if (a.Type is VectorType && b.Type is VectorType)
+        {
+            return _b.CallIntrinsic(Intrinsic.Dot, bi.Result, a, b);
+        }
+
+        return _b.Emit(Opcode.MatMul, bi.Result, a, b);
+    }
+
+    private IrValue LowerClip(CallExpression c, BuiltinCall bi)
+    {
+        var v = Arg(c, bi, 0);
+        var zero = Splat(Constant.Float(0), v.Type);
+        IrValue cond = _b.Compare(Opcode.Lt, v, zero);
+        if (v.Type is VectorType)
+        {
+            cond = _b.CallIntrinsic(Intrinsic.Any, ScalarType.Bool, cond);
+        }
+
+        var hdr = _b.Block!;
+        var kill = _f.AddBlock("clip.kill");
+        var cont = _f.AddBlock("clip.end");
+        CondBr(cond, kill, cont);
+        IrBuilder.MarkSelection(hdr, cont);
+        _b.Block = kill;
+        _b.Kill();
+        _b.Block = cont;
+        return Constant.Zero(ScalarType.Int);
+    }
+
+    private IrValue LowerBufferLoad(CallExpression c, BuiltinCall bi)
+    {
+        var ma = (MemberAccessExpression)c.Callee;
+        var rt = (ResourceType)ma.Target.Type!;
+        var buf = ResourcePointer(ma.Target)!;
+        var idx = Arg(c, bi, 0);
+        if (rt.ResourceKind is ResourceTypeKind.StructuredBuffer or ResourceTypeKind.RWStructuredBuffer)
+        {
+            return _b.Load(_b.AccessChain(buf, rt.Element!, idx));
+        }
+
+        return _b.Emit(Opcode.TextureLoad, rt.Element!, buf, idx);
+    }
+
+    private IrValue LowerGetDimensions(CallExpression c, BuiltinCall bi)
+    {
+        var ma = (MemberAccessExpression)c.Callee;
+        var rt = (ResourceType)ma.Target.Type!;
+        var res = ResourcePointer(ma.Target)!;
+        var values = new List<IrValue>();
+        int first = 0;
+        if (rt.ResourceKind is ResourceTypeKind.StructuredBuffer or ResourceTypeKind.RWStructuredBuffer)
+        {
+            values.Add(_b.Emit(Opcode.ArrayLength, ScalarType.UInt, res));
+            int stride = (res as GlobalVariable)?.Layout?.Size ?? 0;
+            values.Add(Constant.UInt((uint)stride));
+        }
+        else
+        {
+            int n = bi.Extra;
+            var sizeType = n == 1 ? (HlslType)ScalarType.UInt : HlslType.Vector(ScalarType.UInt, n);
+            IrValue size;
+            if (bi.HasOffset)
+            {
+                size = _b.Emit(Opcode.TextureQuerySize, sizeType, res, Coerce(Rv(c.Arguments[0]), ScalarType.UInt));
+                first = 1;
+            }
+            else if (rt.IsReadWrite || rt.ResourceKind is ResourceTypeKind.Buffer or ResourceTypeKind.Texture2DMS or ResourceTypeKind.Texture2DMSArray)
+            {
+                size = _b.Emit(Opcode.TextureQuerySize, sizeType, res);
+            }
+            else
+            {
+                size = _b.Emit(Opcode.TextureQuerySize, sizeType, res, Constant.UInt(0));
+            }
+
+            if (n == 1)
+            {
+                values.Add(size);
+            }
+            else
+            {
+                for (int i = 0; i < n; i++)
+                {
+                    values.Add(Extract(size, ScalarType.UInt, i));
+                }
+            }
+
+            if (c.Arguments.Count - first > n)
+            {
+                values.Add(_b.Emit(Opcode.TextureQueryLevels, ScalarType.UInt, res));
+            }
+        }
+
+        for (int i = 0; i < values.Count && first + i < c.Arguments.Count; i++)
+        {
+            var arg = c.Arguments[first + i];
+            Store(arg, Coerce(values[i], arg.Type!));
+        }
+
+        return Constant.Zero(ScalarType.Int);
+    }
+
+    private static int[]? ConstOffsets(Expression e)
+    {
+        e = UnwrapParen(e);
+        if (e.Info?.Const is { } cv && !cv.IsFloat)
+        {
+            return [(int)cv.Int];
+        }
+
+        if (e is ConstructExpression ce)
+        {
+            var list = new List<int>();
+            foreach (var a in ce.Arguments)
+            {
+                var sub = ConstOffsets(a);
+                if (sub is null)
+                {
+                    return null;
+                }
+
+                list.AddRange(sub);
+            }
+
+            int need = ce.Type is VectorType v ? v.Count : 1;
+            if (list.Count == 1 && need > 1)
+            {
+                var splat = new int[need];
+                Array.Fill(splat, list[0]);
+                return splat;
+            }
+
+            return [.. list];
+        }
+
+        return null;
+    }
+
+    private void AddOffsets(Instruction i, CallExpression c, int argIndex)
+    {
+        var offs = ConstOffsets(c.Arguments[argIndex]);
+        if (offs is null)
+        {
+            _diag.Error(SemanticCodes.NotConstant, "A texel offset must be a compile-time constant such as int2(1, 0).", c.Arguments[argIndex].Span);
+            return;
+        }
+
+        i.Immediates.AddRange(offs);
+    }
+
+    private IrValue LowerTexture(CallExpression c, BuiltinCall bi)
+    {
+        var ma = (MemberAccessExpression)c.Callee;
+        var tex = ResourcePointer(ma.Target)!;
+        var ops = new List<IrValue> { tex };
+        var rt = (ResourceType)ma.Target.Type!;
+        int n = bi.ParamTypes.Length;
+        int offsetArg = bi.HasOffset ? n - 1 : -1;
+        switch (bi.TextureOp)
+        {
+            case Opcode.TextureLoad:
+            {
+                int dims = bi.Extra;
+                var v = Arg(c, bi, 0);
+                if (rt.IsReadWrite)
+                {
+                    ops.Add(v);
+                }
+                else if (rt.ResourceKind is ResourceTypeKind.Texture2DMS or ResourceTypeKind.Texture2DMSArray)
+                {
+                    ops.Add(v);
+                    ops.Add(Arg(c, bi, 1));
+                    offsetArg = -1;
+                }
+                else
+                {
+                    var iv = (VectorType)v.Type;
+                    IrValue coord = dims == 1 ? Extract(v, ScalarType.Int, 0) : _b.Shuffle(v, v, HlslType.Vector(ScalarType.Int, dims), SeqInts(dims));
+                    ops.Add(coord);
+                    ops.Add(Extract(v, iv.Element, dims));
+                }
+
+                break;
+            }
+
+            case Opcode.TextureQueryLod:
+            {
+                ops.Add(Arg(c, bi, 0));
+                ops.Add(Arg(c, bi, 1));
+                var q = _b.Emit(Opcode.TextureQueryLod, HlslType.Vector(ScalarType.Float, 2), [.. ops]);
+                return Extract(q, ScalarType.Float, bi.Extra);
+            }
+
+            default:
+            {
+                int plain = bi.HasOffset ? n - 1 : n;
+                for (int i = 0; i < plain; i++)
+                {
+                    ops.Add(bi.ParamTypes[i] is SamplerType ? ResourcePointer(c.Arguments[i])! : Arg(c, bi, i));
+                }
+
+                break;
+            }
+        }
+
+        var inst = _b.Emit(bi.TextureOp, bi.Result, [.. ops]);
+        if (bi.TextureOp == Opcode.TextureGather)
+        {
+            inst.Immediates.Add(bi.Extra);
+        }
+
+        if (offsetArg >= 0)
+        {
+            AddOffsets(inst, c, offsetArg);
+        }
+
+        return inst;
+    }
+
+    private static int[] SeqInts(int n)
+    {
+        var a = new int[n];
+        for (int i = 0; i < n; i++)
+        {
+            a[i] = i;
+        }
+
+        return a;
+    }
+
+    // ------------------------------------------------------------ statements
+
+    private void LowerBlockBody(IReadOnlyList<Statement> list)
+    {
+        foreach (var s in list)
+        {
+            if (_terminated)
+            {
+                break;
+            }
+
+            LowerStatement(s);
+        }
+    }
+
+    private static ControlHint LoopHint(IReadOnlyList<AttributeSyntax> attrs)
+    {
+        foreach (var a in attrs)
+        {
+            switch (a.Name.ToString())
+            {
+                case "unroll": return ControlHint.Unroll;
+                case "loop": return ControlHint.DontUnroll;
+                case "flatten": return ControlHint.Flatten;
+                case "branch": return ControlHint.Branch;
+            }
+        }
+
+        return ControlHint.None;
+    }
+
+    private IrValue Condition(Expression e) => Coerce(Rv(e), ScalarType.Bool);
+
+    /// <summary>Continues lowering in <paramref name="merge"/>, or closes it when nothing can reach it.</summary>
+    private void Continue(BasicBlock merge)
+    {
+        _b.Block = merge;
+        if (_reached.Contains(merge))
+        {
+            _terminated = false;
+        }
+        else
+        {
+            _b.Unreachable();
+            _terminated = true;
+        }
+    }
+
+    private void LowerStatement(Statement s)
+    {
+        if (++_depth > 1024)
+        {
+            _depth--;
+            Fail("The statements are nested too deeply to compile.", s.Span);
+            _terminated = true;
+            return;
+        }
+
+        _b.Span = s.Span;
+        try
+        {
+            LowerStatementCore(s);
+        }
+        finally
+        {
+            _depth--;
+        }
+    }
+
+    private void LowerStatementCore(Statement s)
+    {
+        switch (s)
+        {
+            case BlockStatement b:
+                LowerBlockBody(b.Statements);
+                break;
+            case ExpressionStatement e:
+                Rv(e.Expression);
+                break;
+            case DeclarationStatement { Declaration: VariableDeclaration v }:
+                foreach (var d in v.Declarators)
+                {
+                    if (d.Symbol is not VariableSymbol sym)
+                    {
+                        continue;
+                    }
+
+                    _b.Span = d.Span;
+                    var slot = _b.Alloca(sym.Type, sym.Name);
+                    sym.Ir = slot;
+                    if (d.Initializer is not null)
+                    {
+                        _b.Store(slot, LowerInitializer(d.Initializer, sym.Type));
+                    }
+                }
+
+                break;
+            case IfStatement i:
+                LowerIf(i);
+                break;
+            case ForStatement f:
+                LowerFor(f);
+                break;
+            case WhileStatement w:
+                LowerWhile(w);
+                break;
+            case DoWhileStatement dw:
+                LowerDoWhile(dw);
+                break;
+            case SwitchStatement sw:
+                LowerSwitch(sw);
+                break;
+            case BreakStatement:
+                Br(_jumps[^1].Break);
+                _terminated = true;
+                break;
+            case ContinueStatement:
+                for (int k = _jumps.Count - 1; k >= 0; k--)
+                {
+                    if (_jumps[k].Continue is { } ct)
+                    {
+                        Br(ct);
+                        break;
+                    }
+                }
+
+                _terminated = true;
+                break;
+            case DiscardStatement:
+                _b.Kill();
+                _terminated = true;
+                break;
+            case ReturnStatement r:
+                if (r.Value is null)
+                {
+                    _b.Return();
+                }
+                else
+                {
+                    _b.Return(Coerce(LowerInitializer(r.Value, _curRet), _curRet));
+                }
+
+                _terminated = true;
+                break;
+        }
+    }
+
+    private HlslType _curRet => _f.ReturnType;
+
+    private void LowerIf(IfStatement i)
+    {
+        var cond = Condition(i.Condition);
+        var hdr = _b.Block!;
+        var then = _f.AddBlock("if.then");
+        var els = i.Else is null ? null : _f.AddBlock("if.else");
+        var merge = _f.AddBlock("if.end");
+        CondBr(cond, then, els ?? merge);
+        IrBuilder.MarkSelection(hdr, merge, LoopHint(i.Attributes));
+        _b.Block = then;
+        _terminated = false;
+        LowerStatement(i.Then);
+        if (!_terminated)
+        {
+            Br(merge);
+        }
+
+        if (els is not null)
+        {
+            _b.Block = els;
+            _terminated = false;
+            LowerStatement(i.Else!);
+            if (!_terminated)
+            {
+                Br(merge);
+            }
+        }
+
+        Continue(merge);
+    }
+
+    private void LowerFor(ForStatement f)
+    {
+        if (f.Initializer is not null)
+        {
+            LowerStatement(f.Initializer);
+        }
+
+        LowerLoop(f.Condition, f.Step, f.Body, f.Attributes, false);
+    }
+
+    private void LowerWhile(WhileStatement w) => LowerLoop(w.Condition, null, w.Body, w.Attributes, false);
+
+    private void LowerLoop(Expression? cond, Expression? step, Statement body, IReadOnlyList<AttributeSyntax> attrs, bool unused)
+    {
+        _ = unused;
+        var header = _f.AddBlock("loop.header");
+        var condBlock = cond is null ? null : _f.AddBlock("loop.cond");
+        var bodyBlock = _f.AddBlock("loop.body");
+        var cont = _f.AddBlock("loop.continue");
+        var exit = _f.AddBlock("loop.exit");
+        Br(header);
+        _b.Block = header;
+        Br(condBlock ?? bodyBlock);
+        IrBuilder.MarkLoop(header, exit, cont, LoopHint(attrs));
+        if (condBlock is not null)
+        {
+            _b.Block = condBlock;
+            var c = Condition(cond!);
+            CondBr(c, bodyBlock, exit);
+        }
+
+        _b.Block = bodyBlock;
+        _terminated = false;
+        _jumps.Add((exit, cont));
+        LowerStatement(body);
+        _jumps.RemoveAt(_jumps.Count - 1);
+        if (!_terminated)
+        {
+            Br(cont);
+        }
+
+        _b.Block = cont;
+        _terminated = false;
+        if (!_reached.Contains(cont))
+        {
+            // Nothing continues: the step is dead code but the block must still branch back.
+            Br(header);
+        }
+        else
+        {
+            if (step is not null)
+            {
+                Rv(step);
+            }
+
+            Br(header);
+        }
+
+        Continue(exit);
+    }
+
+    private void LowerDoWhile(DoWhileStatement d)
+    {
+        var header = _f.AddBlock("do.header");
+        var bodyBlock = _f.AddBlock("do.body");
+        var cont = _f.AddBlock("do.continue");
+        var exit = _f.AddBlock("do.exit");
+        Br(header);
+        _b.Block = header;
+        Br(bodyBlock);
+        IrBuilder.MarkLoop(header, exit, cont, LoopHint(d.Attributes));
+        _b.Block = bodyBlock;
+        _terminated = false;
+        _jumps.Add((exit, cont));
+        LowerStatement(d.Body);
+        _jumps.RemoveAt(_jumps.Count - 1);
+        if (!_terminated)
+        {
+            Br(cont);
+        }
+
+        _b.Block = cont;
+        _terminated = false;
+        if (_reached.Contains(cont))
+        {
+            var c = Condition(d.Condition);
+            CondBr(c, header, exit);
+        }
+        else
+        {
+            Br(header);
+        }
+
+        Continue(exit);
+    }
+
+    private void LowerSwitch(SwitchStatement sw)
+    {
+        var sel = Rv(sw.Selector);
+        if (sel.Type is not ScalarType { IsInteger: true })
+        {
+            sel = Coerce(sel, ScalarType.Int);
+        }
+
+        var hdr = _b.Block!;
+        var merge = _f.AddBlock("switch.end");
+        var blocks = new List<BasicBlock>();
+        var cases = new List<KeyValuePair<int, BasicBlock>>();
+        BasicBlock? def = null;
+        foreach (var sec in sw.Sections)
+        {
+            var bb = _f.AddBlock("switch.case");
+            blocks.Add(bb);
+            foreach (var l in sec.Labels)
+            {
+                if (l.Value is null)
+                {
+                    def = bb;
+                }
+                else
+                {
+                    cases.Add(new KeyValuePair<int, BasicBlock>((int)l.Value.Info!.Const!.Value.Int, bb));
+                }
+            }
+        }
+
+        _b.Switch(sel, def ?? merge, cases);
+        _reached.Add(def ?? merge);
+        foreach (var c in cases)
+        {
+            _reached.Add(c.Value);
+        }
+
+        IrBuilder.MarkSelection(hdr, merge, ControlHint.None);
+        _jumps.Add((merge, null));
+        for (int i = 0; i < sw.Sections.Count; i++)
+        {
+            _b.Block = blocks[i];
+            _terminated = false;
+            LowerBlockBody(sw.Sections[i].Statements);
+            if (!_terminated)
+            {
+                Br(i + 1 < blocks.Count ? blocks[i + 1] : merge);
+            }
+        }
+
+        _jumps.RemoveAt(_jumps.Count - 1);
+        // Section blocks nothing jumps to (no label reaches them) still need a valid end.
+        foreach (var bb in blocks)
+        {
+            if (!_reached.Contains(bb) && bb.Terminator is null)
+            {
+                _b.Block = bb;
+                _b.Unreachable();
+            }
+        }
+
+        Continue(merge);
+    }
+}

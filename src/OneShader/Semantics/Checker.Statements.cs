@@ -191,6 +191,7 @@ internal sealed partial class Checker
 
                 var vs = new VariableSymbol(p.Name, p.Decl!.Name!.Span, VarKind.Param, p.Type, p.Mods) { Parameter = p.Decl };
                 Define(_scope, vs);
+                p.Symbol = vs;
             }
 
             CheckStatementList(f.Decl.Body!.Statements);
@@ -513,7 +514,10 @@ internal sealed partial class Checker
                 }
             }
 
-            Define(_scope, sym);
+            if (Define(_scope, sym))
+            {
+                d.Symbol = sym;
+            }
         }
     }
 }

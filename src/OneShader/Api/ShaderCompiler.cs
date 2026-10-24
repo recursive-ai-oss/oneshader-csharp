@@ -179,18 +179,13 @@ public static class ShaderCompiler
     /// <param name="path">The file path as the user knows it; used in diagnostics and to resolve includes.</param>
     /// <param name="options">Settings; defaults apply when null.</param>
     /// <param name="cancellationToken">Cancels a long compile.</param>
-    /// <returns>The result. Currently every compile returns an error diagnostic saying the pipeline is not implemented yet.</returns>
+    /// <returns>The result: diagnostics, and reflection when there were no errors. Code generation for the targets is not wired in yet, so <see cref="CompileResult.Blobs"/> is empty.</returns>
     public static CompileResult Compile(string source, string path, CompileOptions? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(path);
         cancellationToken.ThrowIfCancellationRequested();
-        _ = options;
-        var bag = new DiagnosticBag();
-        bag.Error(
-            ApiDiagnosticCodes.NotImplemented,
-            "The HLSL compiler pipeline is not implemented yet in this build; nothing was compiled.",
-            new SourceSpan(path, 1, 1));
-        return new CompileResult(bag.Items, [], null);
+        var result = Semantics.Frontend.Run(source, path, options ?? new CompileOptions(), cancellationToken);
+        return new CompileResult(result.Diagnostics.Items, [], result.Reflection);
     }
 }

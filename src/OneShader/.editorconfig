@@ -5,3 +5,8 @@
 [*.cs]
 dotnet_diagnostic.CA1720.severity = none
 dotnet_diagnostic.CA1711.severity = none
+
+# The lowering helpers return IrValue on purpose: a result may be a constant, an argument or an instruction
+# depending on the input, and narrowing each signature to today's single implementation type would only
+# make later folding changes noisy. The devirtualization gain the rule measures is irrelevant here.
+dotnet_diagnostic.CA1859.severity = none
