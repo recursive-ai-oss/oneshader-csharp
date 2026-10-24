@@ -39,7 +39,7 @@ Shaders/Sprite.hlsl(12,17): error OSH0204: 'Atlass' is not declared. Did you mea
 
 ## What is generated
 
-One `static partial class` per HLSL file, named after the file, in the namespace
+One `static partial class` per HLSL file, named after the file (see Names below), in the namespace
 `<RootNamespace>.Shaders` (overridable). Nothing uses reflection or file I/O; output is
 deterministic.
 
@@ -80,6 +80,25 @@ The support types (`ShaderStage`, `ResourceKind`, `VertexFormat`, `VertexAttribu
 `ResourceBinding`) live in `RecursiveAI.OneShader`, which the build package brings in, so a
 rendering layer in another assembly can accept them. When only these types are used, trimming
 removes the compiler from a NativeAOT app.
+
+## Names
+
+C# warns about type names made only of lower-case ASCII letters (CS8981), which is an error in
+projects that treat warnings as errors. So every generated **type** name (the file's class, constant
+buffers, structs, the classes under `Bindings`, entry-point classes) follows one rule:
+
+- A name with an upper-case letter keeps its spelling: `Quad`, `Tile`, `UiRect`, `Frame`. Characters
+  that cannot be in an identifier (`-`, `.`, space) become `_`: `UI-rect` gives `UI_rect`.
+- Any other name is turned into PascalCase: split at `_` and at characters that cannot be in an
+  identifier, upper-case the first letter of each part, join. `sprite` gives `Sprite`, `msdf_text`
+  gives `MsdfText`, `ui-rect` gives `UiRect`, `vs_main` gives `VsMain`.
+- A name that starts with a digit gets a `_` in front: `2d_sprite` gives `_2dSprite`.
+- The `ClassName` item metadata is used exactly as written.
+
+Strings are never changed: `EntryPoint` is still `"vs_main"`, and `Bindings.All` lists the HLSL
+resource names. Members (struct fields, properties, constants) keep their HLSL spelling; a C#
+keyword is escaped with `@` (`@class`). Two names that map to the same C# name, such as `ui-rect`
+and `ui_rect`, are a build error that says to rename one or set `ClassName`.
 
 ## Layout rules
 
