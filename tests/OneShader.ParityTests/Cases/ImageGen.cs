@@ -41,6 +41,7 @@ public static class ImageGen
                         "sdf_glyph" => Sdf(u, v, 0f, 0f),
                         "msdf_glyph" => [Sdf(u, v, 0.012f, 0f)[0], Sdf(u, v, -0.012f, 0.012f)[0], Sdf(u, v, 0f, -0.012f)[0], 1f],
                         "tiles" => Tile(x, y, u, v, l),
+                        "ids" => Ids(x, y, l, uint.Parse(args[0], c), uint.Parse(args[1], c)),
                         _ => throw new FormatException($"unknown image generator '{name}'"),
                     };
                     int o = (((l * height) + y) * width + x) * 4;
@@ -92,6 +93,14 @@ public static class ImageGen
         return [s, s, s, 1f];
     }
 
+    // Tile ids for an integer texture: about one cell in five is empty (0), the rest are 1..count. The red channel carries the id.
+    private static float[] Ids(int x, int y, int layer, uint count, uint seed)
+    {
+        var rng = new DataGen.Rng(seed ^ (uint)(x * 73856093) ^ (uint)(y * 19349663) ^ (uint)(layer * 83492791));
+        uint r = rng.Next();
+        return [(r >> 8) % 5 == 0 ? 0f : 1f + ((r >> 12) % count), 0f, 0f, 0f];
+    }
+
     private static readonly float[][] Palette =
     [
         [0.80f, 0.25f, 0.20f, 1f],
@@ -115,6 +124,7 @@ public static class ImageGen
         PixelFormat.R8 => 1,
         PixelFormat.Rgba8 => 4,
         PixelFormat.R32F => 4,
+        PixelFormat.R32UInt => 4,
         _ => 16,
     };
 
@@ -135,6 +145,9 @@ public static class ImageGen
                     {
                         bytes[(i * 4) + k] = ToByte(rgba[(i * 4) + k]);
                     }
+                    break;
+                case PixelFormat.R32UInt:
+                    BitConverter.TryWriteBytes(bytes.AsSpan(i * 4), (uint)rgba[i * 4]);
                     break;
                 case PixelFormat.R32F:
                     BitConverter.TryWriteBytes(bytes.AsSpan(i * 4), rgba[i * 4]);

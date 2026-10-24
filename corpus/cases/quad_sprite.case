@@ -1,0 +1,29 @@
+# The renderer's instanced quads, sprite pixel shader: an axis-aligned quad, a rotated tinted quad and a translucent one over a checkerboard.
+case quad_sprite
+shader 2d/renderer/quad.hlsl
+graphics vs=VSMain ps=PSSprite
+target 128 128 background=checker(8)
+blend premul
+tolerance 2
+vertexbuffer 0 44 instance :
+  8.0 8.0  48.0 0.0  0.0 48.0  0.0 0.0 1.0 1.0  0xFFFFFFFFu
+  80.0 16.0  30.0 20.0  -20.0 30.0  0.25 0.25 0.5 0.5  0xFF40C0FFu
+  20.0 70.0  88.0 0.0  0.0 40.0  0.0 0.5 1.0 0.5  0x99FFFFFFu
+attr 0 float2 0
+attr 1 float2 8
+attr 2 float2 16
+attr 3 float4 24
+attr 4 unorm8x4 40
+draw vertices=6 instances=3
+uniform 0 0 : 128.0 128.0 0.0 0.0
+texture 1 0 32x32 rgba8 photo
+sampler 1 1 linear clamp
+uniform 2 0 :
+  0.0 0.0 0.0 0.0
+  0.0 0.0 0.0 0.0
+  0.0 0.0 0.0 0.0
+  0.0 0.0 0.0 0.0
+  0.0 0.0 0.0 0.0
+  0.0 0.0 0.0 0.0
+  0.0 0.0 0.0 0.0
+  0.0 0.0 0.0 0.0

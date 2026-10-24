@@ -1,0 +1,27 @@
+# Colour-grade pixel shader of the renderer: exposure, contrast, saturation, tint and vignette over a 64x64 photo.
+case quad_grade
+shader 2d/renderer/quad.hlsl
+graphics vs=VSMain ps=PSGrade
+target 64 64
+blend premul
+tolerance 2
+vertexbuffer 0 44 instance :
+  0.0 0.0  64.0 0.0  0.0 64.0  0.0 0.0 1.0 1.0  0xCCFFFFFFu
+attr 0 float2 0
+attr 1 float2 8
+attr 2 float2 16
+attr 3 float4 24
+attr 4 unorm8x4 40
+draw vertices=6 instances=1
+uniform 0 0 : 64.0 64.0 0.0 0.0
+texture 1 0 64x64 rgba8 photo
+sampler 1 1 linear clamp
+uniform 2 0 :
+  0.3 1.2 0.8 0.6
+  1.0 0.8 0.6 0.25
+  0.0 0.0 0.0 0.0
+  0.0 0.0 0.0 0.0
+  0.0 0.0 0.0 0.0
+  0.0 0.0 0.0 0.0
+  0.0 0.0 0.0 0.0
+  0.0 0.0 0.0 0.0

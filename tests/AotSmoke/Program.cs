@@ -54,7 +54,8 @@ const string Shader = "cbuffer Frame { float4x4 M; };\nTexture2D<float4> T; Samp
     + "[shader(\"vertex\")] VO VS(float2 p : POSITION) { VO o; o.P = mul(M, float4(p, 0, 1)); o.Uv = p; return o; }\n"
     + "[shader(\"pixel\")] float4 PS(VO i) : SV_Target { return T.Sample(S, i.Uv); }\n";
 var result = ShaderCompiler.Compile(Shader, "smoke.hlsl");
-if (!result.Success || result.Reflection is null || result.Reflection.EntryPoints.Count != 2 || result.Reflection.Resources.Count != 3)
+if (!result.Success || result.Reflection is null || result.Reflection.EntryPoints.Count != 2 || result.Reflection.Resources.Count != 3
+    || result.Blobs.Count != 2 || result.Find("PS", CompileTarget.SpirV) is not { } ps || ps.Data.Length < 20 || ps.Data[0] != 0x03)
 {
     foreach (var d in result.Diagnostics)
     {

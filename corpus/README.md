@@ -19,6 +19,9 @@ with `dxc -spirv -fspv-target-env=vulkan1.2`, and give every resource an explici
 | `2d/sdf_text.hlsl` | Single-channel SDF glyphs with smoothstep anti-aliasing and outline | written for this repository | MIT OR Apache-2.0 |
 | `2d/msdf_text.hlsl` | Multi-channel SDF glyphs (median of three) with outline | written for this repository | MIT OR Apache-2.0 |
 | `2d/tilemap.hlsl` | Tile grid from a tile-index buffer and a texture array, one instance per cell | written for this repository | MIT OR Apache-2.0 |
+| `2d/renderer/quad.hlsl` | A 2D renderer's instanced textured quads (sprites, composites, post passes), sRGB vertex colours, premultiplied output | from a 2D game renderer by the same authors, unchanged | MIT OR Apache-2.0 |
+| `2d/renderer/tile.hlsl` | The same renderer's tilemap program: tile indices from a `Texture2DArray<uint>`, level of detail | from a 2D game renderer by the same authors, unchanged | MIT OR Apache-2.0 |
+| `2d/renderer/ui.hlsl` | The same renderer's UI display-list program: rounded rectangles, borders, gradients, clip table | from a 2D game renderer by the same authors, unchanged | MIT OR Apache-2.0 |
 | `2d/blur.hlsl` | Separable gaussian blur, direction and radius in a constant buffer | written for this repository | MIT OR Apache-2.0 |
 | `2d/color_grade.hlsl` | Exposure, tone mapping, colour matrix, gamma, vignette | written for this repository | MIT OR Apache-2.0 |
 | `compute/prefix_sum.hlsl` | Block-wise exclusive scan in group-shared memory with barriers | written for this repository | MIT OR Apache-2.0 |

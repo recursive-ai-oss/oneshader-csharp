@@ -110,12 +110,13 @@ public class ReflectionTests
     }
 
     [Fact]
-    public void CompileReturnsReflectionAndNoBlobsYet()
+    public void CompileReturnsReflectionAndOneSpirvBlobPerEntryPoint()
     {
         var r = ShaderCompiler.Compile("[shader(\"pixel\")] float4 main() : SV_Target { return 0; }", "a.hlsl", cancellationToken: TestContext.Current.CancellationToken);
         Assert.True(r.Success);
         Assert.Equal("main", Assert.Single(r.Reflection!.EntryPoints).Name);
-        Assert.Empty(r.Blobs);
+        var blob = Assert.Single(r.Blobs);
+        Assert.Equal(("main", CompileTarget.SpirV), (blob.EntryPoint, blob.Target));
     }
 
     [Fact]

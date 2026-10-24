@@ -27,7 +27,7 @@ public partial class ReflectionVsDxcTests
     [GeneratedRegex(@"OpDecorate %(\w+) ArrayStride (\d+)")]
     private static partial Regex Stride();
 
-    public static IEnumerable<object[]> Files() => CorpusFiles.Shaders("2d").Concat(CorpusFiles.Shaders("compute")).Select(p => new object[] { p });
+    public static IEnumerable<object[]> Files() => CorpusFiles.Graphics().Concat(CorpusFiles.Shaders("compute")).Select(p => new object[] { p });
 
     private static string Profile(ShaderStage s) => s switch { ShaderStage.Vertex => "vs_6_0", ShaderStage.Pixel => "ps_6_0", _ => "cs_6_0" };
 

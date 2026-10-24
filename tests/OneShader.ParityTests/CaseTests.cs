@@ -15,7 +15,8 @@ public class CaseTests
         string[] expected =
         [
             "blit", "blur_h", "blur_v", "color_grade", "histogram", "image_filter", "msdf_text",
-            "particles", "prefix_sum", "sdf_text", "sprite", "tilemap", "ui_rect",
+            "particles", "prefix_sum", "quad_blur", "quad_grade", "quad_sprite", "sdf_text", "sprite",
+            "tile_flat", "tile_ids", "tilemap", "ui", "ui_rect",
         ];
         Assert.Equal(expected, Corpus.CaseNames);
     }
