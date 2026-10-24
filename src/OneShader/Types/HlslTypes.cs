@@ -474,6 +474,9 @@ public sealed class StructField
 
     /// <summary>The <c>[[vk::location]]</c> value, or null.</summary>
     public int? Location { get; init; }
+
+    /// <summary>A vertex format name written as <c>[[oneshader::format("unorm8x4")]]</c>, or null when the format follows the type.</summary>
+    public string? VertexFormat { get; init; }
 }
 
 /// <summary>A struct or class. Compared by identity: two structs with the same name are different types.</summary>

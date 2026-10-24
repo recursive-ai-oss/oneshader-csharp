@@ -252,6 +252,9 @@ public abstract class Expression(SourceSpan span) : SyntaxNode(span)
 {
     /// <summary>The type, set by semantic analysis; null before it ran.</summary>
     public HlslType? Type { get; set; }
+
+    /// <summary>What semantic analysis resolved about this expression, for lowering.</summary>
+    internal Semantics.ExprInfo? Info { get; set; }
 }
 
 /// <summary>A literal.</summary>
