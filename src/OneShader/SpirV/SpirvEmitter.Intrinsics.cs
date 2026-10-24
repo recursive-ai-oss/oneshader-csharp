@@ -329,8 +329,9 @@ internal sealed partial class SpirvEmitter
             return Zero(ScalarType.UInt);
         }
 
-        imageType = ImageTypeId(rt);
-        uint p = Ptr(texture, out _);
+        // The variable's own type carries the storage format when [[vk::image_format]] gave one.
+        uint p = Ptr(texture, out uint pointee);
+        imageType = _formattedImages.Contains(pointee) ? pointee : ImageTypeId(rt);
         return Emit(Op.Load, imageType, p);
     }
 
@@ -491,8 +492,12 @@ internal sealed partial class SpirvEmitter
                 break;
             case Opcode.TextureStore:
             {
-                uint img = LoadImage(ops[0], out var rt, out _);
-                _s.Capabilities.Add(Cap.StorageImageWriteWithoutFormat);
+                uint img = LoadImage(ops[0], out var rt, out uint storeImageType);
+                if (!_formattedImages.Contains(storeImageType))
+                {
+                    _s.Capabilities.Add(Cap.StorageImageWriteWithoutFormat);
+                }
+
                 var sampled = rt is null ? ScalarType.Float : SampledScalar(rt);
                 int n = Count(ops[2].Type);
                 uint texel = Id(ops[2]);
@@ -589,7 +594,7 @@ internal sealed partial class SpirvEmitter
     private void EmitTextureLoad(Instruction i)
     {
         var ops = i.Operands;
-        uint img = LoadImage(ops[0], out var rt, out _);
+        uint img = LoadImage(ops[0], out var rt, out uint loadImageType);
         if (rt is null)
         {
             Finish(i, Zero(i.Type));
@@ -601,7 +606,11 @@ internal sealed partial class SpirvEmitter
         uint v4;
         if (rt.IsReadWrite)
         {
-            _s.Capabilities.Add(Cap.StorageImageReadWithoutFormat);
+            if (!_formattedImages.Contains(loadImageType))
+            {
+                _s.Capabilities.Add(Cap.StorageImageReadWithoutFormat);
+            }
+
             v4 = Emit(Op.ImageRead, v4T, img, Id(ops[1]));
         }
         else

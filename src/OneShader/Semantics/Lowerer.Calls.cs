@@ -169,6 +169,15 @@ internal sealed partial class Lowerer
                 return LowerBufferLoad(c, bi);
             case BuiltinKind.GetDimensions:
                 return LowerGetDimensions(c, bi);
+            case BuiltinKind.Barrier:
+                _b.Barrier((BarrierFlags)bi.Extra);
+                return Constant.Zero(ScalarType.Int);
+            case BuiltinKind.Atomic:
+                return LowerAtomic(c, bi);
+            case BuiltinKind.ByteAddress:
+                return LowerByteAddress(c, bi);
+            case BuiltinKind.OutIntrinsic:
+                return LowerOutIntrinsic(c, bi);
             default:
                 return LowerTexture(c, bi);
         }
@@ -238,7 +247,12 @@ internal sealed partial class Lowerer
         var res = ResourcePointer(ma.Target)!;
         var values = new List<IrValue>();
         int first = 0;
-        if (rt.ResourceKind is ResourceTypeKind.StructuredBuffer or ResourceTypeKind.RWStructuredBuffer)
+        if (rt.ResourceKind is ResourceTypeKind.ByteAddressBuffer or ResourceTypeKind.RWByteAddressBuffer)
+        {
+            // The buffer is addressed in 32-bit words; HLSL reports bytes.
+            values.Add(_b.Binary(Opcode.Shl, _b.Emit(Opcode.ArrayLength, ScalarType.UInt, res), Constant.UInt(2)));
+        }
+        else if (rt.ResourceKind is ResourceTypeKind.StructuredBuffer or ResourceTypeKind.RWStructuredBuffer)
         {
             values.Add(_b.Emit(Opcode.ArrayLength, ScalarType.UInt, res));
             int stride = (res as GlobalVariable)?.Layout?.Size ?? 0;

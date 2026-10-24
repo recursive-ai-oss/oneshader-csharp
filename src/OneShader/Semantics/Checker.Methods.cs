@@ -87,7 +87,12 @@ internal sealed partial class Checker
             }
         }
 
-        Err(SemanticCodes.Unsupported, "The method '" + name + "' of '" + rt + "' is not supported" + (rt.ResourceKind is ResourceTypeKind.ByteAddressBuffer or ResourceTypeKind.RWByteAddressBuffer ? " yet" : "") + ".", ma.Member.Span);
+        if (rt.ResourceKind is ResourceTypeKind.ByteAddressBuffer or ResourceTypeKind.RWByteAddressBuffer)
+        {
+            return CheckByteAddressMethod(c, ma, rt, name, at, info);
+        }
+
+        Err(SemanticCodes.Unsupported, "The method '" + name + "' of '" + rt + "' is not supported.", ma.Member.Span);
         return HlslType.Error;
     }
 

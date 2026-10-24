@@ -21,10 +21,13 @@ public partial class ReflectionVsDxcTests
     [GeneratedRegex(@"OpDecorate %(\w+) (Binding|DescriptorSet) (\d+)")]
     private static partial Regex VarDecoration();
 
+    [GeneratedRegex(@"OpExecutionMode %\w+ LocalSize (\d+) (\d+) (\d+)")]
+    private static partial Regex LocalSize();
+
     [GeneratedRegex(@"OpDecorate %(\w+) ArrayStride (\d+)")]
     private static partial Regex Stride();
 
-    public static IEnumerable<object[]> Files() => CorpusFiles.Shaders("2d").Select(p => new object[] { p });
+    public static IEnumerable<object[]> Files() => CorpusFiles.Shaders("2d").Concat(CorpusFiles.Shaders("compute")).Select(p => new object[] { p });
 
     private static string Profile(ShaderStage s) => s switch { ShaderStage.Vertex => "vs_6_0", ShaderStage.Pixel => "ps_6_0", _ => "cs_6_0" };
 
@@ -47,6 +50,15 @@ public partial class ReflectionVsDxcTests
                 var (code, outp) = Oracles.Run(dxc!, ["-spirv", "-fspv-target-env=vulkan1.2", "-T", Profile(ep.Stage), "-E", ep.Name, path, "-Fo", spv], dir);
                 Assert.True(code == 0, outp);
                 var (_, text) = Oracles.Run(dis!, [spv], dir);
+                if (ep.Stage == ShaderStage.Compute)
+                {
+                    var ls = LocalSize().Match(text);
+                    Assert.True(ls.Success, "DXC has no LocalSize");
+                    Assert.Equal(
+                        (uint.Parse(ls.Groups[1].Value, CultureInfo.InvariantCulture), uint.Parse(ls.Groups[2].Value, CultureInfo.InvariantCulture), uint.Parse(ls.Groups[3].Value, CultureInfo.InvariantCulture)),
+                        ep.WorkgroupSize);
+                }
+
                 var names = new Dictionary<(string, int), string>();
                 foreach (Match m in MemberName().Matches(text))
                 {

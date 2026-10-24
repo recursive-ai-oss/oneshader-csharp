@@ -44,6 +44,18 @@ internal enum BuiltinKind
 
     /// <summary>Structured buffer <c>Load</c>.</summary>
     BufferLoad,
+
+    /// <summary>A barrier; <see cref="BuiltinCall.Extra"/> holds the <see cref="BarrierFlags"/>.</summary>
+    Barrier,
+
+    /// <summary>An <c>Interlocked*</c> function or byte-address buffer method.</summary>
+    Atomic,
+
+    /// <summary>A byte-address buffer Load/Store method.</summary>
+    ByteAddress,
+
+    /// <summary>An intrinsic with out parameters (sincos, modf, frexp).</summary>
+    OutIntrinsic,
 }
 
 internal sealed class BuiltinCall
@@ -55,6 +67,9 @@ internal sealed class BuiltinCall
     public Opcode Op { get; init; }
 
     public Opcode TextureOp { get; init; }
+
+    /// <summary>The operation of an atomic call.</summary>
+    public AtomicOp Atomic { get; init; }
 
     public string Name { get; init; } = "";
 
@@ -525,6 +540,11 @@ internal sealed partial class Checker
             return true;
         }
 
+        if (TryComputeBuiltin(c, name, at, info, out result))
+        {
+            return true;
+        }
+
         switch (name)
         {
             case "fmod":
@@ -818,13 +838,13 @@ internal sealed partial class Checker
                 return true;
             }
 
-            case "countbits" or "reversebits" or "firstbithigh" or "firstbitlow" or "sincos" or "modf" or "frexp" or "f16tof32" or "f32tof16"
+            case "f16tof32" or "f32tof16"
                 or "noise" or "lit" or "dst" or "msad4" or "D3DCOLORtoUBYTE4" or "abort" or "errorf" or "printf":
                 Err(SemanticCodes.Unsupported, "The intrinsic '" + name + "' is not supported yet.", c.Span);
                 return true;
             default:
                 if (name.StartsWith("Wave", StringComparison.Ordinal) || name.StartsWith("Quad", StringComparison.Ordinal)
-                    || name.StartsWith("Interlocked", StringComparison.Ordinal) || name.Contains("MemoryBarrier", StringComparison.Ordinal))
+                    || name.StartsWith("Interlocked", StringComparison.Ordinal))
                 {
                     Err(SemanticCodes.Unsupported, "The intrinsic '" + name + "' is not supported yet.", c.Span);
                     return true;

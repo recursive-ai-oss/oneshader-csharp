@@ -122,6 +122,7 @@ internal sealed partial class Checker
             }
         }
 
+        DetectCallCycles();
         FindEntryPoints();
         AssignBindings();
     }
@@ -795,6 +796,7 @@ internal sealed partial class Checker
         }
 
         ApplyBindingAnnotations(rd, v.Attributes, d.Annotations, '\0');
+        ApplyImageFormat(rd, v.Attributes, element);
         if (element is ResourceType rt)
         {
             if (rt.IsStorageBuffer && rt.ResourceKind != ResourceTypeKind.ByteAddressBuffer && rt.ResourceKind != ResourceTypeKind.RWByteAddressBuffer)
@@ -826,6 +828,40 @@ internal sealed partial class Checker
         }
 
         Resources.Add(rd);
+    }
+
+    private void ApplyImageFormat(ResourceDecl rd, IReadOnlyList<AttributeSyntax> attrs, HlslType element)
+    {
+        var a = FindAttribute(attrs, "vk::image_format");
+        if (a is null)
+        {
+            return;
+        }
+
+        string? name = StringAttributeArg(a, 0);
+        int format = name is null ? 0 : ImageFormats.Find(name);
+        if (format == 0)
+        {
+            Err(SemanticCodes.BadAttribute, "vk::image_format needs a format name in quotes such as \"rgba8\", \"rgba16f\", \"r32f\" or \"r32ui\".", a.Span);
+            return;
+        }
+
+        if (element is not ResourceType { IsTexture: true, IsReadWrite: true } rt)
+        {
+            Warn(SemanticCodes.BadAttribute, "vk::image_format only applies to read-write textures (RWTexture1D/2D/3D); it is ignored here.", a.Span);
+            return;
+        }
+
+        char cls = ImageFormats.Class(format);
+        var sc = rt.Element?.ScalarElement;
+        bool matches = sc is null || (cls == 'f' ? sc.IsFloatingPoint : cls == 'i' ? sc == ScalarType.Int : sc == ScalarType.UInt);
+        if (!matches)
+        {
+            Err(SemanticCodes.BadAttribute, "The format \"" + name + "\" holds " + (cls == 'f' ? "float" : cls == 'i' ? "int" : "uint") + " texels but the texture's element type is '" + rt.Element + "'. Change the element type or pick a matching format.", a.Span);
+            return;
+        }
+
+        rd.ImageFormat = name;
     }
 
     private ResourceDecl CopyWithVariable(ResourceDecl rd, string name, HlslType type, Modifiers mods, Scope scope, out VariableSymbol? vs)

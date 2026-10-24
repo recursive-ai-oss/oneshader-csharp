@@ -195,6 +195,7 @@ internal sealed partial class Checker
             }
 
             CheckStatementList(f.Decl.Body!.Statements);
+            CheckAllPathsReturn(f);
         }
         finally
         {
