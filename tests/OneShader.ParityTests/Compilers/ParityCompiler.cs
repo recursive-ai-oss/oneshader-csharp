@@ -99,8 +99,8 @@ public static class ParityCompilers
     /// <summary>The reference: DXC's SPIR-V output.</summary>
     public static ParityCompiler Reference { get; } = DxcCompiler.Create("dxc");
 
-    /// <summary>The compiler under test. DXC again until the project's own compiler can be plugged in.</summary>
-    public static ParityCompiler Candidate { get; } = DxcCompiler.Create("dxc (second run)");
+    /// <summary>The compiler under test: this repository's own.</summary>
+    public static ParityCompiler Candidate { get; } = OneShaderCompiler.Create("oneshader");
 
     /// <summary>Entry names a case needs, per stage, in the order they are compiled.</summary>
     public static IEnumerable<(string Entry, ShaderStage Stage)> Entries(CaseModel c)

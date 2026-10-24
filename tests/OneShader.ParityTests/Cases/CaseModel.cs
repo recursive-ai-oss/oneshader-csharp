@@ -27,6 +27,9 @@ public enum PixelFormat
     Rgba8,
     R32F,
     Rgba32F,
+
+    /// <summary>One unsigned 32-bit integer per texel (the red channel of a generator, rounded down).</summary>
+    R32UInt,
 }
 
 /// <summary>Vertex attribute formats a case can declare.</summary>
@@ -38,6 +41,7 @@ public enum VertexFormat
     Float4,
     Unorm8x4,
     Word,
+    Uint4,
 }
 
 /// <summary>How the colour output is blended into the target.</summary>
@@ -82,8 +86,8 @@ public sealed class ResourceDecl
 /// <summary>One vertex attribute.</summary>
 public sealed record VertexInputAttr(int Location, VertexFormat Format, int Offset, int Binding);
 
-/// <summary>One vertex buffer binding with its data expression.</summary>
-public sealed record VertexBufferDecl(int Binding, int Stride, string Data);
+/// <summary>One vertex buffer binding with its data expression; with <c>PerInstance</c> the attributes advance once per instance.</summary>
+public sealed record VertexBufferDecl(int Binding, int Stride, string Data, bool PerInstance = false);
 
 /// <summary>An offscreen draw into an RGBA8 target.</summary>
 public sealed class GraphicsDecl

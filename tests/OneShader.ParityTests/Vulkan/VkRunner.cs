@@ -378,6 +378,7 @@ public static unsafe class VkRunner
             PixelFormat.R8 => Format.R8Unorm,
             PixelFormat.Rgba8 => Format.R8G8B8A8Unorm,
             PixelFormat.R32F => Format.R32Sfloat,
+            PixelFormat.R32UInt => Format.R32Uint,
             _ => Format.R32G32B32A32Sfloat,
         };
 
@@ -685,6 +686,7 @@ public static unsafe class VkRunner
             VertexFormat.Float3 => Format.R32G32B32Sfloat,
             VertexFormat.Float4 => Format.R32G32B32A32Sfloat,
             VertexFormat.Unorm8x4 => Format.R8G8B8A8Unorm,
+            VertexFormat.Uint4 => Format.R32G32B32A32Uint,
             _ => Format.R32Uint,
         };
 
@@ -768,7 +770,7 @@ public static unsafe class VkRunner
             };
 
             // Fixed-function state.
-            var bindingDescs = g.VertexBuffers.Select(v => new VertexInputBindingDescription((uint)v.Binding, (uint)v.Stride, VertexInputRate.Vertex)).ToArray();
+            var bindingDescs = g.VertexBuffers.Select(v => new VertexInputBindingDescription((uint)v.Binding, (uint)v.Stride, v.PerInstance ? VertexInputRate.Instance : VertexInputRate.Vertex)).ToArray();
             var attrDescs = g.Attributes.Select(a => new VertexInputAttributeDescription((uint)a.Location, (uint)a.Binding, VertexFormatToVk(a.Format), (uint)a.Offset)).ToArray();
             var blendAttachment = new PipelineColorBlendAttachmentState
             {

@@ -25,7 +25,7 @@ public sealed class CaseFormatException : Exception
 /// target W H [background=GEN]
 /// blend none|premul|alpha
 /// tolerance N
-/// vertexbuffer BINDING STRIDE : DATA
+/// vertexbuffer BINDING STRIDE [instance] : DATA
 /// attr LOCATION FORMAT OFFSET [binding=N]
 /// index u16|u32 : DATA
 /// draw vertices=N|indexed=N [instances=M]
@@ -145,7 +145,7 @@ public static class CaseFile
                     break;
                 case "vertexbuffer":
                     vertexBuffers.Add(new VertexBufferDecl(Int(Arg(t, 1, fail), fail), Int(Arg(t, 2, fail), fail),
-                        data ?? throw fail("vertexbuffer needs ': data'")));
+                        data ?? throw fail("vertexbuffer needs ': data'"), Array.IndexOf(t, "instance") > 0));
                     break;
                 case "attr":
                     attributes.Add(new VertexInputAttr(Int(Arg(t, 1, fail), fail), ParseVertexFormat(Arg(t, 2, fail), fail),
@@ -324,7 +324,8 @@ public static class CaseFile
         "rgba8" => PixelFormat.Rgba8,
         "r32f" => PixelFormat.R32F,
         "rgba32f" => PixelFormat.Rgba32F,
-        _ => throw fail($"unknown texel format '{s}' (use r8, rgba8, r32f or rgba32f)"),
+        "r32uint" => PixelFormat.R32UInt,
+        _ => throw fail($"unknown texel format '{s}' (use r8, rgba8, r32f, rgba32f or r32uint)"),
     };
 
     private static VertexFormat ParseVertexFormat(string s, Func<string, Exception> fail) => s switch
@@ -335,6 +336,7 @@ public static class CaseFile
         "float4" => VertexFormat.Float4,
         "unorm8x4" => VertexFormat.Unorm8x4,
         "uint" => VertexFormat.Word,
+        "uint4" => VertexFormat.Uint4,
         _ => throw fail($"unknown vertex format '{s}'"),
     };
 

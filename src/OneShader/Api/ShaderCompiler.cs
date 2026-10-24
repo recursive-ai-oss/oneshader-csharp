@@ -163,8 +163,11 @@ public sealed class CompileResult
 /// <summary>Diagnostic codes of the public API layer.</summary>
 public static class ApiDiagnosticCodes
 {
-    /// <summary>The compiler pipeline is not available yet.</summary>
+    /// <summary>The compiler pipeline is not available.</summary>
     public const string NotImplemented = "OSH0001";
+
+    /// <summary>A requested output target has no backend yet.</summary>
+    public const string TargetNotAvailable = "OSH0002";
 }
 
 /// <summary>The compiler's entry point.</summary>
@@ -179,18 +182,68 @@ public static class ShaderCompiler
     /// <param name="path">The file path as the user knows it; used in diagnostics and to resolve includes.</param>
     /// <param name="options">Settings; defaults apply when null.</param>
     /// <param name="cancellationToken">Cancels a long compile.</param>
-    /// <returns>The result. Currently every compile returns an error diagnostic saying the pipeline is not implemented yet.</returns>
+    /// <returns>
+    /// The result: all diagnostics, and when there were no errors the reflection and one blob per entry point
+    /// and target. Only the SPIR-V target is available so far; asking for MSL or WGSL is an error diagnostic.
+    /// </returns>
     public static CompileResult Compile(string source, string path, CompileOptions? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(path);
         cancellationToken.ThrowIfCancellationRequested();
-        _ = options;
-        var bag = new DiagnosticBag();
-        bag.Error(
-            ApiDiagnosticCodes.NotImplemented,
-            "The HLSL compiler pipeline is not implemented yet in this build; nothing was compiled.",
-            new SourceSpan(path, 1, 1));
-        return new CompileResult(bag.Items, [], null);
+        options ??= new CompileOptions();
+        var result = Semantics.Frontend.Run(source, path, options, cancellationToken);
+        var diagnostics = result.Diagnostics;
+        var blobs = new List<ShaderBlob>();
+        if (diagnostics.HasErrors || result.Module is not { } module)
+        {
+            return new CompileResult(diagnostics.Items, blobs, null);
+        }
+
+        var targets = options.Targets.Count == 0 ? [CompileTarget.SpirV] : options.Targets;
+        var spirvOptions = new SpirV.SpirvOptions { KeepNames = options.KeepNames };
+        foreach (var entry in module.EntryPoints)
+        {
+            foreach (var target in (CompileTarget[])[CompileTarget.SpirV, CompileTarget.Msl, CompileTarget.Wgsl])
+            {
+                if (!Wants(targets, target))
+                {
+                    continue;
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                if (target != CompileTarget.SpirV)
+                {
+                    diagnostics.Error(ApiDiagnosticCodes.TargetNotAvailable, "The " + target + " target is not available yet; request SpirV only.", new SourceSpan(path, 1, 1));
+                    continue;
+                }
+
+                var bytes = SpirV.SpirvBackend.Emit(module, entry.Function.Name, spirvOptions, diagnostics);
+                if (bytes is not null)
+                {
+                    blobs.Add(new ShaderBlob(entry.Function.Name, entry.Stage, target, bytes));
+                }
+            }
+        }
+
+        if (diagnostics.HasErrors)
+        {
+            return new CompileResult(diagnostics.Items, [], null);
+        }
+
+        return new CompileResult(diagnostics.Items, blobs, result.Reflection);
+    }
+
+    private static bool Wants(IReadOnlyList<CompileTarget> targets, CompileTarget target)
+    {
+        foreach (var t in targets)
+        {
+            if (t == target)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

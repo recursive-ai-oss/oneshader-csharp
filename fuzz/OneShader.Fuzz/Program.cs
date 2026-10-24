@@ -12,14 +12,25 @@ using OneShader.Preprocessing;
 //   OneShader.Fuzz                    libFuzzer/SharpFuzz loop on stdin (instrument OneShader.dll first)
 //   OneShader.Fuzz --file <path>      run one input, for reproducing a crash
 //   OneShader.Fuzz --random N [seed]  run N generated inputs in-process; exits 1 on any exception
+//   OneShader.Fuzz --corpus <dir> N [seed]  run N mutated corpus shaders through the whole front end
 //
 // An input is the main file's text; a U+0001 character starts the next include file (named
 // f1.h, f2.h, ...), so one byte string covers #include behavior too.
 if (args.Length >= 2 && args[0] == "--file")
 {
-    PreprocessorTarget.Run(File.ReadAllBytes(args[1]));
+    byte[] input = File.ReadAllBytes(args[1]);
+    PreprocessorTarget.Run(input);
+    FrontendTarget.Run(input);
     Console.WriteLine("ok");
     return 0;
+}
+
+if (args.Length >= 3 && args[0] == "--corpus")
+{
+    // --corpus <dir> <count> [seed]: mutated corpus shaders through the whole front end.
+    int n = int.Parse(args[2], System.Globalization.CultureInfo.InvariantCulture);
+    int sd = args.Length > 3 ? int.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture) : 1;
+    return CorpusRun.Run(args[1], n, sd);
 }
 
 if (args.Length >= 2 && args[0] == "--random")
@@ -29,7 +40,11 @@ if (args.Length >= 2 && args[0] == "--random")
     return RandomRun.Run(count, seed);
 }
 
-SharpFuzz.Fuzzer.LibFuzzer.Run(span => PreprocessorTarget.Run(span));
+SharpFuzz.Fuzzer.LibFuzzer.Run(span =>
+{
+    PreprocessorTarget.Run(span);
+    FrontendTarget.Run(span);
+});
 return 0;
 
 internal static class PreprocessorTarget

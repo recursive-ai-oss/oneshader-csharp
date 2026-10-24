@@ -1,0 +1,938 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Text;
+using System.Threading;
+using OneShader.Diagnostics;
+using OneShader.IR;
+using OneShader.Reflection;
+using OneShader.Syntax;
+using OneShader.Types;
+
+namespace OneShader.Semantics;
+
+/// <summary>Settings of the front end (a subset of the public compile options).</summary>
+internal sealed class FrontendOptions
+{
+    public IReadOnlyList<EntryPointRequest> EntryPoints { get; init; } = [];
+
+    public LayoutOptions Layout { get; init; } = LayoutOptions.Default;
+
+    public IReadOnlyList<CompileTarget> Targets { get; init; } = [CompileTarget.SpirV];
+}
+
+internal sealed class StructInfo
+{
+    public required StructDeclaration Decl { get; init; }
+
+    public Dictionary<string, int> FieldIndex { get; } = new(StringComparer.Ordinal);
+}
+
+/// <summary>
+/// Semantic analysis: resolves names and types, applies HLSL's conversion and overload rules, assigns
+/// bindings and checks entry points. Results are stored on the syntax tree (types and <see cref="ExprInfo"/>)
+/// and in the lists below for lowering and reflection.
+/// </summary>
+internal sealed partial class Checker
+{
+    private readonly DiagnosticBag _diag;
+    private readonly FrontendOptions _opt;
+    private readonly string _file;
+    private readonly CancellationToken _ct;
+    private readonly Scope _global = new(null);
+    private readonly Dictionary<StructType, StructInfo> _structInfos = [];
+    private readonly Dictionary<StructField, SourceSpan> _fieldSpans = [];
+    private readonly List<VariableSymbol> _uniformGlobals = [];
+    private Scope _scope;
+    private MatrixPacking _packing;
+    private int _depth;
+    private bool _depthReported;
+    private FunctionSymbol? _fn;
+    private int _loopDepth;
+    private int _switchDepth;
+
+    public Checker(DiagnosticBag diag, FrontendOptions options, string file, CancellationToken ct)
+    {
+        _diag = diag;
+        _opt = options;
+        _file = file;
+        _ct = ct;
+        _scope = _global;
+        _packing = options.Layout.DefaultMatrixPacking;
+    }
+
+    // ---- results
+
+    public List<ResourceDecl> Resources { get; } = [];
+
+    public List<CBufferSymbol> CBuffers { get; } = [];
+
+    public List<VariableSymbol> PrivateGlobals { get; } = [];
+
+    public List<VariableSymbol> GroupSharedGlobals { get; } = [];
+
+    public List<FunctionSymbol> Functions { get; } = [];
+
+    public List<EntryInfo> Entries { get; } = [];
+
+    public CBufferSymbol? GlobalsBuffer { get; private set; }
+
+    public LayoutOptions Layout => _opt.Layout;
+
+    // ---- diagnostics
+
+    private void Err(string code, string message, SourceSpan span) => _diag.Error(code, message, span);
+
+    private void Warn(string code, string message, SourceSpan span) => _diag.Warning(code, message, span);
+
+    private bool Enter(SourceSpan where)
+    {
+        if (++_depth > Parser.MaxNesting * 2)
+        {
+            if (!_depthReported)
+            {
+                _depthReported = true;
+                Err(SyntaxCodes.TooDeep, "This code is nested too deeply to analyze; simplify or split it.", where);
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
+    private void Leave() => _depth--;
+
+    // ---- entry
+
+    public void CheckUnit(CompilationUnit unit)
+    {
+        foreach (var d in unit.Declarations)
+        {
+            _ct.ThrowIfCancellationRequested();
+            DeclareTopLevel(d, _global);
+        }
+
+        FinishGlobals();
+        foreach (var f in _allFns)
+        {
+            if (!f.HasBody && f.Definition is null && f.Called)
+            {
+                Err(SemanticCodes.BadFunction, "Function '" + f.Name + "' is called but never defined; add a body to its declaration.", f.Span);
+            }
+        }
+
+        FindEntryPoints();
+        AssignBindings();
+    }
+
+    // ---- declarations
+
+    private void DeclareTopLevel(Declaration d, Scope scope)
+    {
+        if (!Enter(d.Span))
+        {
+            Leave();
+            return;
+        }
+
+        try
+        {
+            switch (d)
+            {
+                case PragmaDeclaration p:
+                    HandlePragma(p);
+                    break;
+                case StructDeclaration s:
+                    DeclareStruct(s, scope);
+                    break;
+                case EnumDeclaration e:
+                    DeclareEnum(e, scope);
+                    break;
+                case TypedefDeclaration t:
+                    DeclareTypedef(t, scope);
+                    break;
+                case ConstantBufferDeclaration cb:
+                    DeclareConstantBuffer(cb, scope);
+                    break;
+                case NamespaceDeclaration ns:
+                    DeclareNamespace(ns, scope);
+                    break;
+                case VariableDeclaration v:
+                    DeclareGlobalVariable(v, scope);
+                    break;
+                case FunctionDeclaration f:
+                    DeclareFunction(f, scope);
+                    break;
+            }
+        }
+        finally
+        {
+            Leave();
+        }
+    }
+
+    private void HandlePragma(PragmaDeclaration p)
+    {
+        string t = p.Text.Replace(" ", string.Empty, StringComparison.Ordinal);
+        if (t.StartsWith("pack_matrix(", StringComparison.Ordinal))
+        {
+            if (t.StartsWith("pack_matrix(row_major)", StringComparison.Ordinal))
+            {
+                _packing = MatrixPacking.RowMajor;
+            }
+            else if (t.StartsWith("pack_matrix(column_major)", StringComparison.Ordinal))
+            {
+                _packing = MatrixPacking.ColumnMajor;
+            }
+            else
+            {
+                Warn(SemanticCodes.BadAttribute, "pack_matrix expects row_major or column_major; the pragma is ignored.", p.Span);
+            }
+        }
+    }
+
+    private void DeclareNamespace(NamespaceDeclaration ns, Scope scope)
+    {
+        NamespaceSymbol sym;
+        if (scope.LookupLocal(ns.Name.Text) is NamespaceSymbol existing)
+        {
+            sym = existing;
+        }
+        else
+        {
+            sym = new NamespaceSymbol(ns.Name.Text, ns.Name.Span, new Scope(scope));
+            Define(scope, sym);
+        }
+
+        foreach (var m in ns.Members)
+        {
+            DeclareTopLevel(m, sym.Scope);
+        }
+    }
+
+    private bool Define(Scope scope, Symbol sym)
+    {
+        var prior = scope.LookupLocal(sym.Name);
+        if (prior is not null)
+        {
+            if (sym is FunctionGroup || prior is FunctionGroup)
+            {
+                // handled by the caller
+            }
+
+            Err(SemanticCodes.Redefinition, "'" + sym.Name + "' is already declared in this scope" + (prior.Span.IsKnown ? " at line " + prior.Span.Line.ToString(CultureInfo.InvariantCulture) : "") + "; rename one of them.", sym.Span);
+            return false;
+        }
+
+        scope.Add(sym);
+        return true;
+    }
+
+    private void DeclareEnum(EnumDeclaration e, Scope scope)
+    {
+        var underlying = ScalarType.Int;
+        if (e.UnderlyingType is not null && ResolveType(e.UnderlyingType) is ScalarType u && u.IsInteger)
+        {
+            underlying = u;
+        }
+
+        var members = new List<KeyValuePair<string, long>>();
+        long next = 0;
+        foreach (var m in e.Members)
+        {
+            if (m.Value is not null)
+            {
+                var ct = CheckExpr(m.Value);
+                var cv = m.Value.Info?.Const;
+                if (cv is null || cv.Value.IsFloat)
+                {
+                    if (!ct.IsError)
+                    {
+                        Err(SemanticCodes.NotConstant, "The value of enumerator '" + m.Name.Text + "' must be an integer constant expression.", m.Value.Span);
+                    }
+                }
+                else
+                {
+                    next = cv.Value.Int;
+                }
+            }
+
+            members.Add(new KeyValuePair<string, long>(m.Name.Text, next));
+            next++;
+        }
+
+        var et = new EnumType(e.Name?.Text ?? "", underlying, members);
+        e.Resolved = et;
+        if (e.Name is not null)
+        {
+            Define(scope, new TypeSymbol(e.Name.Text, e.Name.Span, et));
+        }
+
+        if (!e.IsScoped || e.Name is null)
+        {
+            foreach (var kv in members)
+            {
+                scope.Add(new EnumeratorSymbol(kv.Key, e.Span, et, kv.Value));
+            }
+        }
+    }
+
+    private void DeclareTypedef(TypedefDeclaration t, Scope scope)
+    {
+        var baseType = ResolveType(t.Type);
+        foreach (var d in t.Declarators)
+        {
+            var type = ApplyDims(baseType, d.ArrayDimensions, false, d.Span);
+            Define(scope, new TypeSymbol(d.Name.Text, d.Name.Span, type));
+        }
+    }
+
+    // ---- attributes
+
+    private static AttributeSyntax? FindAttribute(IReadOnlyList<AttributeSyntax> attrs, string name)
+    {
+        foreach (var a in attrs)
+        {
+            if (a.Name.ToString() == name)
+            {
+                return a;
+            }
+        }
+
+        return null;
+    }
+
+    private int? IntAttributeArg(AttributeSyntax a, int index)
+    {
+        if (index >= a.Arguments.Count)
+        {
+            Err(SemanticCodes.BadAttribute, "The attribute '" + a.Name + "' needs " + (index + 1).ToString(CultureInfo.InvariantCulture) + " argument(s).", a.Span);
+            return null;
+        }
+
+        var e = a.Arguments[index];
+        CheckExpr(e);
+        var c = e.Info?.Const;
+        if (c is null || c.Value.IsFloat)
+        {
+            Err(SemanticCodes.NotConstant, "Argument " + (index + 1).ToString(CultureInfo.InvariantCulture) + " of '" + a.Name + "' must be an integer constant.", e.Span);
+            return null;
+        }
+
+        return (int)c.Value.Int;
+    }
+
+    private static string? StringAttributeArg(AttributeSyntax a, int index) =>
+        index < a.Arguments.Count && a.Arguments[index] is LiteralExpression { Kind: LiteralKind.String } l ? l.Text : null;
+
+    private static readonly HashSet<string> KnownIgnoredAttributes = new(StringComparer.Ordinal)
+    {
+        "vk::image_format", "vk::counter_binding", "branch", "flatten", "loop", "unroll", "forcecase", "call", "fastopt",
+        "allow_uav_condition", "earlydepthstencil", "domain", "partitioning", "outputtopology", "outputcontrolpoints",
+        "patchconstantfunc", "maxvertexcount", "instance", "WaveSize", "noinline", "forceinline", "clipplanes", "RootSignature",
+    };
+
+    /// <summary>Warns about attributes that are not understood; the ones the compiler uses are listed in the callers.</summary>
+    private void CheckAttributes(IReadOnlyList<AttributeSyntax> attrs, params string[] used)
+    {
+        foreach (var a in attrs)
+        {
+            string n = a.Name.ToString();
+            if (Array.IndexOf(used, n) >= 0 || KnownIgnoredAttributes.Contains(n))
+            {
+                continue;
+            }
+
+            if (n is "vk::push_constant" or "vk::constant_id" or "vk::builtin" or "vk::input_attachment_index")
+            {
+                Err(SemanticCodes.Unsupported, "The attribute '" + n + "' is not supported yet.", a.Span);
+                continue;
+            }
+
+            Warn(SemanticCodes.BadAttribute, "The attribute '" + n + "' is not recognized and is ignored.", a.Span);
+        }
+    }
+
+    // ---- structs
+
+    private HlslType DeclareStruct(StructDeclaration s, Scope scope)
+    {
+        string name = s.Name?.Text ?? "";
+        if (s.TemplateParameters.Count > 0)
+        {
+            Err(SemanticCodes.Unsupported, "Struct templates are not supported yet.", (s.Name?.Span) ?? s.Span);
+            if (s.Name is not null)
+            {
+                Define(scope, new TypeSymbol(name, s.Name.Span, HlslType.Error));
+            }
+
+            return HlslType.Error;
+        }
+
+        if (s.BaseTypes.Count > 0)
+        {
+            Err(SemanticCodes.Unsupported, "Struct inheritance is not supported yet; copy the base members into the struct.", s.BaseTypes[0].Span);
+        }
+
+        var st = new StructType(name);
+        s.Resolved = st;
+        var info = new StructInfo { Decl = s };
+        _structInfos[st] = info;
+        var fields = new List<StructField>();
+        foreach (var m in s.Members)
+        {
+            switch (m)
+            {
+                case VariableDeclaration v:
+                    DeclareFields(v, fields, info, st.Name);
+                    break;
+                case FunctionDeclaration f:
+                    Err(SemanticCodes.Unsupported, "Member functions are not supported yet; move '" + f.Name + "' out of the struct and pass the struct as a parameter.", f.Name.Span);
+                    break;
+                case TypedefDeclaration t:
+                    DeclareTypedef(t, scope);
+                    break;
+                case StructDeclaration inner:
+                    DeclareStruct(inner, scope);
+                    break;
+                case EnumDeclaration en:
+                    DeclareEnum(en, scope);
+                    break;
+                case PragmaDeclaration p:
+                    HandlePragma(p);
+                    break;
+            }
+        }
+
+        st.SetFields(fields);
+        if (s.Name is not null && s.Members.Count >= 0)
+        {
+            Define(scope, new TypeSymbol(name, s.Name.Span, st));
+        }
+
+        return st;
+    }
+
+    private void DeclareFields(VariableDeclaration v, List<StructField> fields, StructInfo info, string structName)
+    {
+        CheckAttributes(v.Attributes, "vk::offset", "vk::location", "oneshader::format");
+        if ((v.Modifiers & Modifiers.Static) != 0)
+        {
+            Err(SemanticCodes.Unsupported, "Static struct members are not supported yet; declare the constant outside the struct.", v.Span);
+            return;
+        }
+
+        var baseType = ResolveType(v.Type);
+        foreach (var d in v.Declarators)
+        {
+            var type = ApplyDims(baseType, d.ArrayDimensions, false, d.Span);
+            if (!type.IsError && !TypeOps.IsValueType(type))
+            {
+                Err(SemanticCodes.BadVariable, "The member '" + d.Name.Text + "' has type '" + type + "', which cannot be a struct member; declare resources at global scope.", d.Span);
+                type = HlslType.Error;
+            }
+
+            string? semantic = null;
+            int? offset = null;
+            foreach (var a in d.Annotations)
+            {
+                if (a is SemanticAnnotation sa)
+                {
+                    semantic = sa.Text;
+                }
+                else if (a is PackOffsetAnnotation po)
+                {
+                    offset = (int)po.ByteOffset;
+                }
+                else if (a is RegisterAnnotation ra)
+                {
+                    Err(SemanticCodes.BadResource, "register(...) cannot be used on a struct member.", ra.Span);
+                }
+            }
+
+            var vkOffset = FindAttribute(v.Attributes, "vk::offset");
+            if (vkOffset is not null)
+            {
+                offset = IntAttributeArg(vkOffset, 0) ?? offset;
+            }
+
+            int? location = null;
+            var vkLoc = FindAttribute(v.Attributes, "vk::location");
+            if (vkLoc is not null)
+            {
+                location = IntAttributeArg(vkLoc, 0);
+            }
+
+            string? format = null;
+            var fmt = FindAttribute(v.Attributes, "oneshader::format");
+            if (fmt is not null)
+            {
+                format = StringAttributeArg(fmt, 0);
+                if (format is null)
+                {
+                    Err(SemanticCodes.BadAttribute, "oneshader::format needs a string such as \"unorm8x4\".", fmt.Span);
+                }
+            }
+
+            MatrixPacking? packing = (v.Modifiers & Modifiers.RowMajor) != 0 ? MatrixPacking.RowMajor
+                : (v.Modifiers & Modifiers.ColumnMajor) != 0 ? MatrixPacking.ColumnMajor
+                : ContainsMatrix(type) ? _packing : null;
+            var field = new StructField(d.Name.Text, type)
+            {
+                Semantic = semantic,
+                Interpolation = InterpolationOf(v.Modifiers),
+                MatrixPacking = packing,
+                ExplicitOffset = offset,
+                Location = location,
+                VertexFormat = format,
+            };
+            if (info.FieldIndex.ContainsKey(d.Name.Text))
+            {
+                Err(SemanticCodes.Redefinition, "The struct '" + structName + "' already has a member named '" + d.Name.Text + "'.", d.Name.Span);
+                continue;
+            }
+
+            info.FieldIndex[d.Name.Text] = fields.Count;
+            _fieldSpans[field] = d.Name.Span;
+            fields.Add(field);
+            if (d.Initializer is not null)
+            {
+                Err(SemanticCodes.Unsupported, "Default values for struct members are not supported; assign them where the struct is used.", d.Initializer.Span);
+            }
+        }
+    }
+
+    private static bool ContainsMatrix(HlslType t) => t switch
+    {
+        MatrixType => true,
+        ArrayType a => ContainsMatrix(a.Element),
+        StructType => true,
+        _ => false,
+    };
+
+    private static Interpolation InterpolationOf(Modifiers m) =>
+        (m & Modifiers.NoInterpolation) != 0 ? Interpolation.Flat
+        : (m & Modifiers.NoPerspective) != 0 ? Interpolation.NoPerspective
+        : (m & Modifiers.Centroid) != 0 ? Interpolation.Centroid
+        : (m & Modifiers.Sample) != 0 ? Interpolation.Sample
+        : Interpolation.Default;
+
+    // ---- constant buffers
+
+    private void DeclareConstantBuffer(ConstantBufferDeclaration cb, Scope scope)
+    {
+        CheckAttributes(cb.Attributes, "vk::binding");
+        if (cb.IsTextureBuffer)
+        {
+            Err(SemanticCodes.Unsupported, "tbuffer is not supported; use a StructuredBuffer or a cbuffer.", cb.Name.Span);
+            return;
+        }
+
+        var fields = new List<StructField>();
+        var info = new StructInfo { Decl = new StructDeclaration(cb.Span, [], false, cb.Name, [], [], []) };
+        var st = new StructType(cb.Name.Text);
+        _structInfos[st] = info;
+        var sym = new CBufferSymbol(cb.Name.Text, cb.Name.Span, st);
+        var memberNames = new List<(VariableSymbol?, StructField)>();
+        foreach (var m in cb.Members)
+        {
+            int before = fields.Count;
+            DeclareFields(m, fields, info, cb.Name.Text);
+            for (int i = before; i < fields.Count; i++)
+            {
+                var f = fields[i];
+                var vs = new VariableSymbol(f.Name, _fieldSpans[f], VarKind.CBufferMember, f.Type, m.Modifiers | Modifiers.Uniform)
+                {
+                    Buffer = sym,
+                    MemberIndex = i,
+                };
+                sym.Members.Add(vs);
+            }
+        }
+
+        _ = memberNames;
+        st.SetFields(fields);
+        if (!Define(scope, sym))
+        {
+            return;
+        }
+
+        foreach (var vs in sym.Members)
+        {
+            if (scope.LookupLocal(vs.Name) is not null)
+            {
+                Err(SemanticCodes.Redefinition, "'" + vs.Name + "' is already declared in this scope; constant buffer members share the global namespace.", vs.Span);
+                continue;
+            }
+
+            scope.Add(vs);
+        }
+
+        var rt = new ResourceType(ResourceTypeKind.ConstantBuffer, st);
+        var res = new ResourceDecl
+        {
+            Name = cb.Name.Text,
+            Span = cb.Name.Span,
+            Type = rt,
+            Kind = ResourceKind.ConstantBuffer,
+            ResourceType = ResourceTypeKind.ConstantBuffer,
+            Buffer = sym,
+        };
+        ApplyBindingAnnotations(res, cb.Attributes, cb.Annotations, 'b');
+        sym.Resource = res;
+        ComputeBufferLayout(res, st, BufferLayoutRules.ConstantBuffer, cb.Name.Span);
+        CBuffers.Add(sym);
+        Resources.Add(res);
+    }
+
+    private void ComputeBufferLayout(ResourceDecl res, HlslType elementType, BufferLayoutRules rules, SourceSpan where)
+    {
+        if (elementType.IsError)
+        {
+            return;
+        }
+
+        if (!BufferLayout.TryCompute(elementType, rules, _opt.Layout, out var layout, out string? error))
+        {
+            Err(SemanticCodes.BadLayout, "'" + res.Name + "' cannot be laid out in a buffer: " + error + ".", where);
+            return;
+        }
+
+        res.Layout = layout;
+    }
+
+    private void ApplyBindingAnnotations(ResourceDecl res, IReadOnlyList<AttributeSyntax> attrs, IReadOnlyList<Annotation> annotations, char expectedClass)
+    {
+        var vk = FindAttribute(attrs, "vk::binding");
+        if (vk is not null)
+        {
+            int? b = IntAttributeArg(vk, 0);
+            int set = vk.Arguments.Count > 1 ? IntAttributeArg(vk, 1) ?? 0 : 0;
+            if (b is not null)
+            {
+                res.ExplicitBinding = b;
+                res.ExplicitSet = set;
+                res.ExplicitFromVk = true;
+                if (b < 0 || set < 0)
+                {
+                    Err(SemanticCodes.BadResource, "vk::binding values must not be negative.", vk.Span);
+                }
+            }
+
+            return;
+        }
+
+        foreach (var a in annotations)
+        {
+            if (a is RegisterAnnotation r)
+            {
+                if (r.RegisterClass is not ('b' or 't' or 's' or 'u'))
+                {
+                    Err(SemanticCodes.BadResource, "The register class '" + r.RegisterClass + "' cannot bind a resource; use b (constant buffer), t (texture or read-only buffer), s (sampler) or u (read-write resource).", r.Span);
+                    continue;
+                }
+
+                _ = expectedClass;
+                res.ExplicitBinding = (int)r.Index;
+                res.ExplicitSet = (int)r.Space;
+            }
+        }
+    }
+
+    // ---- global variables
+
+    private void DeclareGlobalVariable(VariableDeclaration v, Scope scope)
+    {
+        CheckAttributes(v.Attributes, "vk::binding", "vk::offset");
+        var baseType = ResolveType(v.Type);
+        foreach (var d in v.Declarators)
+        {
+            bool unsizedOk = d.Initializer is not null || IsResourceLike(baseType);
+            var type = ApplyDims(baseType, d.ArrayDimensions, unsizedOk, d.Span);
+            if (d.Initializer is InitializerListExpression il && type is ArrayType { Length: 0 } ua)
+            {
+                type = HlslType.Array(ua.Element, il.Elements.Count);
+            }
+
+            DeclareOneGlobal(v, d, type, scope);
+        }
+    }
+
+    private static bool IsResourceLike(HlslType t)
+    {
+        while (t is ArrayType a)
+        {
+            t = a.Element;
+        }
+
+        return t is ResourceType or SamplerType;
+    }
+
+    private void DeclareOneGlobal(VariableDeclaration v, Declarator d, HlslType type, Scope scope)
+    {
+        var mods = v.Modifiers;
+        var name = d.Name;
+        d.Type = type;
+        if (type.IsError)
+        {
+            Define(scope, new VariableSymbol(name.Text, name.Span, VarKind.Global, type, mods));
+            return;
+        }
+
+        if (type.IsVoid)
+        {
+            Err(SemanticCodes.BadVariable, "A variable cannot have type void.", name.Span);
+            return;
+        }
+
+        if (IsResourceLike(type))
+        {
+            DeclareResourceVariable(v, d, type, scope);
+            return;
+        }
+
+        if ((mods & Modifiers.GroupShared) != 0)
+        {
+            var gs = new VariableSymbol(name.Text, name.Span, VarKind.GroupShared, type, mods) { Declarator = d };
+            if (d.Initializer is not null)
+            {
+                Err(SemanticCodes.BadVariable, "A groupshared variable cannot have an initializer; assign it in the shader instead.", d.Initializer.Span);
+            }
+
+            if (Define(scope, gs))
+            {
+                GroupSharedGlobals.Add(gs);
+            }
+
+            return;
+        }
+
+        bool isStatic = (mods & Modifiers.Static) != 0;
+        bool isConst = (mods & Modifiers.Const) != 0;
+        bool uniform = !isStatic && ((mods & (Modifiers.Uniform | Modifiers.Extern)) != 0 || !isConst || d.Initializer is null);
+        if (!uniform)
+        {
+            // static variables, and const variables with a value (compile-time constants).
+            var sv = new VariableSymbol(name.Text, name.Span, VarKind.Global, type, mods | Modifiers.Static) { Declarator = d, Initializer = d.Initializer };
+            if (d.Initializer is not null)
+            {
+                CheckInitializer(d.Initializer, type, isConst);
+                if (isConst && d.Initializer.Info?.Const is { } cv && type is ScalarType st)
+                {
+                    sv.Const = cv.ConvertTo(st);
+                }
+            }
+            else if (isConst)
+            {
+                Err(SemanticCodes.BadVariable, "The constant '" + name.Text + "' needs a value: write '= value' after the name.", name.Span);
+            }
+
+            if (Define(scope, sv))
+            {
+                PrivateGlobals.Add(sv);
+            }
+
+            return;
+        }
+
+        // A plain global is a uniform: it lives in the implicit constants buffer.
+        var us = new VariableSymbol(name.Text, name.Span, VarKind.CBufferMember, type, mods | Modifiers.Uniform) { Declarator = d };
+        if (!TypeOps.IsValueType(type))
+        {
+            Err(SemanticCodes.BadVariable, "The global '" + name.Text + "' has type '" + type + "', which cannot be a uniform.", name.Span);
+            return;
+        }
+
+        if (d.Initializer is not null)
+        {
+            Warn(SemanticCodes.BadVariable, "The initializer of the uniform '" + name.Text + "' is ignored: its value comes from the constant buffer. Use 'static const' for a compile-time constant.", d.Initializer.Span);
+        }
+
+        if (Define(scope, us))
+        {
+            _uniformGlobals.Add(us);
+        }
+    }
+
+    private void DeclareResourceVariable(VariableDeclaration v, Declarator d, HlslType type, Scope scope)
+    {
+        var name = d.Name;
+        var element = type;
+        int count = 1;
+        if (type is ArrayType at)
+        {
+            if (at.Element is ArrayType)
+            {
+                Err(SemanticCodes.BadResource, "Multi-dimensional resource arrays are not supported; flatten '" + name.Text + "' to one dimension.", name.Span);
+                return;
+            }
+
+            element = at.Element;
+            count = at.Length;
+        }
+
+        if ((v.Modifiers & Modifiers.Static) != 0)
+        {
+            Err(SemanticCodes.Unsupported, "Static resource variables are not supported; declare '" + name.Text + "' without 'static' and bind it.", name.Span);
+            return;
+        }
+
+        var rd = new ResourceDecl
+        {
+            Name = name.Text,
+            Span = name.Span,
+            Type = type,
+            Count = count,
+            Kind = KindOf(element),
+            ResourceType = (element as ResourceType)?.ResourceKind ?? ResourceTypeKind.Texture2D,
+            HlslTypeText = element.ToString(),
+        };
+        rd = CopyWithVariable(rd, name.Text, type, v.Modifiers, scope, out var vs);
+        if (vs is null)
+        {
+            return;
+        }
+
+        ApplyBindingAnnotations(rd, v.Attributes, d.Annotations, '\0');
+        if (element is ResourceType rt)
+        {
+            if (rt.IsStorageBuffer && rt.ResourceKind != ResourceTypeKind.ByteAddressBuffer && rt.ResourceKind != ResourceTypeKind.RWByteAddressBuffer)
+            {
+                if (rt.Element is null || rt.Element.IsError)
+                {
+                    Err(SemanticCodes.BadType, "'" + rt.ResourceKind + "' needs an element type, for example '" + rt.ResourceKind + "<float4>'.", name.Span);
+                }
+                else
+                {
+                    ComputeBufferLayout(rd, rt.Element, BufferLayoutRules.StorageBuffer, name.Span);
+                }
+            }
+            else if (rt.ResourceKind == ResourceTypeKind.ConstantBuffer)
+            {
+                if (rt.Element is StructType)
+                {
+                    ComputeBufferLayout(rd, rt.Element, BufferLayoutRules.ConstantBuffer, name.Span);
+                }
+                else
+                {
+                    Err(SemanticCodes.BadType, "ConstantBuffer needs a struct type, for example 'ConstantBuffer<MyData>'.", name.Span);
+                }
+            }
+            else if (rt.ResourceKind is ResourceTypeKind.AppendStructuredBuffer or ResourceTypeKind.ConsumeStructuredBuffer)
+            {
+                Err(SemanticCodes.Unsupported, "Append and consume buffers are not supported; use a RWStructuredBuffer with an atomic counter.", name.Span);
+            }
+        }
+
+        Resources.Add(rd);
+    }
+
+    private ResourceDecl CopyWithVariable(ResourceDecl rd, string name, HlslType type, Modifiers mods, Scope scope, out VariableSymbol? vs)
+    {
+        vs = new VariableSymbol(name, rd.Span, VarKind.Resource, type, mods);
+        var full = new ResourceDecl
+        {
+            Name = rd.Name,
+            Span = rd.Span,
+            Type = rd.Type,
+            Count = rd.Count,
+            Kind = rd.Kind,
+            ResourceType = rd.ResourceType,
+            HlslTypeText = rd.HlslTypeText,
+            Variable = vs,
+        };
+        vs.Resource = full;
+        if (!Define(scope, vs))
+        {
+            vs = null;
+        }
+
+        return full;
+    }
+
+    private static ResourceKind KindOf(HlslType t)
+    {
+        if (t is SamplerType)
+        {
+            return ResourceKind.Sampler;
+        }
+
+        if (t is not ResourceType r)
+        {
+            return ResourceKind.ConstantBuffer;
+        }
+
+        return r.ResourceKind switch
+        {
+            ResourceTypeKind.ConstantBuffer => ResourceKind.ConstantBuffer,
+            ResourceTypeKind.RWTexture1D or ResourceTypeKind.RWTexture1DArray or ResourceTypeKind.RWTexture2D
+                or ResourceTypeKind.RWTexture2DArray or ResourceTypeKind.RWTexture3D => ResourceKind.StorageTexture,
+            ResourceTypeKind.Buffer => ResourceKind.UniformTexelBuffer,
+            ResourceTypeKind.RWBuffer => ResourceKind.StorageTexelBuffer,
+            ResourceTypeKind.StructuredBuffer or ResourceTypeKind.ByteAddressBuffer => ResourceKind.ReadOnlyStorageBuffer,
+            ResourceTypeKind.RWStructuredBuffer or ResourceTypeKind.RWByteAddressBuffer or ResourceTypeKind.AppendStructuredBuffer
+                or ResourceTypeKind.ConsumeStructuredBuffer => ResourceKind.StorageBuffer,
+            _ => ResourceKind.SampledTexture,
+        };
+    }
+
+    /// <summary>Creates the implicit constants buffer for plain globals once every declaration is known.</summary>
+    private void FinishGlobals()
+    {
+        if (_uniformGlobals.Count == 0)
+        {
+            return;
+        }
+
+        string name = "Globals";
+        while (_global.LookupLocal(name) is not null)
+        {
+            name = "_" + name;
+        }
+
+        var st = new StructType(name);
+        var fields = new List<StructField>();
+        var sym = new CBufferSymbol(name, _uniformGlobals[0].Span, st);
+        foreach (var u in _uniformGlobals)
+        {
+            var d = u.Declarator!;
+            int? offset = null;
+            foreach (var a in d.Annotations)
+            {
+                if (a is PackOffsetAnnotation po)
+                {
+                    offset = (int)po.ByteOffset;
+                }
+            }
+
+            var f = new StructField(u.Name, u.Type)
+            {
+                ExplicitOffset = offset,
+                MatrixPacking = (u.Mods & Modifiers.RowMajor) != 0 ? MatrixPacking.RowMajor
+                    : (u.Mods & Modifiers.ColumnMajor) != 0 ? MatrixPacking.ColumnMajor
+                    : ContainsMatrix(u.Type) ? _packing : null,
+            };
+            u.Buffer = sym;
+            u.MemberIndex = fields.Count;
+            sym.Members.Add(u);
+            fields.Add(f);
+        }
+
+        st.SetFields(fields);
+        var res = new ResourceDecl
+        {
+            Name = name,
+            Span = sym.Span,
+            Type = new ResourceType(ResourceTypeKind.ConstantBuffer, st),
+            Kind = ResourceKind.ConstantBuffer,
+            ResourceType = ResourceTypeKind.ConstantBuffer,
+            Buffer = sym,
+        };
+        sym.Resource = res;
+        GlobalsBuffer = sym;
+        ComputeBufferLayout(res, st, BufferLayoutRules.ConstantBuffer, sym.Span);
+        CBuffers.Add(sym);
+        Resources.Add(res);
+    }
+}

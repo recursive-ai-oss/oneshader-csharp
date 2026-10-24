@@ -110,12 +110,21 @@ public class ReflectionTests
     }
 
     [Fact]
-    public void ApiStubReturnsDiagnosticNotException()
+    public void CompileReturnsReflectionAndOneSpirvBlobPerEntryPoint()
     {
-        var r = ShaderCompiler.Compile("float4 main() : SV_Target { return 0; }", "a.hlsl", cancellationToken: TestContext.Current.CancellationToken);
+        var r = ShaderCompiler.Compile("[shader(\"pixel\")] float4 main() : SV_Target { return 0; }", "a.hlsl", cancellationToken: TestContext.Current.CancellationToken);
+        Assert.True(r.Success);
+        Assert.Equal("main", Assert.Single(r.Reflection!.EntryPoints).Name);
+        var blob = Assert.Single(r.Blobs);
+        Assert.Equal(("main", CompileTarget.SpirV), (blob.EntryPoint, blob.Target));
+    }
+
+    [Fact]
+    public void CompileReportsErrorsAsDiagnosticsNotExceptions()
+    {
+        var r = ShaderCompiler.Compile("float4 main( : SV_Target { return 0; }", "a.hlsl", cancellationToken: TestContext.Current.CancellationToken);
         Assert.False(r.Success);
         Assert.Null(r.Reflection);
-        Assert.Empty(r.Blobs);
-        Assert.Equal("a.hlsl(1,1): error OSH0001: The HLSL compiler pipeline is not implemented yet in this build; nothing was compiled.", r.Diagnostics[0].ToString());
+        Assert.StartsWith("a.hlsl(1,", r.Diagnostics[0].ToString());
     }
 }

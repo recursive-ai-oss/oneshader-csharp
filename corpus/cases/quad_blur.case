@@ -1,0 +1,27 @@
+# Separable blur pixel shader of the renderer: one nine-tap pass along x over a 64x64 photo.
+case quad_blur
+shader 2d/renderer/quad.hlsl
+graphics vs=VSMain ps=PSBlur
+target 64 64
+blend premul
+tolerance 2
+vertexbuffer 0 44 instance :
+  0.0 0.0  64.0 0.0  0.0 64.0  0.0 0.0 1.0 1.0  0xFFFFFFFFu
+attr 0 float2 0
+attr 1 float2 8
+attr 2 float2 16
+attr 3 float4 24
+attr 4 unorm8x4 40
+draw vertices=6 instances=1
+uniform 0 0 : 64.0 64.0 0.0 0.0
+texture 1 0 64x64 rgba8 photo
+sampler 1 1 linear clamp
+uniform 2 0 :
+  0.02 0.0 0.0 0.0
+  0.0 0.0 0.0 0.0
+  0.0 0.0 0.0 0.0
+  0.0 0.0 0.0 0.0
+  0.0 0.0 0.0 0.0
+  0.0 0.0 0.0 0.0
+  0.0 0.0 0.0 0.0
+  0.0 0.0 0.0 0.0
