@@ -91,10 +91,17 @@ removes the compiler from a NativeAOT app.
   HLSL whichever packing the shader uses.
 - Vulkan descriptor slots: `[[vk::binding(binding, set)]]` wins. Otherwise set is the register
   space and binding is the register number. Two resources on the same slot (for example `t0` and
-  `s0`) are a build error that says to add `[[vk::binding]]` or renumber.
+  `s0`) are a build error that says to add `[[vk::binding]]` or renumber. Resources with neither
+  get set 0 and the lowest binding number not taken by an explicit slot, in declaration order (what
+  DXC does). Plain globals outside any `cbuffer` collect in an implicit constant buffer named
+  `Globals` (`_Globals` if that name is taken).
 - Vertex input locations follow declaration order unless `[[vk::location]]` is given. Formats
-  follow the shader type; a packed format (for example a `unorm8x4` colour) can be declared in
-  the shader source.
+  follow the shader type; a packed format is declared on the input field with
+  `[[oneshader::format("unorm8x4")]]` (any `VertexFormat` name, case-insensitive; the component
+  count and integer/float kind must match the declared type, e.g. `float4` for `unorm8x4`). The
+  shader sees the converted `float4`. DXC compiles the same file with a warning ("unknown
+  attribute 'format' ignored") and no error. Offsets are packed in declaration order, so the
+  vertex struct follows the format as described under "Vertex fields follow the format".
 
 ## Example
 

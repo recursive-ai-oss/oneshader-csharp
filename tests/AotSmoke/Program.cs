@@ -49,6 +49,20 @@ if (!ReflectionFormat.TryRead(ReflectionFormat.Write(reflection), out var back, 
     return 2;
 }
 
-var result = ShaderCompiler.Compile("float4 main() : SV_Target { return 0; }", "smoke.hlsl");
-Console.WriteLine(result.Diagnostics[0]);
-return result.Success ? 3 : 0;
+const string Shader = "cbuffer Frame { float4x4 M; };\nTexture2D<float4> T; SamplerState S;\n"
+    + "struct VO { float4 P : SV_Position; float2 Uv : TEXCOORD0; };\n"
+    + "[shader(\"vertex\")] VO VS(float2 p : POSITION) { VO o; o.P = mul(M, float4(p, 0, 1)); o.Uv = p; return o; }\n"
+    + "[shader(\"pixel\")] float4 PS(VO i) : SV_Target { return T.Sample(S, i.Uv); }\n";
+var result = ShaderCompiler.Compile(Shader, "smoke.hlsl");
+if (!result.Success || result.Reflection is null || result.Reflection.EntryPoints.Count != 2 || result.Reflection.Resources.Count != 3)
+{
+    foreach (var d in result.Diagnostics)
+    {
+        Console.Error.WriteLine(d);
+    }
+
+    return 3;
+}
+
+Console.WriteLine("compiled " + result.Reflection.EntryPoints.Count + " entry points");
+return 0;

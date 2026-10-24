@@ -103,3 +103,14 @@ building and (once passes exist) after every pass.
 - Constants keep exact bits (`Constant.Bits`), so folding wraps integers as HLSL does and keeps float
   results in the operand's own precision.
 - Block names and value names are hints and never take part in equality or output ordering.
+
+## Lowering conventions (front end)
+
+- An HLSL entry point becomes two functions: `Name_body`, the user function with its original parameters,
+  and a wrapper named `Name` that loads the input globals into a struct, calls the body and stores the
+  outputs. Only the wrapper is an `EntryPoint`.
+- Resource arrays are globals whose value type is an `ArrayType` of the resource (`ResourceCount` set);
+  an element is an `AccessChain` with the index. Constant-buffer members are `AccessChain(global, type, memberIndex)`.
+- Non-constant `static` initializers run in a function `init_globals` that each wrapper calls first.
+- `&&`, `||` and non-pure `?:` are control flow with a `Phi`; pure `?:` is `Select`.
+- Dead code after `return`, `break`, `continue` and `discard` is not lowered; merge blocks nothing reaches end in `Unreachable`.
