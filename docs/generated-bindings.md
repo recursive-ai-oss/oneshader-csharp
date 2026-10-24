@@ -36,6 +36,8 @@ deterministic.
     `VertexAttribute` (location, `VertexFormat`, offset).
   - Compute entry points add `ThreadGroupSizeX`, `ThreadGroupSizeY` and `ThreadGroupSizeZ`.
   - Metal and WebGPU outputs will be added as sibling members (`Msl`, `Wgsl`).
+- All counts, sizes, strides, offsets, locations and thread-group sizes are `uint`, matching
+  the Vulkan API.
 
 The support types (`ShaderStage`, `ResourceKind`, `VertexFormat`, `VertexAttribute`,
 `ResourceBinding`) live in `RecursiveAI.OneShader`, which the build package brings in, so a
