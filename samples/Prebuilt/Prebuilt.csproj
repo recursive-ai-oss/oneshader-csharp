@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Shows the generated code without the HLSL compiler: the .oneshader files are what the build
+    task writes (reflection and compiled blobs), added by hand as additional files. The source
+    generator inside the build package turns them into C#.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>PrebuiltSample</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <EnableDefaultOneShaderItems>false</EnableDefaultOneShaderItems>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="RecursiveAI.OneShader.Build" Version="0.1.0-dev.*" />
+    <AdditionalFiles Include="*.oneshader" />
+  </ItemGroup>
+</Project>

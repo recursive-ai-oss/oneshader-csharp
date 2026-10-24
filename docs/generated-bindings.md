@@ -9,8 +9,27 @@ Reference the `RecursiveAI.OneShader.Build` package. Every `*.hlsl` file in the 
 `OneShader` item and is compiled during `dotnet build` (turn the default glob off with
 `<EnableDefaultOneShaderItems>false</EnableDefaultOneShaderItems>` and list items yourself).
 
+```xml
+<ItemGroup>
+  <PackageReference Include="RecursiveAI.OneShader.Build" Version="..." />
+</ItemGroup>
+```
+
+The package brings `RecursiveAI.OneShader` (the support types) with it. Build with `dotnet build`: the
+task is a .NET task, so Visual Studio's .NET Framework MSBuild cannot run it. Until a package is
+published, `tools/pack-local.sh` packs both packages into a local folder (`.feed` by default);
+`samples/` has projects that restore from it, and one (`samples/LocalSource`) that references the
+repository's projects directly. Only projects that contain shaders reference the build package;
+it does not flow to their consumers.
+
 Entry points are found from `[shader("vertex")]`, `[shader("pixel")]` and `[shader("compute")]`
 attributes. Item metadata can list them explicitly instead.
+
+Item metadata, all optional: `EntryPoints="VSMain:Vertex;PSMain:Pixel"`, `Defines="A;B=2"`,
+`IncludeDirectories="dir;dir"` (searched after the including file's folder), `Namespace`, `ClassName`.
+Project properties: `OneShaderNamespace` (default `$(RootNamespace).Shaders`), `OneShaderDefines`,
+`OneShaderIncludeDirectories`. A shader is compiled again only when it, a file it includes, the
+options or the compiler changed.
 
 Errors and warnings are ordinary MSBuild diagnostics on the HLSL line:
 
@@ -38,6 +57,24 @@ deterministic.
   - Metal and WebGPU outputs will be added as sibling members (`Msl`, `Wgsl`).
 - All counts, sizes, strides, offsets, locations and thread-group sizes are `uint`, matching
   the Vulkan API.
+
+Member types in generated structs:
+
+- `float`, `int`, `uint` and the other scalars map to the C# type of the same width; `bool` is a `uint`
+  (HLSL stores it as a 32-bit word).
+- `float2/3/4` are `Vector2/3/4`. Vectors of other element types have no `System.Numerics` type and
+  become one field per component (`Offset_X`, `Offset_Y`).
+- Arrays become one member per element (`Weights_0`, `Weights_1`), so the struct needs no unsafe code.
+- Nested HLSL structs become nested C# structs with the same rules. If one HLSL struct appears under
+  two packings (a constant buffer and a structured buffer), the second gets a `_1` suffix.
+- Matrices are `Matrix4x4` members, for every size up to 4x4 (elements outside the HLSL shape stay
+  zero). A row-major 4x4 is a plain field; the other shapes are properties over private storage that
+  does the arranging, so element (i, j) is `M[i][j]` either way.
+- Each `StructuredBuffer<T>` / `RWStructuredBuffer<T>` whose `T` is a struct also gets a C# struct,
+  named after `T`, with `Size` equal to the element stride.
+- Vertex fields follow the format: `Float32x2` is a `Vector2`; packed formats (`Unorm8x4` and the
+  like) are a `uint` or `ulong` holding the raw bits; integer and half vectors are one field per
+  component.
 
 The support types (`ShaderStage`, `ResourceKind`, `VertexFormat`, `VertexAttribute`,
 `ResourceBinding`) live in `RecursiveAI.OneShader`, which the build package brings in, so a

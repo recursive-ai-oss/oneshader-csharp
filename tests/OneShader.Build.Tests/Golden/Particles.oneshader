@@ -1,0 +1,59 @@
+oneshader-reflection 1
+source name="Shaders/Particles.hlsl"
+targets list=SpirV
+resource name="Params" kind=ConstantBuffer count=1 stages=Compute rtype=ConstantBuffer hlsl=""
+  slot target=SpirV set=0 binding=0
+  layout
+    type kind=Struct scalar=Bool rows=0 cols=0 name="Params" size=160 align=16 length=0 stride=0 mstride=0 packing=ColumnMajor
+      member name="Count" offset=0
+        type kind=Scalar scalar=UInt rows=0 cols=0 name="" size=4 align=4 length=0 stride=0 mstride=0 packing=ColumnMajor
+      member name="Scale" offset=4
+        type kind=Scalar scalar=Float rows=0 cols=0 name="" size=4 align=4 length=0 stride=0 mstride=0 packing=ColumnMajor
+      member name="Offset" offset=8
+        type kind=Vector scalar=Int rows=2 cols=0 name="" size=8 align=8 length=0 stride=0 mstride=0 packing=ColumnMajor
+      member name="Flag" offset=16
+        type kind=Scalar scalar=Bool rows=0 cols=0 name="" size=4 align=4 length=0 stride=0 mstride=0 packing=ColumnMajor
+      member name="Weights" offset=32
+        type kind=Array scalar=Bool rows=0 cols=0 name="" size=32 align=16 length=2 stride=16 mstride=0 packing=ColumnMajor
+          element
+            type kind=Vector scalar=Float rows=4 cols=0 name="" size=16 align=16 length=0 stride=0 mstride=0 packing=ColumnMajor
+      member name="Lights" offset=64
+        type kind=Array scalar=Bool rows=0 cols=0 name="" size=32 align=16 length=2 stride=16 mstride=0 packing=ColumnMajor
+          element
+            type kind=Struct scalar=Bool rows=0 cols=0 name="Light" size=16 align=16 length=0 stride=0 mstride=0 packing=ColumnMajor
+              member name="Intensity" offset=0
+                type kind=Scalar scalar=Float rows=0 cols=0 name="" size=4 align=4 length=0 stride=0 mstride=0 packing=ColumnMajor
+              member name="Falloff" offset=4
+                type kind=Scalar scalar=Float rows=0 cols=0 name="" size=4 align=4 length=0 stride=0 mstride=0 packing=ColumnMajor
+      member name="Counts" offset=96
+        type kind=Array scalar=Bool rows=0 cols=0 name="" size=48 align=16 length=3 stride=16 mstride=0 packing=ColumnMajor
+          element
+            type kind=Scalar scalar=UInt rows=0 cols=0 name="" size=4 align=4 length=0 stride=0 mstride=0 packing=ColumnMajor
+      member name="Tint" offset=144
+        type kind=Vector scalar=Float rows=3 cols=0 name="" size=12 align=16 length=0 stride=0 mstride=0 packing=ColumnMajor
+resource name="Particles" kind=StorageBuffer count=1 stages=Compute rtype=RWStructuredBuffer hlsl="RWStructuredBuffer<Particle>"
+  slot target=SpirV set=0 binding=1
+  layout
+    type kind=Struct scalar=Bool rows=0 cols=0 name="Particle" size=32 align=16 length=0 stride=0 mstride=0 packing=ColumnMajor
+      member name="Position" offset=0
+        type kind=Vector scalar=Float rows=2 cols=0 name="" size=8 align=8 length=0 stride=0 mstride=0 packing=ColumnMajor
+      member name="Velocity" offset=8
+        type kind=Vector scalar=Float rows=2 cols=0 name="" size=8 align=8 length=0 stride=0 mstride=0 packing=ColumnMajor
+      member name="Color" offset=16
+        type kind=Vector scalar=Float rows=4 cols=0 name="" size=16 align=16 length=0 stride=0 mstride=0 packing=ColumnMajor
+resource name="LightList" kind=ReadOnlyStorageBuffer count=1 stages=Compute rtype=StructuredBuffer hlsl="StructuredBuffer<Light>"
+  slot target=SpirV set=1 binding=0
+  layout
+    type kind=Struct scalar=Bool rows=0 cols=0 name="Light" size=8 align=4 length=0 stride=0 mstride=0 packing=ColumnMajor
+      member name="Intensity" offset=0
+        type kind=Scalar scalar=Float rows=0 cols=0 name="" size=4 align=4 length=0 stride=0 mstride=0 packing=ColumnMajor
+      member name="Falloff" offset=4
+        type kind=Scalar scalar=Float rows=0 cols=0 name="" size=4 align=4 length=0 stride=0 mstride=0 packing=ColumnMajor
+entry name="CSMain" stage=Compute workgroup=8,8,1 stride=0
+  uses name="Params"
+  uses name="Particles"
+  uses name="LightList"
+generate namespace="PrebuiltSample.Shaders" class=""
+blob entry="CSMain" target=SpirV data="AwIjByQrMjlAR05VXGNqcXh/ho2Um6KpsLe+xQ=="
+options hash=0
+dep file="Shaders/Particles.hlsl" sha=missing
