@@ -817,6 +817,7 @@ internal sealed partial class SpirvEmitter
 
             idx.Add(Id(i.Operands[k]));
             pe = ChildType(pe, 0, i.Span);
+            cur = cur is ArrayType resourceArray ? resourceArray.Element : cur;
             k++;
         }
 

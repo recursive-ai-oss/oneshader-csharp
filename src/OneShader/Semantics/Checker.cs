@@ -692,7 +692,16 @@ internal sealed partial class Checker
 
         _ = memberNames;
         st.SetFields(fields);
-        if (!Define(scope, sym))
+
+        // A member may reuse the buffer's own name (cbuffer Lights { Light Lights[8]; }); the member then wins, because
+        // the buffer name is only ever used to explain a mistake.
+        bool memberTakesName = false;
+        foreach (var vs in sym.Members)
+        {
+            memberTakesName |= vs.Name == sym.Name;
+        }
+
+        if (!memberTakesName && !Define(scope, sym))
         {
             return;
         }
