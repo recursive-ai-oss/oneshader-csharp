@@ -1,0 +1,6 @@
+# Inherited members and base-typed parameters over eight rectangles.
+case lang_inheritance
+shader lang/inheritance.hlsl
+dispatch CSMain 1 1 1
+storage 0 0 : @fpm1(3,64)
+storage 0 1 out size=128

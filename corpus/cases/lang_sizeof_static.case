@@ -1,0 +1,5 @@
+# sizeof constants and static local variables.
+case lang_sizeof_static
+shader lang/sizeof_static.hlsl
+dispatch CSMain 1 1 1
+storage 0 0 out size=64

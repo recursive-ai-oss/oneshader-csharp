@@ -61,6 +61,11 @@ internal sealed partial class Checker
             return HlslType.Error;
         }
 
+        if (tt is StructType structTarget)
+        {
+            return CheckStructMethodCall(c, ma, structTarget, at, info);
+        }
+
         if (tt is not ResourceType rt)
         {
             Err(SemanticCodes.BadMember, "The type '" + tt + "' has no method '" + name + "'.", ma.Member.Span);

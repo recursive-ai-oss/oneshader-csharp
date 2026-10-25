@@ -785,6 +785,9 @@ public sealed class FunctionDeclaration(SourceSpan span, IReadOnlyList<Attribute
 
     /// <summary>The return type; set by semantic analysis.</summary>
     public HlslType? ResolvedReturnType { get; set; }
+
+    /// <summary>For a template: the tokens it was parsed from, so each instantiation gets its own tree.</summary>
+    internal TemplateSource? Source { get; set; }
 }
 
 /// <summary>A struct or class, possibly with base types and member functions.</summary>
@@ -807,6 +810,19 @@ public sealed class StructDeclaration(SourceSpan span, IReadOnlyList<AttributeSy
 
     /// <summary>The struct type; set by semantic analysis.</summary>
     public StructType? Resolved { get; set; }
+
+    /// <summary>For a template: the tokens it was parsed from, so each instantiation gets its own tree.</summary>
+    internal TemplateSource? Source { get; set; }
+}
+
+/// <summary>The token range of a template declaration, kept so that every instantiation is parsed afresh and analysed with its own types.</summary>
+internal sealed class TemplateSource(IReadOnlyList<Lexing.Token> tokens, HashSet<string> userTypes, HashSet<string> templateNames)
+{
+    public IReadOnlyList<Lexing.Token> Tokens { get; } = tokens;
+
+    public HashSet<string> UserTypes { get; } = userTypes;
+
+    public HashSet<string> TemplateNames { get; } = templateNames;
 }
 
 /// <summary>One enumerator.</summary>

@@ -88,11 +88,9 @@ internal sealed partial class Checker
 
                 return HlslType.Error;
             case SizeOfExpression s:
-                Err(SemanticCodes.Unsupported, "sizeof is not supported yet.", s.Span);
-                return HlslType.Error;
+                return CheckSizeOf(s);
             case ThisExpression t:
-                Err(SemanticCodes.Unsupported, "'this' is not supported: member functions are not supported yet.", t.Span);
-                return HlslType.Error;
+                return CheckThis(t);
             default:
                 return HlslType.Error;
         }
@@ -158,6 +156,11 @@ internal sealed partial class Checker
     private HlslType CheckName(NameExpression n)
     {
         var info = InfoOf(n);
+        if (TryImplicitMember(n, info, out var memberType))
+        {
+            return memberType;
+        }
+
         var sym = LookupQualified(n.Name, out _);
         if (sym is null)
         {
@@ -380,6 +383,11 @@ internal sealed partial class Checker
             return HlslType.Error;
         }
 
+        if (lt is StructType || rt is StructType)
+        {
+            return CheckOperatorCall(b, lt, rt, info);
+        }
+
         var ls = lt.ScalarElement;
         var rs = rt.ScalarElement;
         if (ls is null || rs is null)
@@ -567,8 +575,17 @@ internal sealed partial class Checker
     /// <summary>Why <paramref name="e"/> cannot be assigned to, or an empty string when it can.</summary>
     private static string WriteBlocker(Expression e)
     {
+        if (e.Info?.Rewritten is { } rewritten)
+        {
+            return WriteBlocker(rewritten);
+        }
+
         switch (e)
         {
+            case ThisExpression th:
+                return th.Info?.Symbol is VariableSymbol { IsConst: true }
+                    ? "'this' is read-only inside a const member function. Remove 'const' from the function, or do not change the object here."
+                    : "";
             case ParenthesizedExpression p:
                 return WriteBlocker(p.Inner);
             case NameExpression n:
@@ -858,6 +875,23 @@ internal sealed partial class Checker
                     return st.Fields[idx].Type;
                 }
 
+                if (FindField(st, name, out var holder, out _) && !ReferenceEquals(holder, st))
+                {
+                    // An inherited member: reach it through the base sub-object.
+                    var via = BuildBaseAccess(m.Target, st, holder, m.Span);
+                    var re = new MemberAccessExpression(m.Span, via, m.Member);
+                    var reType = CheckExpr(re);
+                    info.Rewritten = re;
+                    info.IsLValue = re.Info?.IsLValue ?? false;
+                    return reType;
+                }
+
+                if (FindMethodGroup(st, name, out _) is not null)
+                {
+                    Err(SemanticCodes.BadMember, "'" + name + "' is a member function of '" + st.Name + "'; call it with parentheses: " + name + "(...).", m.Member.Span);
+                    return HlslType.Error;
+                }
+
                 string? hint = Suggest(name, FieldNames(st));
                 Err(SemanticCodes.BadMember, "The struct '" + st.Name + "' has no member '" + name + "'." + (hint is null ? "" : " Did you mean '" + hint + "'?"), m.Member.Span);
                 return HlslType.Error;
@@ -1007,6 +1041,11 @@ internal sealed partial class Checker
         if (tt is ResourceType rt)
         {
             return CheckResourceIndex(ix, rt, it, info);
+        }
+
+        if (tt is StructType indexedStruct)
+        {
+            return CheckStructIndex(ix, indexedStruct, it, info);
         }
 
         var elem = TypeOps.IndexedElement(tt);

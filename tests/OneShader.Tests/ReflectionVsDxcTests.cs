@@ -102,6 +102,13 @@ public partial class ReflectionVsDxcTests
                         string typeName = res.Kind == ResourceKind.ConstantBuffer ? "type_" + lay.Name : lay.Name;
                         foreach (var mem in lay.Members)
                         {
+                            if (mem.Name.StartsWith("__base_", System.StringComparison.Ordinal))
+                            {
+                                // DXC leaves the base sub-object of a derived struct unnamed; it is always the first member, at offset 0.
+                                Assert.Equal(0u, mem.Offset);
+                                continue;
+                            }
+
                             Assert.True(offsets.TryGetValue((typeName, mem.Name), out uint off), $"{res.Name}.{mem.Name}: DXC has no offset");
                             Assert.Equal(off, mem.Offset);
                         }

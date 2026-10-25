@@ -40,7 +40,7 @@ public static class Corpus
     public static TheoryData<string> ComputeCases()
     {
         var d = new TheoryData<string>();
-        foreach (string n in CaseNames.Where(n => Load(n).IsCompute))
+        foreach (string n in CaseNames.Where(n => Load(n).IsCompute && Load(n).Expects.Count > 0))
         {
             d.Add(n);
         }

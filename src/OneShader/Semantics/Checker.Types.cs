@@ -79,6 +79,11 @@ internal sealed partial class Checker
             {
                 sym = ns.Scope.LookupLocal(part);
             }
+            else if (sym is TypeSymbol { Type: StructType owner } && _structInfos.TryGetValue(owner, out var oinfo))
+            {
+                // Static member functions: Type::function.
+                sym = oinfo.Methods.TryGetValue(part, out var mg) ? mg : null;
+            }
             else if (sym is TypeSymbol { Type: EnumType et })
             {
                 sym = null;
@@ -113,10 +118,27 @@ internal sealed partial class Checker
         if (name.Parts.Count == 1 || name.IsGlobal)
         {
             var sym = LookupQualified(name, out _);
+            if (sym is StructTemplateSymbol tpl)
+            {
+                if (n.Arguments.Count == 0)
+                {
+                    Err(SemanticCodes.BadType, "'" + last + "' is a struct template: give it template arguments, for example " + last + "<float>.", n.Span);
+                    return HlslType.Error;
+                }
+
+                return InstantiateStruct(tpl, n.Arguments, n.Span);
+            }
+
             if (sym is TypeSymbol ts)
             {
                 if (n.Arguments.Count > 0)
                 {
+                    // Inside a template's own body its name stands for the instance; with arguments it names another instance.
+                    if (ts.Type is StructType self && _templateOf.TryGetValue(self, out var owner))
+                    {
+                        return InstantiateStruct(owner, n.Arguments, n.Span);
+                    }
+
                     Err(SemanticCodes.BadType, "The type '" + last + "' takes no template arguments.", n.Span);
                 }
 

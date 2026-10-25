@@ -26,6 +26,15 @@ internal sealed class StructInfo
     public required StructDeclaration Decl { get; init; }
 
     public Dictionary<string, int> FieldIndex { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Member functions by name (operators as <c>operator+</c>).</summary>
+    public Dictionary<string, FunctionGroup> Methods { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Names of the member functions in declaration order.</summary>
+    public List<string> MethodOrder { get; } = [];
+
+    /// <summary>The base struct, or null.</summary>
+    public StructType? Base { get; set; }
 }
 
 /// <summary>
@@ -35,7 +44,7 @@ internal sealed class StructInfo
 /// </summary>
 internal sealed partial class Checker
 {
-    private readonly DiagnosticBag _diag;
+    private DiagnosticBag _diag;
     private readonly FrontendOptions _opt;
     private readonly string _file;
     private readonly CancellationToken _ct;
@@ -48,6 +57,7 @@ internal sealed partial class Checker
     private int _depth;
     private bool _depthReported;
     private FunctionSymbol? _fn;
+    private Scope? _fnScope;
     private int _loopDepth;
     private int _switchDepth;
 
@@ -124,6 +134,7 @@ internal sealed partial class Checker
 
         DetectCallCycles();
         FindEntryPoints();
+        CheckGroupSyncStages();
         AssignBindings();
     }
 
@@ -357,30 +368,68 @@ internal sealed partial class Checker
 
     // ---- structs
 
-    private HlslType DeclareStruct(StructDeclaration s, Scope scope)
+    private HlslType DeclareStruct(StructDeclaration s, Scope scope) => DeclareStructCore(s, scope, null, true);
+
+    /// <summary>
+    /// Declares a struct. A template instance passes its mangled name and <paramref name="define"/> false: it is reached
+    /// through the template, not by name, and sees its own name as the instance.
+    /// </summary>
+    private HlslType DeclareStructCore(StructDeclaration s, Scope scope, string? nameOverride, bool define, StructTemplateSymbol? instanceOf = null)
     {
-        string name = s.Name?.Text ?? "";
-        if (s.TemplateParameters.Count > 0)
+        string name = nameOverride ?? s.Name?.Text ?? "";
+        if (s.TemplateParameters.Count > 0 && instanceOf is null)
         {
-            Err(SemanticCodes.Unsupported, "Struct templates are not supported yet.", (s.Name?.Span) ?? s.Span);
-            if (s.Name is not null)
+            if (s.Name is null || s.Source is null)
             {
-                Define(scope, new TypeSymbol(name, s.Name.Span, HlslType.Error));
+                Err(SemanticCodes.Unsupported, "A struct template needs a name.", s.Span);
+                return HlslType.Error;
             }
 
+            Define(scope, new StructTemplateSymbol(s.Name.Text, s.Name.Span, s, scope));
             return HlslType.Error;
-        }
-
-        if (s.BaseTypes.Count > 0)
-        {
-            Err(SemanticCodes.Unsupported, "Struct inheritance is not supported yet; copy the base members into the struct.", s.BaseTypes[0].Span);
         }
 
         var st = new StructType(name);
         s.Resolved = st;
         var info = new StructInfo { Decl = s };
         _structInfos[st] = info;
+        if (instanceOf is not null)
+        {
+            instanceOf.Instances[name] = st;
+            _templateOf[st] = instanceOf;
+        }
+
+        if (!define && s.Name is not null)
+        {
+            scope.Add(new TypeSymbol(s.Name.Text, s.Name.Span, st));
+        }
+
         var fields = new List<StructField>();
+        var methods = new List<FunctionDeclaration>();
+        if (s.BaseTypes.Count > 1)
+        {
+            Err(SemanticCodes.Unsupported, "A struct can have only one base struct; HLSL does not allow multiple inheritance. Make the second base a member instead.", s.BaseTypes[1].Span);
+        }
+
+        if (s.BaseTypes.Count > 0)
+        {
+            var bt = ResolveType(s.BaseTypes[0]);
+            if (bt is StructType bst)
+            {
+                // The base is the first member, as DXC lays it out, so a derived struct has the same bytes as one declaring a base member.
+                st.BaseStruct = bst;
+                info.Base = bst;
+                var bf = new StructField(BaseFieldName(bst), bst) { MatrixPacking = ContainsMatrix(bst) ? _packing : null };
+                info.FieldIndex[bf.Name] = 0;
+                _fieldSpans[bf] = s.BaseTypes[0].Span;
+                fields.Add(bf);
+            }
+            else if (!bt.IsError)
+            {
+                Err(SemanticCodes.BadType, "A struct can only inherit from another struct, not '" + bt + "'.", s.BaseTypes[0].Span);
+            }
+        }
+
         foreach (var m in s.Members)
         {
             switch (m)
@@ -389,7 +438,7 @@ internal sealed partial class Checker
                     DeclareFields(v, fields, info, st.Name);
                     break;
                 case FunctionDeclaration f:
-                    Err(SemanticCodes.Unsupported, "Member functions are not supported yet; move '" + f.Name + "' out of the struct and pass the struct as a parameter.", f.Name.Span);
+                    methods.Add(f);
                     break;
                 case TypedefDeclaration t:
                     DeclareTypedef(t, scope);
@@ -407,12 +456,101 @@ internal sealed partial class Checker
         }
 
         st.SetFields(fields);
-        if (s.Name is not null && s.Members.Count >= 0)
+        if (define && s.Name is not null)
         {
             Define(scope, new TypeSymbol(name, s.Name.Span, st));
         }
 
+        DeclareMethods(st, info, methods, scope);
         return st;
+    }
+
+    private static string BaseFieldName(StructType b) => "__base_" + b.Name;
+
+    private void DeclareMethods(StructType st, StructInfo info, List<FunctionDeclaration> decls, Scope scope)
+    {
+        var syms = new List<FunctionSymbol>();
+        foreach (var f in decls)
+        {
+            string name = f.Name.Last.Text;
+            if (f.Name.Parts.Count > 1)
+            {
+                Err(SemanticCodes.Unsupported, "Define member function '" + name + "' inside the struct.", f.Name.Span);
+                continue;
+            }
+
+            if (name.StartsWith("operator", StringComparison.Ordinal) && !ValidateOperator(f, name))
+            {
+                continue;
+            }
+
+            if (!info.Methods.TryGetValue(name, out var group))
+            {
+                group = new FunctionGroup(name, f.Name.Span);
+                info.Methods[name] = group;
+                info.MethodOrder.Add(name);
+            }
+
+            if (f.TemplateParameters.Count > 0)
+            {
+                if (f.Source is null)
+                {
+                    Err(SemanticCodes.Unsupported, "This member function template cannot be instantiated: its declaration is incomplete.", f.Name.Span);
+                    continue;
+                }
+
+                group.Templates.Add(new FunctionTemplate { Decl = f, Scope = scope, Owner = st });
+                continue;
+            }
+
+            var sym = BuildFunctionSymbol(f, scope, st, null);
+            if (AddToGroup(group, sym, f))
+            {
+                _allFns.Add(sym);
+                syms.Add(sym);
+            }
+        }
+
+        // Bodies after every signature, so member functions can call each other in any order.
+        foreach (var sym in syms)
+        {
+            if (sym.HasBody)
+            {
+                Functions.Add(sym);
+                CheckFunctionBody(sym, scope);
+            }
+        }
+    }
+
+    /// <summary>HLSL 2021 (as DXC implements it) overloads binary arithmetic, bitwise and comparison operators, [] and () as members only.</summary>
+    private bool ValidateOperator(FunctionDeclaration f, string name)
+    {
+        string op = name.Substring("operator".Length);
+        int n = f.Parameters.Count;
+        if ((f.Modifiers & Modifiers.Static) != 0)
+        {
+            Err(SemanticCodes.BadOperator, "An operator overload cannot be static; it works on the object to its left.", f.Name.Span);
+            return false;
+        }
+
+        switch (op)
+        {
+            case "+" or "-" or "*" or "/" or "%" or "&" or "|" or "^" or "&&" or "||" or "==" or "!=" or "<" or "<=" or ">" or ">=" or "[]":
+                if (n == 1)
+                {
+                    return true;
+                }
+
+                Err(SemanticCodes.BadOperator, n == 0
+                    ? "Unary operators cannot be overloaded in HLSL 2021; 'operator" + op + "' must take the right operand as its one parameter."
+                    : "'operator" + op + "' takes exactly one parameter, the right operand, but this declares " + Num(n) + ".", f.Name.Span);
+                return false;
+            case "()":
+                return true;
+            default:
+                Err(SemanticCodes.BadOperator, "'operator" + op + "' cannot be overloaded: HLSL 2021 allows only the arithmetic, bitwise (not shifts), logical and comparison operators, [] and (). Overload the plain operator and write the assignment out, for example a = a + b.", f.Name.Span);
+                return false;
+        }
     }
 
     private void DeclareFields(VariableDeclaration v, List<StructField> fields, StructInfo info, string structName)

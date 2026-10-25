@@ -15,12 +15,6 @@ internal sealed partial class Checker
     private void DeclareFunction(FunctionDeclaration d, Scope scope)
     {
         string name = d.Name.Last.Text;
-        if (d.TemplateParameters.Count > 0)
-        {
-            Err(SemanticCodes.Unsupported, "Function templates are not supported yet; write one overload per type.", d.Name.Span);
-            return;
-        }
-
         if (d.Name.Parts.Count > 1)
         {
             Err(SemanticCodes.Unsupported, "Defining a function outside its struct or namespace is not supported yet.", d.Name.Span);
@@ -29,70 +23,12 @@ internal sealed partial class Checker
 
         if (name.StartsWith("operator", StringComparison.Ordinal))
         {
-            Err(SemanticCodes.Unsupported, "Operator overloads are not supported yet.", d.Name.Span);
+            // DXC (HLSL 2021) rejects non-member operators too.
+            string opText = name.Substring("operator".Length);
+            Err(SemanticCodes.BadOperator, "The operator '" + opText + "' cannot be overloaded outside a struct: HLSL 2021 only allows member operators. Declare it inside the struct of its left operand.", d.Name.Span);
             return;
         }
 
-        CheckAttributes(d.Attributes, "shader", "numthreads", "earlydepthstencil");
-        var sym = new FunctionSymbol(name, d.Name.Span, d);
-        sym.ReturnType = ResolveType(d.ReturnType);
-        d.ResolvedReturnType = sym.ReturnType;
-        var names = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var p in d.Parameters)
-        {
-            var pt = ResolveType(p.Type);
-            pt = ApplyDims(pt, p.ArrayDimensions, false, p.Span);
-            p.ResolvedType = pt;
-            if (pt.IsVoid)
-            {
-                Err(SemanticCodes.BadVariable, "A parameter cannot have type void.", p.Span);
-                pt = HlslType.Error;
-            }
-
-            if (pt is ResourceType or SamplerType or ArrayType { Element: ResourceType or SamplerType })
-            {
-                sym.HasResourceParams = true;
-                if ((p.Modifiers & Modifiers.Out) != 0)
-                {
-                    Err(SemanticCodes.BadResource, "A resource parameter cannot be 'out' or 'inout'.", p.Span);
-                }
-            }
-
-            if (p.Name is not null && !names.Add(p.Name.Text))
-            {
-                Err(SemanticCodes.Redefinition, "The parameter '" + p.Name.Text + "' is declared twice; rename one.", p.Name.Span);
-            }
-
-            sym.Params.Add(new ParamInfo { Name = p.Name?.Text ?? "", Type = pt, Mods = p.Modifiers, Default = p.DefaultValue, Decl = p });
-            if (p.DefaultValue is not null)
-            {
-                CheckExpr(p.DefaultValue);
-                CheckConvertible(p.DefaultValue, pt);
-            }
-        }
-
-        var shader = FindAttribute(d.Attributes, "shader");
-        if (shader is not null)
-        {
-            string? stage = StringAttributeArg(shader, 0);
-            switch (stage)
-            {
-                case "vertex":
-                    sym.EntryStage = ShaderStage.Vertex;
-                    break;
-                case "pixel" or "fragment":
-                    sym.EntryStage = ShaderStage.Pixel;
-                    break;
-                case "compute":
-                    sym.EntryStage = ShaderStage.Compute;
-                    break;
-                default:
-                    Err(SemanticCodes.BadEntryPoint, "The shader stage " + (stage is null ? "must be a string" : "'" + stage + "' is not supported") + ": use [shader(\"vertex\")], [shader(\"pixel\")] or [shader(\"compute\")].", shader.Span);
-                    break;
-            }
-        }
-
-        // Group with earlier overloads.
         var existing = scope.LookupLocal(name);
         FunctionGroup group;
         if (existing is FunctionGroup g)
@@ -110,6 +46,124 @@ internal sealed partial class Checker
             return;
         }
 
+        if (d.TemplateParameters.Count > 0)
+        {
+            if (d.Source is null)
+            {
+                Err(SemanticCodes.Unsupported, "This function template cannot be instantiated: its declaration is incomplete.", d.Name.Span);
+                return;
+            }
+
+            group.Templates.Add(new FunctionTemplate { Decl = d, Scope = scope });
+            return;
+        }
+
+        var sym = BuildFunctionSymbol(d, scope, null, null);
+        if (AddToGroup(group, sym, d))
+        {
+            _allFns.Add(sym);
+            if (sym.HasBody)
+            {
+                Functions.Add(sym);
+                CheckFunctionBody(sym, scope);
+            }
+        }
+    }
+
+    /// <summary>Resolves the signature of a function or member function. Reports problems; the result is always usable.</summary>
+    private FunctionSymbol BuildFunctionSymbol(FunctionDeclaration d, Scope scope, StructType? owner, string? nameOverride)
+    {
+        string name = nameOverride ?? d.Name.Last.Text;
+        CheckAttributes(d.Attributes, "shader", "numthreads", "earlydepthstencil");
+        var sym = new FunctionSymbol(name, d.Name.Span, d);
+        if (owner is not null)
+        {
+            sym.Owner = owner;
+            sym.IsStatic = (d.Modifiers & Modifiers.Static) != 0;
+            sym.IsConstMember = (d.Modifiers & Modifiers.ConstMember) != 0;
+            sym.IrName = owner.Name + "." + name;
+            if (sym.HasThis)
+            {
+                sym.Params.Add(new ParamInfo { Name = "this", Type = owner, Mods = sym.IsConstMember ? Modifiers.In : Modifiers.InOut });
+            }
+        }
+        else if (nameOverride is not null)
+        {
+            sym.IrName = nameOverride;
+        }
+
+        var saved = _scope;
+        _scope = scope;
+        try
+        {
+            sym.ReturnType = ResolveType(d.ReturnType);
+            d.ResolvedReturnType = sym.ReturnType;
+            var names = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var p in d.Parameters)
+            {
+                var pt = ResolveType(p.Type);
+                pt = ApplyDims(pt, p.ArrayDimensions, false, p.Span);
+                p.ResolvedType = pt;
+                if (pt.IsVoid)
+                {
+                    Err(SemanticCodes.BadVariable, "A parameter cannot have type void.", p.Span);
+                    pt = HlslType.Error;
+                }
+
+                if (pt is ResourceType or SamplerType or ArrayType { Element: ResourceType or SamplerType })
+                {
+                    sym.HasResourceParams = true;
+                    if ((p.Modifiers & Modifiers.Out) != 0)
+                    {
+                        Err(SemanticCodes.BadResource, "A resource parameter cannot be 'out' or 'inout'.", p.Span);
+                    }
+                }
+
+                if (p.Name is not null && !names.Add(p.Name.Text))
+                {
+                    Err(SemanticCodes.Redefinition, "The parameter '" + p.Name.Text + "' is declared twice; rename one.", p.Name.Span);
+                }
+
+                sym.Params.Add(new ParamInfo { Name = p.Name?.Text ?? "", Type = pt, Mods = p.Modifiers, Default = p.DefaultValue, Decl = p });
+                if (p.DefaultValue is not null)
+                {
+                    CheckExpr(p.DefaultValue);
+                    CheckConvertible(p.DefaultValue, pt);
+                }
+            }
+
+            var shader = FindAttribute(d.Attributes, "shader");
+            if (shader is not null)
+            {
+                string? stage = StringAttributeArg(shader, 0);
+                switch (stage)
+                {
+                    case "vertex":
+                        sym.EntryStage = ShaderStage.Vertex;
+                        break;
+                    case "pixel" or "fragment":
+                        sym.EntryStage = ShaderStage.Pixel;
+                        break;
+                    case "compute":
+                        sym.EntryStage = ShaderStage.Compute;
+                        break;
+                    default:
+                        Err(SemanticCodes.BadEntryPoint, "The shader stage " + (stage is null ? "must be a string" : "'" + stage + "' is not supported") + ": use [shader(\"vertex\")], [shader(\"pixel\")] or [shader(\"compute\")].", shader.Span);
+                        break;
+                }
+            }
+        }
+        finally
+        {
+            _scope = saved;
+        }
+
+        return sym;
+    }
+
+    /// <summary>Adds <paramref name="sym"/> to its overload group; false when it is a duplicate or a repeated prototype and needs no body check.</summary>
+    private bool AddToGroup(FunctionGroup group, FunctionSymbol sym, FunctionDeclaration d)
+    {
         FunctionSymbol? same = null;
         foreach (var o in group.Overloads)
         {
@@ -125,29 +179,20 @@ internal sealed partial class Checker
             if (same.HasBody && sym.HasBody)
             {
                 Err(SemanticCodes.Redefinition, "The function '" + Signature(sym) + "' is already defined at line " + Num(same.Span.Line) + "; remove one definition or change the parameter types.", d.Name.Span);
-                return;
+                return false;
             }
 
             if (sym.HasBody)
             {
                 same.Definition = sym;
+                return true;
             }
-            else
-            {
-                return;
-            }
-        }
-        else
-        {
-            group.Overloads.Add(sym);
+
+            return false;
         }
 
-        _allFns.Add(sym);
-        if (sym.HasBody)
-        {
-            Functions.Add(sym);
-            CheckFunctionBody(sym, scope);
-        }
+        group.Overloads.Add(sym);
+        return true;
     }
 
     private static bool SameSignature(FunctionSymbol a, FunctionSymbol b)
@@ -171,6 +216,7 @@ internal sealed partial class Checker
     private void CheckFunctionBody(FunctionSymbol f, Scope outer)
     {
         var savedScope = _scope;
+        var savedFnScope = _fnScope;
         var savedFn = _fn;
         int savedLoop = _loopDepth;
         int savedSwitch = _switchDepth;
@@ -179,17 +225,26 @@ internal sealed partial class Checker
         _fn = f;
         f.InProgress = true;
         _scope = new Scope(outer);
+        _fnScope = _scope;
         try
         {
             for (int i = 0; i < f.Params.Count; i++)
             {
                 var p = f.Params[i];
+                if (p.Decl is null)
+                {
+                    // The hidden 'this' of a member function: reached through the 'this' keyword, never by name.
+                    f.ThisSymbol = new VariableSymbol("this", f.Span, VarKind.Param, p.Type, p.Mods | (f.IsConstMember ? Modifiers.Const : Modifiers.None));
+                    p.Symbol = f.ThisSymbol;
+                    continue;
+                }
+
                 if (p.Name.Length == 0)
                 {
                     continue;
                 }
 
-                var vs = new VariableSymbol(p.Name, p.Decl!.Name!.Span, VarKind.Param, p.Type, p.Mods) { Parameter = p.Decl };
+                var vs = new VariableSymbol(p.Name, p.Decl.Name!.Span, VarKind.Param, p.Type, p.Mods) { Parameter = p.Decl };
                 Define(_scope, vs);
                 p.Symbol = vs;
             }
@@ -202,6 +257,7 @@ internal sealed partial class Checker
             f.InProgress = false;
             f.Checked = true;
             _scope = savedScope;
+            _fnScope = savedFnScope;
             _fn = savedFn;
             _loopDepth = savedLoop;
             _switchDepth = savedSwitch;
@@ -476,9 +532,14 @@ internal sealed partial class Checker
                 Err(SemanticCodes.BadVariable, "A variable cannot have type void.", d.Name.Span);
                 type = HlslType.Error;
             }
-            else if (!type.IsError && !TypeOps.IsValueType(type))
+            else if (!type.IsError && !TypeOps.IsValueType(type) && type is not (ResourceType or SamplerType))
             {
-                Err(SemanticCodes.Unsupported, "A local variable of type '" + type + "' is not supported; resources must be declared at global scope.", d.Name.Span);
+                Err(SemanticCodes.Unsupported, "A local variable of type '" + type + "' is not supported; resource arrays must be declared at global scope.", d.Name.Span);
+                type = HlslType.Error;
+            }
+            else if (type is ResourceType { ResourceKind: ResourceTypeKind.ConstantBuffer } or ResourceType { IsStorageBuffer: false, IsTexture: false } && !type.IsError)
+            {
+                Err(SemanticCodes.Unsupported, "A local variable of type '" + type + "' is not supported; declare it at global scope.", d.Name.Span);
                 type = HlslType.Error;
             }
 
@@ -488,12 +549,24 @@ internal sealed partial class Checker
             }
 
             bool isConst = (mods & Modifiers.Const) != 0;
-            if ((mods & Modifiers.Static) != 0 && !isConst)
+            bool isResource = type is ResourceType or SamplerType;
+            if (isResource && (mods & (Modifiers.Static | Modifiers.Const)) != 0)
             {
-                Err(SemanticCodes.Unsupported, "Non-const 'static' local variables are not supported yet; move '" + d.Name.Text + "' to global scope.", d.Name.Span);
+                Err(SemanticCodes.Unsupported, "A resource variable '" + d.Name.Text + "' cannot be static or const; it names one of the shader's resources.", d.Name.Span);
             }
 
-            var sym = new VariableSymbol(d.Name.Text, d.Name.Span, VarKind.Local, type, mods) { Declarator = d, Initializer = d.Initializer };
+            // A static local lives as long as the shader invocation: it becomes a private global that only this function names.
+            bool staticLocal = (mods & Modifiers.Static) != 0 && !isConst && !type.IsError && !isResource;
+            var sym = new VariableSymbol(d.Name.Text, d.Name.Span, staticLocal ? VarKind.Global : VarKind.Local, type, mods)
+            {
+                Declarator = d,
+                Initializer = d.Initializer,
+                IrName = staticLocal ? (_fn?.IrName ?? _fn?.Name ?? "") + "." + d.Name.Text : null,
+            };
+            if (staticLocal)
+            {
+                PrivateGlobals.Add(sym);
+            }
             if (d.Initializer is not null)
             {
                 CheckInitializer(d.Initializer, type);
