@@ -7,12 +7,14 @@
       EntryPoints         Name:Stage;Name:Stage  - instead of finding [shader("...")] attributes
       Defines             NAME;NAME=value        - preprocessor definitions
       IncludeDirectories  dir;dir                - searched for #include after the including file's folder
+      Targets             SpirV;Msl;Wgsl         - overrides $(OneShaderTargets) for this file
       Namespace           overrides $(OneShaderNamespace) for this file
       ClassName           overrides the class name taken from the file name
 
     Project properties:
       EnableDefaultOneShaderItems  false stops **/*.hlsl from being added as OneShader items
       OneShaderNamespace           default namespace of generated code (default: $(RootNamespace).Shaders)
+      OneShaderTargets             targets to compile and embed, ';'-separated: SpirV, Msl, Wgsl (default: SpirV)
       OneShaderDefines, OneShaderIncludeDirectories  applied to every shader
   -->
   <UsingTask TaskName="OneShader.Build.Tasks.CompileShaders" AssemblyFile="$(OneShaderTaskAssembly)" />
@@ -20,6 +22,7 @@
   <PropertyGroup>
     <EnableDefaultOneShaderItems Condition="'$(EnableDefaultOneShaderItems)' == ''">true</EnableDefaultOneShaderItems>
     <OneShaderNamespace Condition="'$(OneShaderNamespace)' == ''">$(RootNamespace).Shaders</OneShaderNamespace>
+    <OneShaderTargets Condition="'$(OneShaderTargets)' == ''">SpirV</OneShaderTargets>
     <OneShaderOutputDirectory Condition="'$(OneShaderOutputDirectory)' == ''">$(IntermediateOutputPath)oneshader/</OneShaderOutputDirectory>
   </PropertyGroup>
 
@@ -32,6 +35,7 @@
                     OutputDirectory="$(OneShaderOutputDirectory)"
                     ProjectDirectory="$(MSBuildProjectDirectory)"
                     DefaultNamespace="$(OneShaderNamespace)"
+                    DefaultTargets="$(OneShaderTargets)"
                     DefaultDefines="$(OneShaderDefines)"
                     DefaultIncludeDirectories="$(OneShaderIncludeDirectories)">
       <Output TaskParameter="GeneratedFiles" ItemName="_OneShaderOutput" />
