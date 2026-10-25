@@ -34,6 +34,7 @@ public sealed class CaseFormatException : Exception
 /// draw vertices=N|indexed=N [instances=M]
 /// dispatch ENTRY X Y Z
 /// uniform SET BINDING [element=N] : DATA
+/// push : DATA                               (the push-constant block's bytes, pushed before every draw and dispatch)
 /// storage SET BINDING [element=N] [out] [sorted] [size=BYTES] [float=X] [: DATA]
 ///   (float=X: an output of 32-bit floats that implementations with looser math, such as WebGPU, may reproduce within |a-b| &lt;= X * (1 + |a|))
 /// texture SET BINDING WxH[xLAYERS] FORMAT GENERATOR [mips=N] [cube] [element=N]
@@ -98,6 +99,7 @@ public static class CaseFile
         var cull = CullMode.None;
         var vertexBuffers = new List<VertexBufferDecl>();
         var attributes = new List<VertexInputAttr>();
+        string? push = null;
         string? indexData = null;
         bool index16 = false;
         int drawCount = 0;
@@ -220,6 +222,9 @@ public static class CaseFile
                     dispatches.Add(new DispatchDecl(Arg(t, 1, fail), Int(Arg(t, 2, fail), fail),
                         Int(Arg(t, 3, fail), fail), Int(Arg(t, 4, fail), fail)));
                     break;
+                case "push":
+                    push = data ?? throw fail("push needs ': data'");
+                    break;
                 case "uniform":
                     resources.Add(new ResourceDecl
                     {
@@ -309,7 +314,7 @@ public static class CaseFile
         {
             throw Error(origin, 1, "missing 'shader PATH'");
         }
-        var model = new CaseModel { Name = name, Shader = shader, FloatTolerance = floatTolerance };
+        var model = new CaseModel { Name = name, Shader = shader, FloatTolerance = floatTolerance, Push = push };
         model.Defines.AddRange(defines);
         model.Resources.AddRange(resources);
         model.Dispatches.AddRange(dispatches);

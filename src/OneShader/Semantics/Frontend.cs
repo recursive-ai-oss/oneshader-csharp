@@ -147,7 +147,14 @@ internal static class Frontend
             return new FrontendResult(null, null, bag);
         }
 
-        var reflection = new Reflector(checker, module, targets, path).Build();
+        var reflector = new Reflector(checker, module, targets, path);
+        reflector.CheckPushConstants(bag);
+        if (bag.HasErrors)
+        {
+            return new FrontendResult(null, null, bag);
+        }
+
+        var reflection = reflector.Build();
         return new FrontendResult(module, reflection, bag);
     }
 }
@@ -194,6 +201,36 @@ internal sealed class Reflector
         }
     }
 
+    /// <summary>Vulkan gives a pipeline layout one push-constant block per stage, so an entry point that reads two is an error at the second block.</summary>
+    public void CheckPushConstants(DiagnosticBag bag)
+    {
+        foreach (var ep in _mod.EntryPoints)
+        {
+            var set = new HashSet<GlobalVariable>();
+            Collect(ep.Function, set, []);
+            ResourceDecl? first = null;
+            foreach (var r in _ck.Resources)
+            {
+                if (!r.IsPushConstant || r.Global is null || !set.Contains(r.Global))
+                {
+                    continue;
+                }
+
+                if (first is null)
+                {
+                    first = r;
+                    continue;
+                }
+
+                bag.Error(
+                    SemanticCodes.BadPushConstant,
+                    "The entry point '" + ep.Function.Name + "' uses the push-constant blocks '" + first.Name + "' and '" + r.Name
+                    + "', but Vulkan allows one push-constant block per stage. Merge them into one struct.",
+                    r.Span);
+            }
+        }
+    }
+
     public ShaderReflection Build()
     {
         var entryUses = new List<HashSet<GlobalVariable>>();
@@ -207,6 +244,7 @@ internal sealed class Reflector
         // MSL argument indices count per class in declaration order.
         int bufferIndex = 0, textureIndex = 0, samplerIndex = 0;
         var resources = new List<ResourceInfo>();
+        var pushes = new List<PushConstantInfo>();
         foreach (var r in _ck.Resources)
         {
             var stages = ShaderStages.None;
@@ -238,6 +276,26 @@ internal sealed class Reflector
             {
                 mslIndex = bufferIndex;
                 bufferIndex += Math.Max(1, r.Count);
+            }
+
+            if (r.IsPushConstant)
+            {
+                // The block takes the next Metal buffer index in declaration order, like any other constant buffer.
+                var pushSlots = new List<TargetSlot>();
+                foreach (var t in _targets)
+                {
+                    if (t == CompileTarget.Msl)
+                    {
+                        pushSlots.Add(new TargetSlot(t, 0, (uint)mslIndex));
+                    }
+                    else if (t == CompileTarget.Wgsl)
+                    {
+                        pushSlots.Add(new TargetSlot(t, (uint)r.Set, (uint)r.Binding));
+                    }
+                }
+
+                pushes.Add(new PushConstantInfo { Name = r.Name, Stages = stages, Slots = pushSlots, Layout = LayoutOf(r) ?? ReflectedType.FromLayout(r.Layout!) });
+                continue;
             }
 
             var slots = new List<TargetSlot>();
@@ -276,11 +334,19 @@ internal sealed class Reflector
         {
             var e = _ck.Entries[i];
             var used = new List<string>();
+            string? pushUse = null;
             foreach (var r in _ck.Resources)
             {
                 if (r.Global is not null && entryUses[i].Contains(r.Global))
                 {
-                    used.Add(r.Name);
+                    if (r.IsPushConstant)
+                    {
+                        pushUse ??= r.Name;
+                    }
+                    else
+                    {
+                        used.Add(r.Name);
+                    }
                 }
             }
 
@@ -293,10 +359,11 @@ internal sealed class Reflector
                 WorkgroupSize = e.Stage == ShaderStage.Compute ? e.NumThreads : default,
                 VertexStride = e.Stage == ShaderStage.Vertex ? e.VertexStride : 0,
                 UsedResources = used,
+                PushConstant = pushUse,
             });
         }
 
-        return new ShaderReflection { SourceName = _path, Targets = _targets, Resources = resources, EntryPoints = entries };
+        return new ShaderReflection { SourceName = _path, Targets = _targets, Resources = resources, PushConstants = pushes, EntryPoints = entries };
     }
 
     private static List<StageVariable> Vars(List<InterfaceVar> vars, bool vertexInput)

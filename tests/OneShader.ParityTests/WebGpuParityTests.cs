@@ -109,10 +109,11 @@ public class WebGpuParityTests
                 var model = Corpus.Load(name);
                 var data = CaseData.Build(model);
                 var modules = new List<(string Entry, ShaderStage Stage, string Wgsl)>();
+                (uint Group, uint Binding)? pushSlot = null;
                 string? skip = null;
                 foreach (var (entry, stage) in ParityCompilers.Entries(model))
                 {
-                    var wgsl = CompileWgsl(model, entry, stage, out string? diag);
+                    var wgsl = CompileWgsl(model, entry, stage, out string? diag, out pushSlot);
                     if (wgsl is null)
                     {
                         skip = diag;
@@ -131,7 +132,7 @@ public class WebGpuParityTests
                     outcomes[name] = new Outcome(null, null, null, "the Vulkan reference run printed validation messages: " + reference.ValidationMessages[0]);
                     continue;
                 }
-                File.WriteAllText(Path.Combine(jobs, name + ".json"), BuildJob(model, data, modules).ToJsonString());
+                File.WriteAllText(Path.Combine(jobs, name + ".json"), BuildJob(model, data, modules, pushSlot).ToJsonString());
                 outcomes[name] = new Outcome(reference, null, null, null);
                 pending.Add(name);
             }
@@ -165,8 +166,9 @@ public class WebGpuParityTests
     }
 
     /// <summary>The WGSL for one entry point, or null with the diagnostics when the backend reports the feature as unavailable.</summary>
-    private static string? CompileWgsl(CaseModel model, string entry, ShaderStage stage, out string? diagnostics)
+    private static string? CompileWgsl(CaseModel model, string entry, ShaderStage stage, out string? diagnostics, out (uint Group, uint Binding)? pushSlot)
     {
+        pushSlot = null;
         string source = Path.Combine(Tools.CorpusDir, model.Shader);
         var options = new CompileOptions
         {
@@ -184,6 +186,13 @@ public class WebGpuParityTests
         var blob = result.Find(entry, CompileTarget.Wgsl);
         if (result.Success && blob is not null)
         {
+            // WebGPU has no push constants: the compiler binds the block as a uniform buffer, and the browser job supplies the bytes there.
+            if (result.Reflection!.PushConstants.Count > 0)
+            {
+                var slot = result.Reflection.PushConstants[0].Slots.Single(s => s.Target == CompileTarget.Wgsl);
+                pushSlot = (slot.Set, slot.Binding);
+            }
+
             diagnostics = null;
             return blob.AsText();
         }
@@ -209,7 +218,7 @@ public class WebGpuParityTests
         _ => "depth32float",
     };
 
-    private static JsonObject BuildJob(CaseModel model, CaseData data, List<(string Entry, ShaderStage Stage, string Wgsl)> modules)
+    private static JsonObject BuildJob(CaseModel model, CaseData data, List<(string Entry, ShaderStage Stage, string Wgsl)> modules, (uint Group, uint Binding)? pushSlot)
     {
         var job = new JsonObject
         {
@@ -267,6 +276,23 @@ public class WebGpuParityTests
             }
             resources.Add(o);
         }
+        if (pushSlot is { } push && data.Push is { } pushBytes)
+        {
+            // A uniform buffer is bound as whole 16-byte rows.
+            byte[] padded = new byte[(pushBytes.Length + 15) & ~15];
+            pushBytes.CopyTo(padded, 0);
+            resources.Add(new JsonObject
+            {
+                ["set"] = push.Group,
+                ["binding"] = push.Binding,
+                ["kind"] = "uniform",
+                ["output"] = false,
+                ["key"] = "push",
+                ["data"] = Convert.ToBase64String(padded),
+                ["length"] = padded.Length,
+            });
+        }
+
         job["resources"] = resources;
 
         if (model.Dispatches.Count > 0)

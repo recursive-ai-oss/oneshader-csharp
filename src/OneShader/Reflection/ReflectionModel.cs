@@ -241,6 +241,33 @@ public sealed class ResourceInfo
     public ReflectedType? Layout { get; init; }
 }
 
+/// <summary>
+/// A push-constant block (<c>[[vk::push_constant]]</c>): a small struct the host writes per draw or dispatch with no descriptor.
+/// Its layout is the same bytes on every target, so one CPU struct fills it everywhere; only the way the host delivers it differs.
+/// </summary>
+public sealed class PushConstantInfo
+{
+    /// <summary>The HLSL variable name.</summary>
+    public required string Name { get; init; }
+
+    /// <summary>Stages whose entry points read it: the stage flags of the Vulkan push-constant range.</summary>
+    public ShaderStages Stages { get; init; }
+
+    /// <summary>
+    /// The struct layout; its <see cref="ReflectedType.Size"/> is the number of bytes to push. Members follow the vector-relaxed
+    /// std430 rules (a <c>float3</c> may share a 16-byte row with the next scalar), which is what DXC emits for push constants.
+    /// </summary>
+    public required ReflectedType Layout { get; init; }
+
+    /// <summary>
+    /// Where each enabled target takes the bytes, in <see cref="CompileTarget"/> order. SPIR-V has no slot (the block is pushed with
+    /// <c>vkCmdPushConstants</c>). MSL: <see cref="TargetSlot.Binding"/> is the <c>[[buffer(n)]]</c> index to fill with
+    /// <c>setVertexBytes</c>, <c>setFragmentBytes</c> or <c>setBytes</c>. WGSL: a uniform buffer at <c>@group(Set) @binding(Binding)</c>,
+    /// at least <see cref="ReflectedType.Size"/> rounded up to 16 bytes long.
+    /// </summary>
+    public IReadOnlyList<TargetSlot> Slots { get; init; } = [];
+}
+
 /// <summary>An input or output of an entry point.</summary>
 public sealed class StageVariable
 {
@@ -298,6 +325,9 @@ public sealed class EntryPointInfo
 
     /// <summary>Names of the resources this entry point uses (a subset of <see cref="ShaderReflection.Resources"/>).</summary>
     public IReadOnlyList<string> UsedResources { get; init; } = [];
+
+    /// <summary>The name of the push-constant block this entry point reads (an entry of <see cref="ShaderReflection.PushConstants"/>), or null.</summary>
+    public string? PushConstant { get; init; }
 }
 
 /// <summary>Everything tooling and generated code need to know about one compiled shader file.</summary>
@@ -314,6 +344,9 @@ public sealed class ShaderReflection
 
     /// <summary>Resources in declaration order.</summary>
     public IReadOnlyList<ResourceInfo> Resources { get; init; } = [];
+
+    /// <summary>Push-constant blocks in declaration order; an entry point reads at most one. They are not in <see cref="Resources"/>.</summary>
+    public IReadOnlyList<PushConstantInfo> PushConstants { get; init; } = [];
 
     /// <summary>Entry points in declaration order.</summary>
     public IReadOnlyList<EntryPointInfo> EntryPoints { get; init; } = [];

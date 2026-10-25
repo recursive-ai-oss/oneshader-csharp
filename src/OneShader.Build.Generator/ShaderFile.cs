@@ -61,6 +61,19 @@ internal sealed class ResourceNode
     public TypeNode? Layout;
 }
 
+/// <summary>A push-constant block: its layout, stage visibility and where each selected target takes the bytes.</summary>
+internal sealed class PushNode
+{
+    public string Name = "";
+    public string Stages = "";
+    public bool HasMsl;
+    public uint MslIndex;
+    public bool HasWgsl;
+    public uint WgslGroup;
+    public uint WgslBinding;
+    public TypeNode? Layout;
+}
+
 internal sealed class VariableNode
 {
     public string Name = "";
@@ -106,6 +119,7 @@ internal sealed class ShaderFile
     public string ClassName = "";
     public List<ResourceNode> Resources = new List<ResourceNode>();
     public List<EntryNode> Entries = new List<EntryNode>();
+    public List<PushNode> Pushes = new List<PushNode>();
 
     /// <summary>
     /// The reflection records of the file as written (header line included, build bookkeeping excluded). Generated code embeds it so a
@@ -174,7 +188,7 @@ internal sealed class ShaderFile
             if (rec.Depth == 0)
             {
                 // Records the compiler's reflection writer produces; the rest is build bookkeeping.
-                inReflection = rec.Keyword == "source" || rec.Keyword == "targets" || rec.Keyword == "resource" || rec.Keyword == "entry";
+                inReflection = rec.Keyword == "source" || rec.Keyword == "targets" || rec.Keyword == "resource" || rec.Keyword == "push" || rec.Keyword == "entry";
             }
 
             if (inReflection)
@@ -216,6 +230,9 @@ internal sealed class ShaderFile
                     break;
                 case "resource":
                     pos = ReadResource(recs, pos, r);
+                    break;
+                case "push":
+                    pos = ReadPush(recs, pos, r);
                     break;
                 case "entry":
                     pos = ReadEntry(recs, pos, r);
@@ -332,6 +349,47 @@ internal sealed class ShaderFile
         }
 
         Resources.Add(res);
+        return pos;
+    }
+
+    private int ReadPush(List<Rec> recs, int pos, Rec r)
+    {
+        var p = new PushNode { Name = Str(r, "name"), Stages = Str(r, "stages") };
+        while (pos < recs.Count && recs[pos].Depth > 0)
+        {
+            var c = recs[pos];
+            if (c.Depth == 1 && c.Keyword == "slot")
+            {
+                string t = Str(c, "target");
+                if (t == "Msl")
+                {
+                    p.HasMsl = true;
+                    p.MslIndex = U(c, "binding");
+                }
+                else if (t == "Wgsl")
+                {
+                    p.HasWgsl = true;
+                    p.WgslGroup = U(c, "set");
+                    p.WgslBinding = U(c, "binding");
+                }
+
+                pos++;
+            }
+            else if (c.Depth == 1 && c.Keyword == "layout")
+            {
+                pos++;
+                if (pos < recs.Count && recs[pos].Depth == 2 && recs[pos].Keyword == "type")
+                {
+                    p.Layout = ReadType(recs, ref pos, 0);
+                }
+            }
+            else
+            {
+                pos++;
+            }
+        }
+
+        Pushes.Add(p);
         return pos;
     }
 

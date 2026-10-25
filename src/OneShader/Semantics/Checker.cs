@@ -723,7 +723,12 @@ internal sealed partial class Checker
 
     private void DeclareConstantBuffer(ConstantBufferDeclaration cb, Scope scope)
     {
-        CheckAttributes(cb.Attributes, "vk::binding");
+        CheckAttributes(cb.Attributes, "vk::binding", "vk::push_constant");
+        if (FindAttribute(cb.Attributes, "vk::push_constant") is { } cbPush)
+        {
+            Err(SemanticCodes.BadPushConstant, "[[vk::push_constant]] cannot be put on a cbuffer. Declare the members as a struct and write '[[vk::push_constant]] ConstantBuffer<" + cb.Name.Text + "Data> " + cb.Name.Text + ";' (or a global of the struct type); it is treated as a plain constant buffer for now.", cbPush.Span);
+        }
+
         if (cb.IsTextureBuffer)
         {
             Err(SemanticCodes.Unsupported, "tbuffer is not supported; use a StructuredBuffer or a cbuffer.", cb.Name.Span);
@@ -937,7 +942,7 @@ internal sealed partial class Checker
 
     private void DeclareGlobalVariable(VariableDeclaration v, Scope scope)
     {
-        CheckAttributes(v.Attributes, "vk::binding", "vk::counter_binding", "vk::offset");
+        CheckAttributes(v.Attributes, "vk::binding", "vk::counter_binding", "vk::offset", "vk::push_constant");
         var baseType = ResolveType(v.Type);
         foreach (var d in v.Declarators)
         {
@@ -976,6 +981,21 @@ internal sealed partial class Checker
         if (type.IsVoid)
         {
             Err(SemanticCodes.BadVariable, "A variable cannot have type void.", name.Span);
+            return;
+        }
+
+        if (FindAttribute(v.Attributes, "vk::push_constant") is { } pushAttr)
+        {
+            HlslType? block = type is ResourceType { ResourceKind: ResourceTypeKind.ConstantBuffer, Element: StructType } ? type
+                : type is StructType ? new ResourceType(ResourceTypeKind.ConstantBuffer, type) : null;
+            if (block is null)
+            {
+                Err(SemanticCodes.BadPushConstant, "[[vk::push_constant]] applies to a global of struct type or ConstantBuffer<T> with a struct T; '" + name.Text + "' has type '" + type + "'. Wrap the values in a struct.", pushAttr.Span);
+                return;
+            }
+
+            d.Type = block;
+            DeclareResourceVariable(v, d, block, scope, true);
             return;
         }
 
@@ -1048,7 +1068,7 @@ internal sealed partial class Checker
         }
     }
 
-    private void DeclareResourceVariable(VariableDeclaration v, Declarator d, HlslType type, Scope scope)
+    private void DeclareResourceVariable(VariableDeclaration v, Declarator d, HlslType type, Scope scope, bool push = false)
     {
         var name = d.Name;
         var element = type;
@@ -1094,7 +1114,15 @@ internal sealed partial class Checker
             return;
         }
 
-        ApplyBindingAnnotations(rd, v.Attributes, d.Annotations, '\0');
+        if (push)
+        {
+            rd.IsPushConstant = true;
+        }
+        else
+        {
+            ApplyBindingAnnotations(rd, v.Attributes, d.Annotations, '\0');
+        }
+
         ApplyImageFormat(rd, v.Attributes, element);
         if (element is ResourceType rt)
         {
@@ -1113,7 +1141,12 @@ internal sealed partial class Checker
             {
                 if (rt.Element is StructType)
                 {
-                    ComputeBufferLayout(rd, rt.Element, BufferLayoutRules.ConstantBuffer, name.Span);
+                    // DXC lays a push-constant block out like a structured-buffer element (vector-relaxed std430), not like a cbuffer.
+                    ComputeBufferLayout(rd, rt.Element, push ? BufferLayoutRules.StorageBuffer : BufferLayoutRules.ConstantBuffer, name.Span);
+                    if (push && rd.Layout is { } pl && pl.Size > 128)
+                    {
+                        Warn(SemanticCodes.PushConstantSize, "The push-constant block '" + name.Text + "' is " + Num((int)pl.Size) + " bytes; Vulkan only guarantees maxPushConstantsSize of 128 bytes. Shrink it or move the rest into a constant buffer.", name.Span);
+                    }
                 }
                 else
                 {
@@ -1183,6 +1216,7 @@ internal sealed partial class Checker
             ResourceType = rd.ResourceType,
             HlslTypeText = rd.HlslTypeText,
             Variable = vs,
+            IsPushConstant = rd.IsPushConstant,
         };
         vs.Resource = full;
         if (!Define(scope, vs))

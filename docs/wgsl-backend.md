@@ -7,6 +7,10 @@ Code is in `src/OneShader/Wgsl/`; naga validates every corpus entry point (`test
 
 ## Mapping decisions
 
+- **Push constants** (WebGPU core has none) are a `var<uniform>` of 16-byte rows like a constant buffer, with the SPIR-V
+  block's byte layout. It is bound at the highest bind group the shader uses and the binding after that group's highest one,
+  so it cannot collide with the shader's own bindings; the slot is in reflection and in the generated `Bindings.PushConstants`.
+  The host binds a uniform buffer of at least the block size rounded up to 16 bytes.
 - **Buffers are raw words, so layouts equal the SPIR-V target's.** A constant buffer is `array<vec4<u32>, N>` (WGSL 13.4.1:
   uniform arrays have a 16-byte stride, one vec4 per row); structured and byte-address buffers are `array<u32>`
   (`array<atomic<u32>>` when the entry point uses atomics on them; a buffer the entry point never writes is `read`).

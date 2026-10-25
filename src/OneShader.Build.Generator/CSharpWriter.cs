@@ -220,6 +220,18 @@ internal sealed class CSharpWriter
             }
         }
 
+        // One block is simply 'PushConstants'; several (used by different entry points) are named after their variables.
+        var pushNames = new List<string>();
+        foreach (var p in f.Pushes)
+        {
+            string csName = f.Pushes.Count == 1 ? "PushConstants" : TypeName(p.Name) + "PushConstants";
+            pushNames.Add(csName);
+            if (!_topNames.Add(csName))
+            {
+                Problem(Codes.NameClash, "The push-constant block '" + p.Name + "' (C# struct '" + csName + "') in " + f.Source + " clashes with an entry point or another generated name. Rename the variable, the function or the struct.");
+            }
+        }
+
         if (_problems.Count > 0)
         {
             return null;
@@ -257,6 +269,16 @@ internal sealed class CSharpWriter
             EmitStruct(TypeName(cb.Name), cb.Layout!);
         }
 
+        for (int i = 0; i < f.Pushes.Count; i++)
+        {
+            if (f.Pushes[i].Layout is { Kind: "Struct" } pl)
+            {
+                Separator(ref first);
+                Line("/// <summary>The bytes of the push-constant block '" + Sanitize(f.Pushes[i].Name) + "'; push all <c>Size</c> bytes to the stages listed in <c>Bindings." + pushNames[i] + "</c>.</summary>");
+                EmitStruct(pushNames[i], pl);
+            }
+        }
+
         // The queue grows while structs are emitted (a struct can contain another).
         for (int i = 0; i < _structQueue.Count; i++)
         {
@@ -265,7 +287,7 @@ internal sealed class CSharpWriter
         }
 
         Separator(ref first);
-        EmitBindings();
+        EmitBindings(pushNames);
         foreach (var e in f.Entries)
         {
             Line("");
@@ -651,12 +673,17 @@ internal sealed class CSharpWriter
 
     // ---- bindings ----
 
-    private void EmitBindings()
+    private void EmitBindings(List<string> pushNames)
     {
         Line("public static class Bindings");
         Line("{");
         _indent++;
         var used = new HashSet<string>(StringComparer.Ordinal) { "All", "Bindings" };
+        foreach (string pn in pushNames)
+        {
+            used.Add(pn);
+        }
+
         var listed = new List<ResourceNode>();
         bool first = true;
         foreach (var r in _file.Resources)
@@ -728,6 +755,34 @@ internal sealed class CSharpWriter
         Line("};");
         Line("");
         Line("public static global::System.ReadOnlySpan<global::OneShader.ResourceBinding> All => s_all;");
+        for (int i = 0; i < _file.Pushes.Count; i++)
+        {
+            var p = _file.Pushes[i];
+            Line("");
+            Line("/// <summary>How to deliver the push-constant block '" + Sanitize(p.Name) + "': a Vulkan push-constant range, a Metal inline buffer or a WebGPU uniform buffer.</summary>");
+            Line("public static class " + pushNames[i]);
+            Line("{");
+            _indent++;
+            Line("/// <summary>Bytes to push.</summary>");
+            Line("public const uint Size = " + Num(p.Layout?.Size ?? 0) + ";");
+            Line("/// <summary>The <c>VkPushConstantRange</c> stage flags (offset 0, size <c>Size</c>).</summary>");
+            Line("public const global::OneShader.ShaderStages Stages = " + StagesExpr(p.Stages) + ";");
+            if (p.HasMsl)
+            {
+                Line("/// <summary>Metal buffer index: <c>setVertexBytes</c>, <c>setFragmentBytes</c> or <c>setBytes</c> with the struct's bytes at this index.</summary>");
+                Line("public const uint MslIndex = " + Num(p.MslIndex) + ";");
+            }
+
+            if (p.HasWgsl)
+            {
+                Line("/// <summary>WebGPU: a uniform buffer at this group and binding, at least <c>Size</c> rounded up to 16 bytes long.</summary>");
+                Line("public const uint WgslGroup = " + Num(p.WgslGroup) + ", WgslBinding = " + Num(p.WgslBinding) + ";");
+            }
+
+            _indent--;
+            Line("}");
+        }
+
         _indent--;
         Line("}");
     }

@@ -9,6 +9,9 @@ The same module and options always give the same text. Unsupported constructs ar
 
 - **Functions.** `vertex`, `fragment` and `kernel` functions. The entry function's name is the HLSL name, except
   reserved words (`main` becomes `main0`): `MslBackend.EntryFunctionName`.
+- **Push constants** are a `constant T& name [[buffer(n)]]` argument, where `n` is the next buffer index in declaration order
+  like any constant buffer (recorded in reflection's `Msl` slot of the push block). The host fills it with `setVertexBytes`,
+  `setFragmentBytes` or `setBytes`; the struct has the same byte layout as the SPIR-V block.
 - **Module-scope variables** do not exist in MSL. Stage variables, `static` and `groupshared` variables become locals of
   the entry function; every helper that touches one (directly or through its callees) receives it as an extra reference
   parameter. Resources are entry-function arguments and are passed to helpers the same way.

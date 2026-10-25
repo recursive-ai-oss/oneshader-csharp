@@ -587,7 +587,7 @@ internal sealed partial class SpirvEmitter
         for (int k = 0; k < args.Length; k++)
         {
             var a = i.Operands[k];
-            if (a.Type is PointerType { Space: AddressSpace.UniformConstant or AddressSpace.Uniform or AddressSpace.StorageBuffer })
+            if (a.Type is PointerType { Space: AddressSpace.UniformConstant or AddressSpace.Uniform or AddressSpace.PushConstant or AddressSpace.StorageBuffer })
             {
                 Unsupported("A resource is passed to '" + i.Callee!.Name + "' as an argument; the function must be inlined first (mark it [forceinline]).", i.Span);
             }

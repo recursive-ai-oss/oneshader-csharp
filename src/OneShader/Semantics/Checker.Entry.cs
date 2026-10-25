@@ -669,6 +669,11 @@ internal sealed partial class Checker
 
         foreach (var r in Resources)
         {
+            if (r.IsPushConstant)
+            {
+                continue;
+            }
+
             if (r.ExplicitBinding is null)
             {
                 r.Set = 0;
@@ -693,6 +698,29 @@ internal sealed partial class Checker
             r.CounterBinding = c;
             owners[(r.Set, c)] = r;
             next[r.Set] = c + 1;
+        }
+
+        // WebGPU has no push constants, so the WGSL backend binds the block as a uniform buffer. It takes the binding after the
+        // highest one in the highest group the shader already uses, which cannot collide with anything the shader declares.
+        // Vulkan and Metal ignore this slot.
+        int pushSet = 0, pushBinding = 0;
+        foreach (var key in owners.Keys)
+        {
+            if (key.Item1 > pushSet || (key.Item1 == pushSet && key.Item2 >= pushBinding))
+            {
+                pushSet = key.Item1;
+                pushBinding = key.Item2 + 1;
+            }
+        }
+
+        foreach (var r in Resources)
+        {
+            if (r.IsPushConstant)
+            {
+                r.Set = pushSet;
+                r.Binding = pushBinding;
+                pushBinding++;
+            }
         }
     }
 }

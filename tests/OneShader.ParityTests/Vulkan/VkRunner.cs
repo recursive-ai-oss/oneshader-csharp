@@ -566,11 +566,15 @@ public static unsafe class VkRunner
 
             fixed (DescriptorSetLayout* pl = layouts)
             {
+                // One push-constant range over every stage the case runs, as long as the case's data.
+                var pushRange = new PushConstantRange { StageFlags = stages, Offset = 0, Size = (uint)(data.Push?.Length ?? 0) };
                 var pi = new PipelineLayoutCreateInfo
                 {
                     SType = StructureType.PipelineLayoutCreateInfo,
                     SetLayoutCount = (uint)setCount,
                     PSetLayouts = pl,
+                    PushConstantRangeCount = pushRange.Size > 0 ? 1u : 0u,
+                    PPushConstantRanges = pushRange.Size > 0 ? &pushRange : null,
                 };
                 Check(vk.CreatePipelineLayout(dev, &pi, null, out PipelineLayout pipelineLayout), "vkCreatePipelineLayout");
                 cleanup.Add(() => vk.DestroyPipelineLayout(dev, pipelineLayout, null));
@@ -671,8 +675,24 @@ public static unsafe class VkRunner
             }
         }
 
+        private void PushConstants(CommandBuffer cb, PipelineLayout layout)
+        {
+            if (data.Push is not { Length: > 0 } bytes)
+            {
+                return;
+            }
+
+            var stages = model.Graphics is not null ? ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit : ShaderStageFlags.ComputeBit;
+            fixed (byte* p = bytes)
+            {
+                vk.CmdPushConstants(cb, layout, stages, 0, (uint)bytes.Length, p);
+            }
+        }
+
         private void BindSets(CommandBuffer cb, PipelineBindPoint point, PipelineLayout layout, DescriptorSet?[] sets)
         {
+            // Push constants are part of the pipeline state every draw and dispatch binds with its sets.
+            PushConstants(cb, layout);
             for (int s = 0; s < sets.Length; s++)
             {
                 if (sets[s] is { } set && model.Resources.Any(r => r.Set == s))

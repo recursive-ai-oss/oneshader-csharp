@@ -81,7 +81,8 @@ internal sealed partial class Lowerer
             var element = r.Type is ArrayType at ? at.Element : r.Type;
             if (element is ResourceType rt)
             {
-                space = rt.ResourceKind == ResourceTypeKind.ConstantBuffer ? AddressSpace.Uniform
+                space = r.IsPushConstant ? AddressSpace.PushConstant
+                    : rt.ResourceKind == ResourceTypeKind.ConstantBuffer ? AddressSpace.Uniform
                     : rt.IsStorageBuffer ? AddressSpace.StorageBuffer : AddressSpace.UniformConstant;
             }
             else

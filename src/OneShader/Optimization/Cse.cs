@@ -185,7 +185,7 @@ internal static class Cse
                 or Opcode.Transpose or Opcode.OuterProduct or Opcode.AccessChain:
                 return true;
             case Opcode.Load:
-                return i.Operands[0].Type is PointerType { Space: AddressSpace.Uniform or AddressSpace.UniformConstant or AddressSpace.Input };
+                return i.Operands[0].Type is PointerType { Space: AddressSpace.Uniform or AddressSpace.PushConstant or AddressSpace.UniformConstant or AddressSpace.Input };
             case Opcode.CallIntrinsic:
                 return i.Intrinsic is not (Intrinsic.Frexp or Intrinsic.Modf or Intrinsic.SinCos)
                     && i.Intrinsic is < Intrinsic.Ddx;
