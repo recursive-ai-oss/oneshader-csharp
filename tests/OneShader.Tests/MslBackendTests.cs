@@ -166,6 +166,30 @@ public class MslBackendTests
     }
 
     [Fact]
+    public void VertexAndInstanceIdsAreNotOffsetByTheBaseTwice()
+    {
+        // Metal's vertex_id and instance_id already include the draw's base vertex and base instance (checked on a GPU).
+        var r = ShaderCompiler.Compile("float4 VSMain(uint v : SV_VertexID, uint i : SV_InstanceID) : SV_Position { return float4(v, i, 0, 1); }", "v.hlsl",
+            new CompileOptions { Targets = [CompileTarget.Msl], Optimize = false, EntryPoints = [new EntryPointRequest("VSMain", ShaderStage.Vertex)] }, TestContext.Current.CancellationToken);
+        string text = r.Find("VSMain", CompileTarget.Msl)!.AsText();
+        Assert.Contains("[[vertex_id]]", text, StringComparison.Ordinal);
+        Assert.Contains("[[instance_id]]", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("base_vertex", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("base_instance", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void StructuredBufferOfFloat3KeepsTheSixteenByteStride()
+    {
+        // A packed_float3 is 12 bytes in MSL; the SPIR-V target strides these buffers by 16, so each element is padded.
+        var r = ShaderCompiler.Compile("RWStructuredBuffer<float3> Data; [shader(\"compute\")][numthreads(1,1,1)] void CSMain(uint3 id : SV_DispatchThreadID) { Data[id.x] = Data[id.x] * 2.0; }", "s.hlsl",
+            new CompileOptions { Targets = [CompileTarget.Msl], Optimize = false }, TestContext.Current.CancellationToken);
+        string text = r.Find("CSMain", CompileTarget.Msl)!.AsText();
+        Assert.Contains("uchar pad[4]", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("device packed_float3*", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ResourceArraysTakeOneMetalIndexPerElement()
     {
         var r = MslCorpus.Compile(Path.Combine(global::OneShader.Tests.CorpusFiles.Root(), "lang", "resource_arrays.hlsl"));

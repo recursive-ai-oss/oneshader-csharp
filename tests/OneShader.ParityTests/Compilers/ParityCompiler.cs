@@ -42,7 +42,8 @@ public static class DxcCompiler
         var cache = new ConcurrentDictionary<string, byte[]>();
         return new ParityCompiler(name, request =>
         {
-            string key = request.SourcePath + "|" + request.Entry + "|" + request.Stage;
+            string key = request.SourcePath + "|" + request.Entry + "|" + request.Stage + "|"
+                + string.Join(';', request.Defines.Select(d => d.Key + "=" + d.Value));
             return cache.GetOrAdd(key, _ => Compile(request, extraDefines));
         });
     }
