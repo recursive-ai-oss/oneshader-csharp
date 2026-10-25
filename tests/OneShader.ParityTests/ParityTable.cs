@@ -27,7 +27,8 @@ public static class ParityTable
     public static void Record(string name, string check, Exception ex)
     {
         string message = ex.Message;
-        string status = message.StartsWith("OneShader failed", StringComparison.Ordinal) ? "candidate-compile-fail"
+        string status = ex is UnsupportedOnTargetException ? "unsupported-on-target"
+            : message.StartsWith("OneShader failed", StringComparison.Ordinal) ? "candidate-compile-fail"
             : message.StartsWith("dxc failed", StringComparison.Ordinal) ? "dxc-compile-fail"
             : "error";
         Write(name, check, status, 0, 0, message);

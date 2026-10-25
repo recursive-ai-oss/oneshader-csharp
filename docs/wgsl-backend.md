@@ -27,12 +27,23 @@ Code is in `src/OneShader/Wgsl/`; naga validates every corpus entry point (`test
 
 ## Not available (diagnostic OSH5202)
 
-clip and cull distances (optional WebGPU feature); `CalculateLevelOfDetail`; wave and quad intrinsics; resource arrays;
+clip and cull distances (optional WebGPU feature); `CalculateLevelOfDetail`; wave and quad intrinsics; resource arrays (WebGPU has no
+binding arrays: one error per array, which suggests separate resources or a `Texture2DArray`; `NonUniformResourceIndex` is just its
+index);
 `Buffer<T>`/`RWBuffer<T>`; append and consume buffers; atomics on textures; `double`, 64-bit and 16-bit types; integer and bool
 matrices; `PrimitiveID`, layer and viewport index; recursion; storage textures without a format or read-written in a format other than
 r32float/r32uint/r32sint; bool stage variables; texel offsets on cube textures; control flow that is not structured.
 
 ## Known differences
 
+WGSL lets an implementation fuse a multiply and an add, so float results can differ in the last bits from the SPIR-V target's; in the
+parity run against DXC the `particles` case differs in the last bits on one driver version and matches on others.
 `precise` has no WGSL equivalent. Memory-only barriers become full barriers and must sit in uniform control flow. `isnan`, `isinf` and
 `isfinite` test exponent bits, which WGSL implementations may assume never fire.
+
+## Checking
+
+Every corpus file, optimized and not, either validates with `naga` or reports one of the errors above (the table in
+`WgslBackendTests`). `ONESHADER_PARITY_TARGET=wgsl tools/run-parity.sh` runs the GPU comparison against DXC on the WGSL output
+translated to SPIR-V by `naga`; cases that need an unavailable construct are skipped and listed as `unsupported-on-target` in the
+parity table.

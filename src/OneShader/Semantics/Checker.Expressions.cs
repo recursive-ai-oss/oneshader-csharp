@@ -52,6 +52,7 @@ internal sealed partial class Checker
                 if (inner is not null)
                 {
                     info.Const = inner.Const;
+                    info.LiteralValue = inner.LiteralValue;
                     info.IsLValue = inner.IsLValue;
                 }
 
@@ -129,6 +130,11 @@ internal sealed partial class Checker
                 }
 
                 info.Const = ConstValue.FromInt(t, unchecked((long)v));
+                if (l.SuffixType is null && v <= long.MaxValue)
+                {
+                    info.LiteralValue = (long)v;
+                }
+
                 return t;
             }
 
@@ -270,6 +276,12 @@ internal sealed partial class Checker
 
                 var rt = TypeOps.Reshape(ot, TypeOps.ArithmeticScalar(s));
                 info.OperandType = rt;
+                if (u.Operand.Info?.LiteralValue is long literal)
+                {
+                    long value = u.Operator == UnaryOperator.Plus ? literal : unchecked(-literal);
+                    return SetLiteral(info, value);
+                }
+
                 if (IsConstScalar(u.Operand, out var cv) && rt is ScalarType rs)
                 {
                     var c = cv.ConvertTo(rs);
@@ -304,6 +316,11 @@ internal sealed partial class Checker
 
                 var rt = TypeOps.Reshape(ot, TypeOps.ArithmeticScalar(s));
                 info.OperandType = rt;
+                if (u.Operand.Info?.LiteralValue is long literal)
+                {
+                    return SetLiteral(info, ~literal);
+                }
+
                 if (IsConstScalar(u.Operand, out var cv) && rt is ScalarType rs)
                 {
                     info.Const = ConstValue.FromInt(rs, ~cv.ConvertTo(rs).Int);
@@ -454,6 +471,11 @@ internal sealed partial class Checker
             }
         }
 
+        if (b.Left.Info?.LiteralValue is long lv && b.Right.Info?.LiteralValue is long rv && FoldLiteral(b.Operator, lv, rv) is long folded)
+        {
+            return SetLiteral(info, folded);
+        }
+
         info.OperandType = operand;
         if (operand is ScalarType os && IsConstScalar(b.Left, out var cl) && IsConstScalar(b.Right, out var cr) && result is ScalarType rts)
         {
@@ -462,6 +484,33 @@ internal sealed partial class Checker
 
         return result;
     }
+
+    /// <summary>Records a literal-only integer value; its type is the smallest of int, uint and int64 that holds it, as for a literal written out.</summary>
+    private static HlslType SetLiteral(ExprInfo info, long value)
+    {
+        var t = value is >= int.MinValue and <= int.MaxValue ? ScalarType.Int
+            : value is > int.MaxValue and <= uint.MaxValue ? ScalarType.UInt
+            : ScalarType.Get(ScalarKind.Int64);
+        info.LiteralValue = value;
+        info.OperandType = t;
+        info.Const = ConstValue.FromInt(t, value);
+        return t;
+    }
+
+    private static long? FoldLiteral(BinaryOperator op, long a, long b) => op switch
+    {
+        BinaryOperator.Add => unchecked(a + b),
+        BinaryOperator.Subtract => unchecked(a - b),
+        BinaryOperator.Multiply => unchecked(a * b),
+        BinaryOperator.Divide when b != 0 && !(a == long.MinValue && b == -1) => a / b,
+        BinaryOperator.Modulo when b != 0 && !(a == long.MinValue && b == -1) => a % b,
+        BinaryOperator.ShiftLeft => unchecked(a << (int)(b & 63)),
+        BinaryOperator.ShiftRight => a >> (int)(b & 63),
+        BinaryOperator.BitwiseAnd => a & b,
+        BinaryOperator.BitwiseOr => a | b,
+        BinaryOperator.BitwiseXor => a ^ b,
+        _ => null,
+    };
 
     internal static string OperatorText(BinaryOperator op) => op switch
     {

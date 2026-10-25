@@ -17,6 +17,9 @@ internal sealed partial class Checker
     private int _instDepth;
     private readonly Dictionary<StructType, StructTemplateSymbol> _templateOf = [];
 
+    // The arguments each struct template instance was made with, so a function parameter written Box<T> can deduce T.
+    private readonly Dictionary<StructType, Binding?[]> _instanceArgs = [];
+
     private sealed class Binding
     {
         public HlslType? Type { get; init; }
@@ -265,11 +268,34 @@ internal sealed partial class Checker
             return MatchArg(ps, b, explicitly, n.Arguments[0], rt.Element);
         }
 
+        if (n.Name.Parts.Count == 1 && _scope.Lookup(nm) is StructTemplateSymbol)
+        {
+            // Box<T> against an instance of Box: take the instance's arguments.
+            if (a is not StructType inst || !_templateOf.TryGetValue(inst, out var owner) || owner.Name != nm || !_instanceArgs.TryGetValue(inst, out var actual))
+            {
+                return false;
+            }
+
+            for (int i = 0; i < n.Arguments.Count && i < actual.Length; i++)
+            {
+                object? value = actual[i]?.Type is { } t ? t : actual[i]?.Value is { } v ? v.Int : null;
+                if (value is not null && !MatchArg(ps, b, explicitly, n.Arguments[i], value))
+                {
+                    return false;
+                }
+            }
+        }
+
         return true;
     }
 
     private bool MatchArg(IReadOnlyList<TemplateParameter> ps, Binding?[] b, bool[] explicitly, TemplateArgument ta, object actual)
     {
+        if (actual is HlslType nested && ta.Type is NamedTypeSyntax { Arguments.Count: > 0 } nestedSyntax)
+        {
+            return MatchType(ps, b, explicitly, nestedSyntax, nested);
+        }
+
         string? nm = ta.Type is NamedTypeSyntax { Name.Parts.Count: 1, Arguments.Count: 0 } t1 ? t1.Name.Last.Text
             : ta.Value is NameExpression { Name.Parts.Count: 1 } ne ? ne.Name.Last.Text
             : null;
@@ -550,6 +576,10 @@ internal sealed partial class Checker
         {
             _scope = bind;
             result = DeclareStructCore(fresh, bind, key, false, t);
+            if (result is StructType made)
+            {
+                _instanceArgs[made] = b;
+            }
         }
         finally
         {

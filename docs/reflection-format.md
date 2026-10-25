@@ -40,7 +40,9 @@ entry name="VSMain" stage=Vertex workgroup=0,0,0 stride=32
 - `resource`: `kind` is `ResourceKind`; `stages` a list of `Vertex`, `Pixel`, `Compute` (`-` for none);
   `rtype` is `ResourceTypeKind`; `hlsl` the type as written. Child `slot` records give one slot per
   target (`target` is `SpirV`, `Msl` or `Wgsl`; Metal uses the argument index as `binding` and 0 as `set`).
-  A `layout` child holds a `type` tree.
+  `count` is the array size (1 for a single resource); an array occupies one `slot`. A `layout` child holds a `type` tree.
+- `counter` (child of `resource`, append and consume buffers only): `target`, `set`, `binding` of the hidden
+  counter buffer, one record per target like `slot`. Readers that do not know it ignore it.
 - `type`: `kind` is `Scalar`, `Vector`, `Matrix`, `Array` or `Struct`. `rows` is the vector component
   count or matrix rows; `cols` matrix columns; `size`, `align` in bytes; `length`/`stride` for
   arrays (length 0 = unsized); `mstride`/`packing` for matrices (the stride is between stored

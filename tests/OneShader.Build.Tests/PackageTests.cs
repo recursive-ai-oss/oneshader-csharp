@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace OneShader.Build.Tests;
@@ -114,7 +115,7 @@ public sealed class PackageTests : IClassFixture<PackageFixture>
         var second = Build("Prebuilt", b);
         Assert.True(second.Code == 0, second.Output);
         var generated = Directory.EnumerateFiles(a, "OneShader.*.g.cs", SearchOption.AllDirectories).Select(Path.GetFileName).OrderBy(n => n, StringComparer.Ordinal).ToList();
-        Assert.Equal(3, generated.Count);
+        Assert.Equal(GoldenModels.Names.Length, generated.Count);
         foreach (string? name in generated)
         {
             Assert.Equal(File.ReadAllBytes(Find(a, name!)), File.ReadAllBytes(Find(b, name!)));
@@ -183,6 +184,83 @@ public sealed class PackageTests : IClassFixture<PackageFixture>
         Assert.True(second.Code == 0, second.Output);
         Assert.Equal(File.ReadAllBytes(Find(a, "OneShader.*.g.cs")), File.ReadAllBytes(Find(b, "OneShader.*.g.cs")));
         Assert.Equal(File.ReadAllBytes(blob), File.ReadAllBytes(Find(b, "Sprite.hlsl.oneshader")));
+    }
+
+    [Fact]
+    public async Task HotReloadSampleBuildsAndReportsCompatibleIncompatibleAndBrokenEdits()
+    {
+        string art = Path.Combine(_fx.Root, "art-hot");
+        var build = Build("HotReload", art);
+        Assert.True(build.Code == 0, build.Output);
+        Assert.Matches(new Regex(@"\b0 Warning\(s\)"), build.Output);
+
+        string dir = Path.Combine(_fx.Root, "hot-shader");
+        Directory.CreateDirectory(dir);
+        string shader = Path.Combine(dir, "Sprite.hlsl");
+        string original = File.ReadAllText(Path.Combine(Harness.RepoRoot, "samples", "HotReload", "Shaders", "Sprite.hlsl"));
+        File.WriteAllText(shader, original);
+
+        string dll = Find(art, "HotReload.dll");
+        var psi = new ProcessStartInfo(Dotnet) { WorkingDirectory = dir, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true };
+        psi.ArgumentList.Add(dll);
+        psi.ArgumentList.Add(shader);
+        using var process = Process.Start(psi)!;
+        var lines = new System.Collections.Concurrent.BlockingCollection<string>();
+        process.OutputDataReceived += (_, e) => { if (e.Data is not null) { lines.Add(e.Data); } };
+        process.BeginOutputReadLine();
+        var stderr = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            // Each step edits the file, then sends a line, which makes the program recompile without waiting for a file event.
+            string Next(string marker)
+            {
+                var deadline = DateTime.UtcNow.AddSeconds(60);
+                var seen = new List<string>();
+                while (lines.TryTake(out string? line, Math.Max(1, (int)(deadline - DateTime.UtcNow).TotalMilliseconds), TestContext.Current.CancellationToken))
+                {
+                    seen.Add(line);
+                    if (line.Contains(marker, StringComparison.Ordinal))
+                    {
+                        return string.Join("\n", seen);
+                    }
+                }
+
+                throw new Xunit.Sdk.XunitException("no line containing '" + marker + "'; saw:\n" + string.Join("\n", seen));
+            }
+
+            Assert.Contains("compatible: swapping in VSMain", Next("] compatible: swapping in"), StringComparison.Ordinal);
+
+            File.WriteAllText(shader, original.Replace("float4 Tint;\n    float Time;", "float Time;\n    float4 Tint;", StringComparison.Ordinal));
+            process.StandardInput.WriteLine();
+            string moved = Next("Rebuild");
+            Assert.Contains("incompatible with the compiled-in C# bindings:", moved, StringComparison.Ordinal);
+            Assert.Contains("  Frame.Tint moved from offset 64 to 80", moved, StringComparison.Ordinal);
+            Assert.Contains("  Frame.Time moved from offset 80 to 64", moved, StringComparison.Ordinal);
+
+            File.WriteAllText(shader, original.Replace("return o;", "return o", StringComparison.Ordinal));
+            process.StandardInput.WriteLine();
+            string broken = Next("compile failed");
+            broken += "\n" + Next("error OSH0200");
+            Assert.Contains("compile failed; keeping the previous shader", broken, StringComparison.Ordinal);
+            Assert.Contains("Sprite.hlsl(20,13): error OSH0200", broken, StringComparison.Ordinal);
+
+            File.WriteAllText(shader, original.Replace("* Tint * Time;", "* Tint * (Time + 1.0);", StringComparison.Ordinal));
+            process.StandardInput.WriteLine();
+            Assert.Contains("compatible: swapping in VSMain", Next("] compatible: swapping in"), StringComparison.Ordinal);
+
+            process.StandardInput.WriteLine("q");
+            Assert.True(process.WaitForExit(30000), "the sample did not quit");
+            Assert.Equal(0, process.ExitCode);
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+
+        Assert.Equal("", await stderr);
     }
 
     [Fact]

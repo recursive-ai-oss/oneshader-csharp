@@ -33,12 +33,13 @@ public sealed class CaseFormatException : Exception
 /// index u16|u32 : DATA
 /// draw vertices=N|indexed=N [instances=M]
 /// dispatch ENTRY X Y Z
-/// uniform SET BINDING : DATA
-/// storage SET BINDING [out] [sorted] [size=BYTES] [float=X] [: DATA]
+/// uniform SET BINDING [element=N] : DATA
+/// storage SET BINDING [element=N] [out] [sorted] [size=BYTES] [float=X] [: DATA]
 ///   (float=X: an output of 32-bit floats that implementations with looser math, such as WebGPU, may reproduce within |a-b| &lt;= X * (1 + |a|))
-/// texture SET BINDING WxH[xLAYERS] FORMAT GENERATOR [mips=N] [cube]
-/// image SET BINDING WxH FORMAT GENERATOR [out]
-/// sampler SET BINDING linear|nearest clamp|repeat [mips] [compare]
+/// texture SET BINDING WxH[xLAYERS] FORMAT GENERATOR [mips=N] [cube] [element=N]
+/// image SET BINDING WxH FORMAT GENERATOR [out] [element=N]
+/// sampler SET BINDING linear|nearest clamp|repeat [mips] [compare] [element=N]
+/// (resources declared at one SET BINDING with element=0,1,... form a descriptor array)
 /// expect NAME
 /// </code>
 /// </summary>
@@ -225,6 +226,7 @@ public static class CaseFile
                         Kind = ResourceKind.Uniform,
                         Set = Int(Arg(t, 1, fail), fail),
                         Binding = Int(Arg(t, 2, fail), fail),
+                        Element = int.Parse(OptionOrNull(t, "element") ?? "0", CultureInfo.InvariantCulture),
                         Data = data ?? throw fail("uniform needs ': data'"),
                     });
                     break;
@@ -234,6 +236,7 @@ public static class CaseFile
                         Kind = ResourceKind.Storage,
                         Set = Int(Arg(t, 1, fail), fail),
                         Binding = Int(Arg(t, 2, fail), fail),
+                        Element = int.Parse(OptionOrNull(t, "element") ?? "0", CultureInfo.InvariantCulture),
                         Output = Array.IndexOf(t, "out") >= 0,
                         Sorted = Array.IndexOf(t, "sorted") >= 0,
                         FloatTolerance = double.Parse(OptionOrNull(t, "float") ?? "0", CultureInfo.InvariantCulture),
@@ -255,6 +258,7 @@ public static class CaseFile
                             Kind = isImage ? ResourceKind.StorageImage : ResourceKind.Texture,
                             Set = Int(Arg(t, 1, fail), fail),
                             Binding = Int(Arg(t, 2, fail), fail),
+                            Element = int.Parse(OptionOrNull(t, "element") ?? "0", CultureInfo.InvariantCulture),
                             Width = Int(dims[0], fail),
                             Height = Int(dims[1], fail),
                             Layers = dims.Length == 3 ? Int(dims[2], fail) : 0,
@@ -272,6 +276,7 @@ public static class CaseFile
                         Kind = ResourceKind.Sampler,
                         Set = Int(Arg(t, 1, fail), fail),
                         Binding = Int(Arg(t, 2, fail), fail),
+                        Element = int.Parse(OptionOrNull(t, "element") ?? "0", CultureInfo.InvariantCulture),
                         Linear = Arg(t, 3, fail) switch
                         {
                             "linear" => true,

@@ -153,12 +153,11 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
             return null;
         }
 
-        var deps = new SortedSet<string>(StringComparer.Ordinal);
         var options = new CompileOptions
         {
             Defines = defines,
             EntryPoints = entries,
-            IncludeResolver = (requested, including, isSystem) => ResolveInclude(requested, including, isSystem, projectDir, includeDirs, deps),
+            IncludeResolver = (requested, including, isSystem) => ResolveInclude(requested, including, isSystem, projectDir, includeDirs),
         };
 
         CompileResult result;
@@ -175,6 +174,13 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
             // A compiler bug must not take the build down with a stack trace nobody can read.
             Log.LogError(null, InternalErrorCode, null, full, 1, 1, 0, 0, "Internal compiler error (" + ex.GetType().Name + ": " + ex.Message + "). This is a bug in OneShader; please report it with this shader.");
             return null;
+        }
+
+        // The compile reports every file it read; the next build recompiles when any of them changed.
+        var deps = new SortedSet<string>(StringComparer.Ordinal);
+        for (int i = 1; i < result.Files.Count; i++)
+        {
+            deps.Add(Path.GetFullPath(result.Files[i], projectDir));
         }
 
         var warnings = new List<Diagnostic>();
@@ -409,8 +415,7 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
         string includingFile,
         bool isSystem,
         string projectDir,
-        List<string> includeDirs,
-        SortedSet<string> deps)
+        List<string> includeDirs)
     {
         var candidates = new List<string>();
         if (Path.IsPathRooted(requested))
@@ -442,7 +447,6 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
                 if (File.Exists(path))
                 {
                     string text = File.ReadAllText(path);
-                    deps.Add(path);
                     return new ResolvedInclude(Relative(projectDir, path), text);
                 }
             }

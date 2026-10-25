@@ -48,7 +48,17 @@ public class ProbeTests
 
         byte[] reference = ParityCompilers.Reference.Compile(request);
         Assert.True(Validate(reference).Length == 0, $"{file}: the reference output does not validate");
-        byte[] candidate = ParityCompilers.Candidate.Compile(request);
+        byte[] candidate;
+        try
+        {
+            candidate = ParityCompilers.Candidate.Compile(request);
+        }
+        catch (UnsupportedOnTargetException e)
+        {
+            Assert.Skip("unsupported on this target: " + e.Message);
+            return;
+        }
+
         string verdict = Validate(candidate);
         Assert.True(verdict.Length == 0, $"{file}: the candidate's module fails spirv-val: {verdict}");
     }

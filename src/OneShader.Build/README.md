@@ -7,7 +7,7 @@ with no dependency beyond .NET itself. Shader errors are build errors on the HLS
 constant buffers, vertex inputs and resource bindings become C# types and constants laid out to
 match the compiled shader, so a CPU/GPU mismatch fails the build instead of the frame.
 
-**Preview.** Version 0.1 targets Vulkan (SPIR-V). The API and the generated code may still
+**Preview.** Version 0.2 targets Vulkan (SPIR-V). The API and the generated code may still
 change before 1.0.
 
 ## Install
@@ -90,22 +90,28 @@ Properties: `EnableDefaultOneShaderItems`, `OneShaderNamespace`, `OneShaderDefin
 `OneShaderIncludeDirectories`. Shaders are recompiled only when they, a file they include, or the
 options change; the output is deterministic.
 
-## What works in 0.1
+## What works in 0.2
 
 - Vertex, pixel and compute shaders in modern HLSL (Shader Model 6 style, HLSL 2021): structs,
-  functions, constant buffers, textures and samplers, structured and byte-address buffers,
-  storage images, groupshared memory, barriers and atomics, the preprocessor.
-- SPIR-V for Vulkan 1.2, validated with `spirv-val`, and checked by running each shader in its
-  test corpus on a GPU against the same shader compiled by DXC.
+  functions, templates, member functions, inheritance and operator overloads, constant buffers,
+  textures and samplers (including comparison sampling, gathers and LOD queries), structured,
+  byte-address and Append/Consume buffers, storage images, bounded resource arrays (constant and
+  run-time indexing), groupshared memory, barriers and atomics, and the preprocessor.
+- SPIR-V for Vulkan 1.2, optimized (inlining, SSA, constant folding, dead-code removal), validated
+  with `spirv-val`, and checked by running every shader in its test corpus on a GPU against the
+  same shader compiled by DXC: 2D sprites, text and UI, a PBR forward renderer with clustered
+  lights, cascaded shadows, SSAO, bloom, tone mapping, image-based lighting and skinning, and
+  compute culling.
 - Buffer layouts and descriptor bindings follow the conventions DXC uses for Vulkan, so existing
   shaders keep their layouts.
+- Hot reload: generated classes carry the reflection they were built from, and
+  `InterfaceCompatibility.Compare` tells whether a shader recompiled at run time still matches
+  them (see the `RecursiveAI.OneShader` package).
 
 ## Known limits
 
-- SPIR-V only. Metal (MSL) and WebGPU (WGSL) output are planned.
-- Resources are single (`Count == 1`); resource arrays are not supported yet.
-- HLSL templates, struct member functions, operator overloads and wave intrinsics report
-  "not supported yet".
+- The generated bindings and embedded blobs cover SPIR-V; Metal (MSL) and WebGPU (WGSL) are available from the compiler API only.
+- Unbounded resource arrays and wave intrinsics are not supported.
 - `dotnet build` only (not Visual Studio's .NET Framework MSBuild).
 
 ## License

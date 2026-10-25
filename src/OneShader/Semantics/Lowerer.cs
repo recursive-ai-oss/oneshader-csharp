@@ -100,6 +100,19 @@ internal sealed partial class Lowerer
             };
             r.Global = g;
             _mod.Globals.Add(g);
+            if (r.HasCounter)
+            {
+                // The counter is a separate buffer of its own: one 32-bit word, addressed like a byte-address buffer.
+                var counter = new GlobalVariable("counter.var." + r.Name, GlobalKind.Resource, AddressSpace.StorageBuffer, new ResourceType(ResourceTypeKind.RWByteAddressBuffer, null))
+                {
+                    Set = r.Set,
+                    Binding = r.CounterBinding,
+                    Span = r.Span,
+                };
+                r.CounterGlobal = counter;
+                _counters[g] = counter;
+                _mod.Globals.Add(counter);
+            }
         }
 
         foreach (var v in _ck.GroupSharedGlobals)
@@ -202,8 +215,15 @@ internal sealed partial class Lowerer
         {
             var p = sym.Params[i];
             HlslType t;
-            if (bound is not null && bound[i] is not null)
+            if (bound is not null && bound[i] is { } boundResource)
             {
+                // A run-time index into a resource array travels as an ordinary argument.
+                int k = 0;
+                foreach (var _ in DynamicIndices(boundResource))
+                {
+                    f.AddParameter(ScalarType.Int, p.Name + "_index" + (k++).ToString(System.Globalization.CultureInfo.InvariantCulture));
+                }
+
                 continue;
             }
 
@@ -237,7 +257,25 @@ internal sealed partial class Lowerer
     private readonly Dictionary<(FunctionSymbol, string), IrFunction> _specs = [];
     private readonly List<(FunctionSymbol Sym, IrFunction Fn, IrValue?[] Bound)> _specQueue = [];
 
-    /// <summary>A resource pointer in a form that survives into another function: the global itself or a chain of constant indices into it.</summary>
+    /// <summary>The non-constant indices of a resource pointer, in order.</summary>
+    private static List<IrValue> DynamicIndices(IrValue ptr)
+    {
+        var result = new List<IrValue>();
+        if (ptr is Instruction { Op: Opcode.AccessChain } chain)
+        {
+            for (int i = 1; i < chain.Operands.Count; i++)
+            {
+                if (chain.Operands[i] is not Constant)
+                {
+                    result.Add(chain.Operands[i]);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>A resource pointer in a form that survives into another function: the global itself or a chain of indices into it. Run-time indices show as '?' in the key and are passed as arguments.</summary>
     private static bool Describe(IrValue ptr, out string key)
     {
         key = "";
@@ -253,12 +291,14 @@ internal sealed partial class Lowerer
                 sb.Append(rootKey);
                 for (int i = 1; i < chain.Operands.Count; i++)
                 {
-                    if (chain.Operands[i] is not Constant { ConstantKind: ConstantKind.Scalar } c)
+                    if (chain.Operands[i] is Constant { ConstantKind: ConstantKind.Scalar } c)
                     {
-                        return false;
+                        sb.Append('[').Append(c.Bits.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(']');
                     }
-
-                    sb.Append('[').Append(c.Bits.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(']');
+                    else
+                    {
+                        sb.Append("[?]");
+                    }
                 }
 
                 key = sb.ToString();
@@ -270,14 +310,16 @@ internal sealed partial class Lowerer
         }
     }
 
-    private IrValue RebuildResource(IrValue ptr)
+    /// <summary>Rebuilds a resource pointer inside a specialized function; <paramref name="dynamic"/> supplies this function's values for the run-time indices.</summary>
+    private IrValue RebuildResource(IrValue ptr, IReadOnlyList<IrValue> dynamic)
     {
         if (ptr is Instruction { Op: Opcode.AccessChain } chain)
         {
             var idx = new IrValue[chain.Operands.Count - 1];
+            int d = 0;
             for (int i = 0; i < idx.Length; i++)
             {
-                idx[i] = chain.Operands[i + 1];
+                idx[i] = chain.Operands[i + 1] is Constant ? chain.Operands[i + 1] : dynamic[d++];
             }
 
             return _b.AccessChain(chain.Operands[0], ((PointerType)chain.Type).Pointee, idx);
@@ -287,9 +329,9 @@ internal sealed partial class Lowerer
     }
 
     /// <summary>The copy of a function that takes resources, for these particular resource arguments; null (after reporting) when an argument is not a resource known at compile time.</summary>
-    private IrFunction? Specialize(FunctionSymbol target, List<Expression> all, SourceSpan span)
+    private IrFunction? Specialize(FunctionSymbol target, List<Expression> all, SourceSpan span, out IrValue?[] bound)
     {
-        var bound = new IrValue?[target.Params.Count];
+        bound = new IrValue?[target.Params.Count];
         var key = new System.Text.StringBuilder();
         for (int i = 0; i < target.Params.Count; i++)
         {
@@ -302,7 +344,7 @@ internal sealed partial class Lowerer
             var ptr = i < all.Count ? ResourcePointer(all[i]) : null;
             if (ptr is null || !Describe(ptr, out string k))
             {
-                _diag.Error(SemanticCodes.BadResource, "Argument " + (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture) + " of '" + target.Name + "' must be a resource that is known at compile time: a global resource, a resource parameter or a resource variable assigned from one. A resource chosen by a run-time index or condition cannot be passed.", i < all.Count ? all[i].Span : span);
+                _diag.Error(SemanticCodes.BadResource, "Argument " + (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture) + " of '" + target.Name + "' must name a resource: a global resource, an element of a resource array, a resource parameter or a resource variable assigned from one. A resource chosen by a condition cannot be passed.", i < all.Count ? all[i].Span : span);
                 return null;
             }
 
@@ -350,9 +392,15 @@ internal sealed partial class Lowerer
             if (bound is not null && bound[i] is { } resource)
             {
                 // A specialization: the parameter names this resource directly.
+                var dynamic = new List<IrValue>();
+                for (int k = DynamicIndices(resource).Count; k > 0; k--)
+                {
+                    dynamic.Add(f.Parameters[next++]);
+                }
+
                 if (vs is not null)
                 {
-                    vs.Ir = RebuildResource(resource);
+                    vs.Ir = RebuildResource(resource, dynamic);
                 }
 
                 continue;

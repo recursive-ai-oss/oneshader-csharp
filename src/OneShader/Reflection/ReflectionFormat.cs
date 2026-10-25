@@ -48,6 +48,11 @@ public static class ReflectionFormat
                 Line(sb, 1, "slot", ("target", s.Target.ToString()), ("set", N(s.Set)), ("binding", N(s.Binding)));
             }
 
+            foreach (var s in r.CounterSlots)
+            {
+                Line(sb, 1, "counter", ("target", s.Target.ToString()), ("set", N(s.Set)), ("binding", N(s.Binding)));
+            }
+
             if (r.Layout is not null)
             {
                 Line(sb, 1, "layout");
@@ -310,6 +315,7 @@ public static class ReflectionFormat
         private ResourceInfo ReadResource(Node n)
         {
             var slots = new List<TargetSlot>();
+            var counters = new List<TargetSlot>();
             ReflectedType? layout = null;
             while (_pos < _nodes.Count && _nodes[_pos].Depth > 0)
             {
@@ -322,6 +328,10 @@ public static class ReflectionFormat
                 if (c.Keyword == "slot")
                 {
                     slots.Add(new TargetSlot(Enm<CompileTarget>(c, Str(c, "target")), U(c, "set"), U(c, "binding")));
+                }
+                else if (c.Keyword == "counter")
+                {
+                    counters.Add(new TargetSlot(Enm<CompileTarget>(c, Str(c, "target")), U(c, "set"), U(c, "binding")));
                 }
                 else if (c.Keyword == "layout")
                 {
@@ -338,6 +348,7 @@ public static class ReflectionFormat
                 ResourceType = Enm<ResourceTypeKind>(n, Str(n, "rtype")),
                 HlslType = Str(n, "hlsl"),
                 Slots = slots,
+                CounterSlots = counters,
                 Layout = layout,
             };
         }

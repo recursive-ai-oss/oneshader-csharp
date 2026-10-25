@@ -65,5 +65,41 @@ if (!result.Success || result.Reflection is null || result.Reflection.EntryPoint
     return 3;
 }
 
+// The same shader through all three backends.
+var all = ShaderCompiler.Compile(Shader, "smoke.hlsl", new CompileOptions { Targets = [CompileTarget.SpirV, CompileTarget.Msl, CompileTarget.Wgsl] });
+if (!all.Success || all.Blobs.Count != 6
+    || all.Find("PS", CompileTarget.Msl) is not { } msl || !msl.AsText().Contains("fragment", StringComparison.Ordinal)
+    || all.Find("PS", CompileTarget.Wgsl) is not { } wgsl || !wgsl.AsText().Contains("@fragment", StringComparison.Ordinal))
+{
+    foreach (var d in all.Diagnostics)
+    {
+        Console.Error.WriteLine(d);
+    }
+
+    Console.Error.WriteLine("multi-target smoke test failed");
+    return 8;
+}
+
+// Hot-reload path: an edit that only touches a body is compatible, one that moves a constant-buffer member is not.
+var edited = ShaderCompiler.Compile(Shader.Replace("i.Uv);", "i.Uv) * 0.5;", StringComparison.Ordinal), "smoke.hlsl");
+var moved = ShaderCompiler.Compile(Shader.Replace("float4x4 M;", "float4 Pad; float4x4 M;", StringComparison.Ordinal), "smoke.hlsl");
+if (!edited.Success || !moved.Success || !InterfaceCompatibility.Compare(result.Reflection, edited.Reflection!).IsCompatible)
+{
+    return 5;
+}
+
+var report = InterfaceCompatibility.Compare(result.Reflection, moved.Reflection!);
+if (report.IsCompatible || report.Differences[0].Message != "Frame.M moved from offset 0 to 16" || result.Files.Count != 1)
+{
+    Console.Error.WriteLine(report);
+    return 6;
+}
+
+var missing = ShaderCompiler.CompileFile("does-not-exist.hlsl");
+if (missing.Success || missing.Diagnostics[0].Code != ApiDiagnosticCodes.FileNotReadable)
+{
+    return 7;
+}
+
 Console.WriteLine("compiled " + result.Reflection.EntryPoints.Count + " entry points");
 return 0;

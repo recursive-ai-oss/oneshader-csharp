@@ -35,6 +35,12 @@ internal sealed class StructInfo
 
     /// <summary>The base struct, or null.</summary>
     public StructType? Base { get; set; }
+
+    /// <summary>Static data members: constants and per-invocation globals named <c>Struct::name</c>.</summary>
+    public Dictionary<string, VariableSymbol> Statics { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Scope that holds the static members so later initializers can refer to earlier ones.</summary>
+    public Scope? StaticScope { get; set; }
 }
 
 /// <summary>
@@ -435,7 +441,7 @@ internal sealed partial class Checker
             switch (m)
             {
                 case VariableDeclaration v:
-                    DeclareFields(v, fields, info, st.Name);
+                    DeclareFields(v, fields, info, st.Name, scope);
                     break;
                 case FunctionDeclaration f:
                     methods.Add(f);
@@ -553,12 +559,18 @@ internal sealed partial class Checker
         }
     }
 
-    private void DeclareFields(VariableDeclaration v, List<StructField> fields, StructInfo info, string structName)
+    private void DeclareFields(VariableDeclaration v, List<StructField> fields, StructInfo info, string structName, Scope? scope = null)
     {
         CheckAttributes(v.Attributes, "vk::offset", "vk::location", "oneshader::format");
         if ((v.Modifiers & Modifiers.Static) != 0)
         {
-            Err(SemanticCodes.Unsupported, "Static struct members are not supported yet; declare the constant outside the struct.", v.Span);
+            if (scope is null)
+            {
+                Err(SemanticCodes.Unsupported, "Static members are only supported in structs, not in constant buffers; declare the constant outside the cbuffer.", v.Span);
+                return;
+            }
+
+            DeclareStaticMember(v, info, structName, scope);
             return;
         }
 
@@ -642,6 +654,56 @@ internal sealed partial class Checker
         }
     }
 
+    /// <summary>A static data member: a global of its own (a compile-time constant when const with a value), reached as <c>Struct::name</c> or by its bare name inside the struct's functions.</summary>
+    private void DeclareStaticMember(VariableDeclaration v, StructInfo info, string structName, Scope scope)
+    {
+        var holder = info.StaticScope ??= new Scope(scope);
+        var saved = _scope;
+        _scope = holder;
+        try
+        {
+            var baseType = ResolveType(v.Type);
+            foreach (var d in v.Declarators)
+            {
+                var type = ApplyDims(baseType, d.ArrayDimensions, d.Initializer is not null, d.Span);
+                if (d.Initializer is InitializerListExpression il && type is ArrayType { Length: 0 } ua)
+                {
+                    type = HlslType.Array(ua.Element, InferListLength(il, ua.Element));
+                }
+
+                if (IsResourceLike(type))
+                {
+                    Err(SemanticCodes.Unsupported, "A static member cannot be a resource; declare '" + d.Name.Text + "' at global scope.", d.Name.Span);
+                    continue;
+                }
+
+                DeclareOneGlobal(v, d, type, holder);
+                if (holder.LookupLocal(d.Name.Text) is VariableSymbol vs)
+                {
+                    vs.IrName = structName + "." + d.Name.Text;
+                    info.Statics[d.Name.Text] = vs;
+                }
+            }
+        }
+        finally
+        {
+            _scope = saved;
+        }
+    }
+
+    private VariableSymbol? FindStatic(StructType st, string name)
+    {
+        for (var s = st; s is not null; s = s.BaseStruct)
+        {
+            if (_structInfos.TryGetValue(s, out var si) && si.Statics.TryGetValue(name, out var vs))
+            {
+                return vs;
+            }
+        }
+
+        return null;
+    }
+
     private static bool ContainsMatrix(HlslType t) => t switch
     {
         MatrixType => true,
@@ -692,7 +754,16 @@ internal sealed partial class Checker
 
         _ = memberNames;
         st.SetFields(fields);
-        if (!Define(scope, sym))
+
+        // A member may reuse the buffer's own name (cbuffer Lights { Light Lights[8]; }); the member then wins, because
+        // the buffer name is only ever used to explain a mistake.
+        bool memberTakesName = false;
+        foreach (var vs in sym.Members)
+        {
+            memberTakesName |= vs.Name == sym.Name;
+        }
+
+        if (!memberTakesName && !Define(scope, sym))
         {
             return;
         }
@@ -812,6 +883,20 @@ internal sealed partial class Checker
 
     private void ApplyBindingAnnotations(ResourceDecl res, IReadOnlyList<AttributeSyntax> attrs, IReadOnlyList<Annotation> annotations, char expectedClass)
     {
+        var counter = FindAttribute(attrs, "vk::counter_binding");
+        if (counter is not null)
+        {
+            int? cb = IntAttributeArg(counter, 0);
+            if (cb is null or < 0)
+            {
+                Err(SemanticCodes.BadAttribute, "vk::counter_binding needs a non-negative binding number, for example [[vk::counter_binding(3)]].", counter.Span);
+            }
+            else
+            {
+                res.ExplicitCounterBinding = cb;
+            }
+        }
+
         var vk = FindAttribute(attrs, "vk::binding");
         if (vk is not null)
         {
@@ -852,7 +937,7 @@ internal sealed partial class Checker
 
     private void DeclareGlobalVariable(VariableDeclaration v, Scope scope)
     {
-        CheckAttributes(v.Attributes, "vk::binding", "vk::offset");
+        CheckAttributes(v.Attributes, "vk::binding", "vk::counter_binding", "vk::offset");
         var baseType = ResolveType(v.Type);
         foreach (var d in v.Declarators)
         {
@@ -976,6 +1061,13 @@ internal sealed partial class Checker
                 return;
             }
 
+            if (at.Length == 0)
+            {
+                Err(SemanticCodes.Unsupported, "'" + name.Text + "' is an unbounded resource array, which is not supported. Give it a size, for example '" + name.Text + "[16]'.", name.Span);
+                Define(scope, new VariableSymbol(name.Text, name.Span, VarKind.Global, HlslType.Error, v.Modifiers));
+                return;
+            }
+
             element = at.Element;
             count = at.Length;
         }
@@ -1028,10 +1120,17 @@ internal sealed partial class Checker
                     Err(SemanticCodes.BadType, "ConstantBuffer needs a struct type, for example 'ConstantBuffer<MyData>'.", name.Span);
                 }
             }
-            else if (rt.ResourceKind is ResourceTypeKind.AppendStructuredBuffer or ResourceTypeKind.ConsumeStructuredBuffer)
+        }
+
+        if (element is ResourceType { ResourceKind: ResourceTypeKind.AppendStructuredBuffer or ResourceTypeKind.ConsumeStructuredBuffer })
+        {
+            if (count != 1)
             {
-                Err(SemanticCodes.Unsupported, "Append and consume buffers are not supported; use a RWStructuredBuffer with an atomic counter.", name.Span);
+                Err(SemanticCodes.Unsupported, "An array of append or consume buffers is not supported: each buffer needs its own counter. Declare '" + name.Text + "' as separate variables.", name.Span);
+                return;
             }
+
+            rd.HasCounter = true;
         }
 
         Resources.Add(rd);

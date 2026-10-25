@@ -7,6 +7,9 @@ using System.Threading;
 
 namespace OneShader.ParityTests;
 
+/// <summary>The target backend refused a shader with its documented "not available on this target" error.</summary>
+public sealed class UnsupportedOnTargetException(string message) : InvalidOperationException(message);
+
 /// <summary>
 /// This repository's WGSL output, translated to SPIR-V by the naga command-line tool (a released binary used as a test oracle),
 /// so the same GPU comparison against DXC runs on what the WGSL backend wrote. Selected with ONESHADER_PARITY_TARGET=wgsl.
@@ -47,6 +50,13 @@ public static class WgslNagaCompiler
         };
         var result = ShaderCompiler.Compile(File.ReadAllText(request.SourcePath), request.SourcePath, options);
         var blob = result.Find(request.Entry, CompileTarget.Wgsl);
+        if (!result.Success && result.Diagnostics.Any(d => d.Code == "OSH5202"))
+        {
+            // A construct WGSL cannot express is a documented error, not a miscompile: the run reports it as unsupported.
+            throw new UnsupportedOnTargetException("OneShader failed for " + request.Entry + " (" + request.Stage + ") in " + request.SourcePath + ":\n"
+                + string.Join('\n', result.Diagnostics.Select(d => d.ToString())));
+        }
+
         if (!result.Success || blob is null)
         {
             throw new InvalidOperationException("OneShader failed for " + request.Entry + " (" + request.Stage + ") in " + request.SourcePath + ":\n"
