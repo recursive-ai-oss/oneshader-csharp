@@ -1,0 +1,9 @@
+<Project>
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+  <!-- Tests find the corpus and samples through [CallerFilePath]. Deterministic source path mapping
+       (which CI builds switch on) would rewrite those paths to /_/..., so the test projects opt out;
+       the shipped assemblies keep it. -->
+  <PropertyGroup>
+    <DeterministicSourcePaths>false</DeterministicSourcePaths>
+  </PropertyGroup>
+</Project>

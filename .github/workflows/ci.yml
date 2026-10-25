@@ -50,7 +50,7 @@ jobs:
       - name: Fetch reference tools
         run: |
           tools/fetch-oracles.sh "$ONESHADER_TOOLS"
-          ls "$ONESHADER_TOOLS/bin"
+          ls "$ONESHADER_TOOLS/bin" || true
 
       - name: Build
         run: dotnet build OneShader.slnx -c Release

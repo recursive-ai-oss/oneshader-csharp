@@ -6,7 +6,7 @@
 # The system Vulkan loader and GPU driver are used as they are; nothing here replaces them.
 # Idempotent (a stamp file records the pinned versions), verifies SHA-256, needs no sudo and
 # installs nothing outside DIR. Linux x64, macOS arm64 and Windows x64 (run from Git Bash); other platforms
-# get no binaries and their oracle-based tests skip.
+# get no DXC or SPIRV-Tools binaries and their tests skip; naga is built with cargo wherever cargo exists.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -21,7 +21,7 @@ platform="$(uname -s)-$(uname -m)"
 case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) platform=Windows-x86_64 ;; esac
 case "$platform" in
   Linux-x86_64|Darwin-arm64|Windows-x86_64) ;;
-  *) echo "fetch-oracles: no binaries are pinned for $platform; skipping" >&2; exit 0 ;;
+  *) echo "fetch-oracles: no DXC or SPIRV-Tools binaries are pinned for $platform; their tests skip" >&2 ;;
 esac
 
 sha256_of() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
@@ -48,8 +48,8 @@ if [ "$platform" = Windows-x86_64 ]; then
     echo "fetch-oracles: SPIRV-Tools from Vulkan SDK $VULKAN_SDK_VERSION for Windows (large download)"
     get "$VULKAN_SDK_WINDOWS_URL" "$VULKAN_SDK_WINDOWS_SHA256" sdk.exe
     # The installer is a GUI-subsystem program, so wait for it explicitly; it writes only under --root.
-    powershell -NoProfile -Command "\$p = Start-Process -FilePath '$(winpath "$work/sdk.exe")' -ArgumentList '--root','$(winpath "$work/sdk")','--accept-licenses','--default-answer','--confirm-command','install','copy_only=1' -Wait -PassThru; exit \$p.ExitCode" \
-      || { echo "fetch-oracles: SDK installer failed" >&2; exit 1; }
+    powershell -NoProfile -Command "\$p = Start-Process -FilePath '$(winpath "$work/sdk.exe")' -ArgumentList '--root','$(winpath "$work/sdk")','--accept-licenses','--default-answer','--confirm-command','install','copy_only=1' -Wait -PassThru; Write-Host ('installer exit code ' + \$p.ExitCode); exit \$p.ExitCode" \
+      || { echo "fetch-oracles: SDK installer failed" >&2; ls -la "$work" "$work/sdk" >&2 || true; exit 1; }
     for t in spirv-val spirv-dis spirv-as spirv-opt; do
       cp -f "$work/sdk/Bin/$t.exe" "$dir/bin/$t.exe"
     done
@@ -86,7 +86,7 @@ elif [ "$platform" = Darwin-arm64 ]; then
     echo "$want" > "$stamp"
     echo "fetch-oracles: installed into $dir/bin"
   fi
-else
+elif [ "$platform" = Linux-x86_64 ]; then
 stamp="$dir/.stamp"
 want="dxc=$DXC_SHA256 sdk=$VULKAN_SDK_SHA256"
 if [ -f "$stamp" ] && [ "$(cat "$stamp")" = "$want" ] && [ -x "$dir/bin/dxc" ] && [ -x "$dir/bin/spirv-val" ] \
