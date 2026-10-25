@@ -819,7 +819,7 @@ internal sealed partial class Lowerer
             case CallExpression c:
             {
                 var bi = c.Info?.Builtin;
-                if (bi is null || bi.Kind is BuiltinKind.Texture or BuiltinKind.GetDimensions or BuiltinKind.Clip or BuiltinKind.BufferLoad)
+                if (bi is null || bi.Kind is BuiltinKind.Texture or BuiltinKind.GetDimensions or BuiltinKind.Clip or BuiltinKind.BufferLoad or BuiltinKind.Append or BuiltinKind.Consume)
                 {
                     return false;
                 }

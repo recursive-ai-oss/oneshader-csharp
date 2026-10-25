@@ -58,7 +58,8 @@ internal sealed partial class Lowerer
 
         all.AddRange(callArgs);
         bool specialize = target.HasResourceParams;
-        var irf = specialize ? Specialize(target, all, span) : _fns[target];
+        IrValue?[] boundResources = [];
+        var irf = specialize ? Specialize(target, all, span, out boundResources) : _fns[target];
         if (irf is null)
         {
             return Constant.Zero(sym.ReturnType.IsVoid ? ScalarType.Int : sym.ReturnType);
@@ -71,7 +72,15 @@ internal sealed partial class Lowerer
             var p = sym.Params[i];
             if (p.Type is ResourceType or SamplerType or ArrayType { Element: ResourceType or SamplerType })
             {
-                // Resources are bound into the specialized copy, not passed.
+                // Resources are bound into the specialized copy; only run-time indices into resource arrays are passed.
+                if (boundResources[i] is { } resourcePtr)
+                {
+                    foreach (var index in DynamicIndices(resourcePtr))
+                    {
+                        args.Add(index);
+                    }
+                }
+
                 continue;
             }
 
@@ -183,6 +192,10 @@ internal sealed partial class Lowerer
                 return LowerBufferLoad(c, bi);
             case BuiltinKind.GetDimensions:
                 return LowerGetDimensions(c, bi);
+            case BuiltinKind.Append:
+                return LowerAppend(c, bi);
+            case BuiltinKind.Consume:
+                return LowerConsume(c, bi);
             case BuiltinKind.Barrier:
                 _b.Barrier((BarrierFlags)bi.Extra);
                 return Constant.Zero(ScalarType.Int);
@@ -254,6 +267,54 @@ internal sealed partial class Lowerer
         return _b.Emit(Opcode.TextureLoad, rt.Element!, buf, idx);
     }
 
+    private readonly Dictionary<GlobalVariable, GlobalVariable> _counters = [];
+
+    /// <summary>The hidden counter buffer of an append or consume buffer.</summary>
+    private GlobalVariable? CounterOf(IrValue buffer, SourceSpan span)
+    {
+        if (buffer is GlobalVariable g && _counters.TryGetValue(g, out var counter))
+        {
+            return counter;
+        }
+
+        Fail("This append or consume buffer cannot be resolved to a declared buffer.", span);
+        return null;
+    }
+
+    /// <summary>Append: reserve a slot by incrementing the counter (the old value is the slot), then store the element there.</summary>
+    private IrValue LowerAppend(CallExpression c, BuiltinCall bi)
+    {
+        var ma = (MemberAccessExpression)c.Callee;
+        var rt = (ResourceType)ma.Target.Type!;
+        var buf = ResourcePointer(ma.Target)!;
+        var value = Arg(c, bi, 0);
+        if (CounterOf(buf, c.Span) is { } counter)
+        {
+            var word = _b.AccessChain(counter, ScalarType.UInt, Constant.UInt(0));
+            var slot = _b.Atomic(AtomicOp.Add, word, Constant.UInt(1));
+            _b.Store(_b.AccessChain(buf, rt.Element!, slot), value);
+        }
+
+        return Constant.Zero(ScalarType.Int);
+    }
+
+    /// <summary>Consume: decrement the counter; the element just below the old count is the one taken.</summary>
+    private IrValue LowerConsume(CallExpression c, BuiltinCall bi)
+    {
+        var ma = (MemberAccessExpression)c.Callee;
+        var rt = (ResourceType)ma.Target.Type!;
+        var buf = ResourcePointer(ma.Target)!;
+        if (CounterOf(buf, c.Span) is not { } counter)
+        {
+            return Constant.Zero(bi.Result);
+        }
+
+        var word = _b.AccessChain(counter, ScalarType.UInt, Constant.UInt(0));
+        var old = _b.Atomic(AtomicOp.Add, word, Constant.UInt(uint.MaxValue));
+        var slot = _b.Binary(Opcode.Sub, old, Constant.UInt(1));
+        return _b.Load(_b.AccessChain(buf, rt.Element!, slot));
+    }
+
     private IrValue LowerGetDimensions(CallExpression c, BuiltinCall bi)
     {
         var ma = (MemberAccessExpression)c.Callee;
@@ -266,7 +327,8 @@ internal sealed partial class Lowerer
             // The buffer is addressed in 32-bit words; HLSL reports bytes.
             values.Add(_b.Binary(Opcode.Shl, _b.Emit(Opcode.ArrayLength, ScalarType.UInt, res), Constant.UInt(2)));
         }
-        else if (rt.ResourceKind is ResourceTypeKind.StructuredBuffer or ResourceTypeKind.RWStructuredBuffer)
+        else if (rt.ResourceKind is ResourceTypeKind.StructuredBuffer or ResourceTypeKind.RWStructuredBuffer
+            or ResourceTypeKind.AppendStructuredBuffer or ResourceTypeKind.ConsumeStructuredBuffer)
         {
             values.Add(_b.Emit(Opcode.ArrayLength, ScalarType.UInt, res));
             int stride = (res as GlobalVariable)?.Layout?.Size ?? 0;

@@ -548,8 +548,8 @@ internal sealed partial class Checker
 
     private void AssignBindings()
     {
+        // A resource array is one descriptor binding with a count, as in DXC's SPIR-V output.
         var owners = new Dictionary<(int, int), ResourceDecl>();
-        var explicitDone = new List<ResourceDecl>();
         foreach (var r in Resources)
         {
             if (r.ExplicitBinding is not { } b)
@@ -559,68 +559,78 @@ internal sealed partial class Checker
 
             r.Set = r.ExplicitSet ?? 0;
             r.Binding = b;
-            explicitDone.Add(r);
-            int span = Math.Max(1, r.Count);
-            ResourceDecl? clash = null;
-            for (int k = 0; k < span; k++)
-            {
-                if (owners.TryGetValue((r.Set, b + k), out var other))
-                {
-                    clash = other;
-                    break;
-                }
-            }
-
-            if (clash is not null)
+            if (owners.TryGetValue((r.Set, b), out var clash))
             {
                 Err(SemanticCodes.BindingCollision, "The resources '" + clash.Name + "' and '" + r.Name + "' both use set " + Num(r.Set) + ", binding " + Num(b)
                     + ". Add [[vk::binding(binding, set)]] to one of them, or give them different register numbers (t, s, b and u registers share binding numbers on Vulkan).", r.Span);
                 continue;
             }
 
-            for (int k = 0; k < span; k++)
-            {
-                owners[(r.Set, b + k)] = r;
-            }
+            owners[(r.Set, b)] = r;
         }
 
-        int next = 0;
+        // A counter always lives in its buffer's set; an explicit counter binding is reserved before automatic assignment.
         foreach (var r in Resources)
         {
-            if (r.ExplicitBinding is not null)
+            if (r.ExplicitBinding is null)
+            {
+                r.Set = 0;
+            }
+
+            if (!r.HasCounter || r.ExplicitCounterBinding is not { } cb)
             {
                 continue;
             }
 
-            int span = Math.Max(1, r.Count);
-            while (true)
+            if (owners.TryGetValue((r.Set, cb), out var other))
             {
-                bool free = true;
-                for (int k = 0; k < span; k++)
-                {
-                    if (owners.ContainsKey((0, next + k)))
-                    {
-                        free = false;
-                        break;
-                    }
-                }
-
-                if (free)
-                {
-                    break;
-                }
-
-                next++;
+                Err(SemanticCodes.BindingCollision, "The counter of '" + r.Name + "' and '" + other.Name + "' both use set " + Num(r.Set) + ", binding " + Num(cb)
+                    + ". Change [[vk::counter_binding]] or the other resource's binding.", r.Span);
+                continue;
             }
 
-            r.Set = 0;
-            r.Binding = next;
-            for (int k = 0; k < span; k++)
+            owners[(r.Set, cb)] = r;
+        }
+
+        // Everything else takes the next free binding of its set in declaration order; a counter follows its buffer.
+        var next = new Dictionary<int, int>();
+        int Take(int set)
+        {
+            next.TryGetValue(set, out int n);
+            while (owners.ContainsKey((set, n)))
             {
-                owners[(0, next + k)] = r;
+                n++;
             }
 
-            next += span;
+            return n;
+        }
+
+        foreach (var r in Resources)
+        {
+            if (r.ExplicitBinding is null)
+            {
+                r.Set = 0;
+                int n = Take(0);
+                r.Binding = n;
+                owners[(0, n)] = r;
+                next[0] = n + 1;
+            }
+
+            if (!r.HasCounter)
+            {
+                continue;
+            }
+
+            if (r.ExplicitCounterBinding is { } explicitCounter)
+            {
+                r.CounterBinding = explicitCounter;
+                continue;
+            }
+
+            int c = Take(r.Set);
+            r.CounterBinding = c;
+            owners[(r.Set, c)] = r;
+            next[r.Set] = c + 1;
         }
     }
 }

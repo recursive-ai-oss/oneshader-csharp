@@ -61,7 +61,7 @@ internal static class Dec
 {
     public const uint Block = 2, RowMajor = 4, ColMajor = 5, ArrayStride = 6, MatrixStride = 7, BuiltIn = 11,
         NoPerspective = 13, Flat = 14, Centroid = 16, Sample = 17, NonWritable = 24, Location = 30, Binding = 33,
-        DescriptorSet = 34, Offset = 35, NoContraction = 42;
+        DescriptorSet = 34, Offset = 35, NoContraction = 42, NonUniform = 5300;
 }
 
 /// <summary>Built-in variable kinds.</summary>

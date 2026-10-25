@@ -49,6 +49,9 @@ with `dxc -spirv -fspv-target-env=vulkan1.2`, and give every resource an explici
 | `lang/inheritance.hlsl` | Struct inheritance: inherited members, hiding, base-typed parameters, buffers of derived structs | written for this repository | MIT OR Apache-2.0 |
 | `lang/operators.hlsl` | Member operator overloads: arithmetic, bitwise, comparison, subscript, call | written for this repository | MIT OR Apache-2.0 |
 | `lang/sizeof_static.hlsl` | sizeof constants and non-const static locals | written for this repository | MIT OR Apache-2.0 |
+| `lang/resource_arrays.hlsl` | Bounded resource arrays: textures and samplers chosen at run time, elements passed to functions, non-uniform index, arrays of read-only buffers and constant buffers | written for this repository | MIT OR Apache-2.0 |
+| `lang/statics_and_literals.hlsl` | Static struct members, member functions defined after the struct, template deduction through `Box<T>`, a cbuffer named like its member, wide literal arithmetic | written for this repository | MIT OR Apache-2.0 |
+| `compute/append_consume.hlsl` | Work list drained with `ConsumeStructuredBuffer` into an `AppendStructuredBuffer`, explicit counter bindings | written for this repository | MIT OR Apache-2.0 |
 | `lang/resource_locals.hlsl` | Resource-typed locals and parameters resolved at compile time | written for this repository | MIT OR Apache-2.0 |
 
 ## Cases
@@ -77,6 +80,9 @@ written for this repository and licensed `MIT OR Apache-2.0`.
 | `tonemap_aces`, `tonemap_reinhard` | `3d/tonemap.hlsl` | fullscreen draw | image, tolerance 1 |
 | `ibl_gold`, `ibl_plastic`, `ibl_sky` | `3d/ibl.hlsl` | draws with cube maps (6 faces, 5 mips) and a 2D table, trilinear sampling | float image, relative tolerance 0.001 |
 | `skinned` | `3d/skinned.hlsl` | draw, indexed, two vertex buffers, depth | image, tolerance 1 |
+| `lang_resource_arrays` | `lang/resource_arrays.hlsl` | dispatch, descriptor arrays (4 textures, 2 samplers, 2 buffers, 2 constant buffers) | buffer exact vs DXC |
+| `lang_statics_and_literals` | `lang/statics_and_literals.hlsl` | dispatch | buffer exact vs DXC |
+| `append_consume` | `compute/append_consume.hlsl` | dispatch, 56 items, 48 consumed and appended when even | buffers exact vs DXC (result list as a sorted set), counters |
 | `cull_instances` | `compute/cull_instances.hlsl` | dispatch, 1000 instances | buffers exact (index list as a sorted set), CPU result |
 | `cluster_build` | `compute/cluster_build.hlsl` | dispatch, 3456 clusters | buffer, CPU result within 1e-4 relative |
 | `shadow_cascades_poisson` | `3d/shadow_cascades.hlsl` (`PSSpiral`) | same scene, eight rotated taps from a `static const` array | image, tolerance 2 |
@@ -104,10 +110,10 @@ for `expect-error` probes, a diagnostic). Each carries the same SPDX header and 
 
 | Probe | Construct |
 |---|---|
-| `probes/append_consume.hlsl` | AppendStructuredBuffer and ConsumeStructuredBuffer methods are not supported. |
+| `probes/append_consume.hlsl` | AppendStructuredBuffer.Append and ConsumeStructuredBuffer.Consume with their hidden counters. |
 | `probes/array_interpolant.hlsl` | An array of float4 as a vertex output (per-cascade shadow coordinates); DXC assigns consecutive locations. |
 | `probes/cbuffer_bool.hlsl` | A bool member of a constant buffer: DXC stores it as a 32-bit integer; the candidate emits OpTypeBool in uniform storage. |
-| `probes/cbuffer_member_name.hlsl` | A constant buffer and one of its members share a name; DXC accepts it. |
+| `probes/cbuffer_member_name.hlsl` | A constant buffer and one of its members share a name. |
 | `probes/clip_distance.hlsl` | SV_ClipDistance outputs: the compiler throws instead of compiling or diagnosing. |
 | `probes/clip_distance_array.hlsl` | SV_ClipDistance as an array member; arrays are rejected as stage outputs. |
 | `probes/cull_distance.hlsl` | SV_CullDistance output: the compiler throws instead of compiling or diagnosing. |

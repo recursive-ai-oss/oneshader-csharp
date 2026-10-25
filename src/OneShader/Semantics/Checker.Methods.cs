@@ -92,6 +92,35 @@ internal sealed partial class Checker
             }
         }
 
+        if (rt.ResourceKind is ResourceTypeKind.AppendStructuredBuffer or ResourceTypeKind.ConsumeStructuredBuffer)
+        {
+            var element = rt.Element ?? HlslType.Error;
+            bool append = rt.ResourceKind == ResourceTypeKind.AppendStructuredBuffer;
+            if (name == "Append" && append && ArityOk(c, name, 1))
+            {
+                CheckConvertible(c.Arguments[0], element);
+                info.Builtin = new BuiltinCall { Kind = BuiltinKind.Append, Name = name, ParamTypes = [element], Result = HlslType.Void };
+                return HlslType.Void;
+            }
+
+            if (name == "Consume" && !append && ArityOk(c, name, 0))
+            {
+                info.Builtin = new BuiltinCall { Kind = BuiltinKind.Consume, Name = name, ParamTypes = [], Result = element };
+                return element;
+            }
+
+            if (name == "GetDimensions")
+            {
+                return CheckGetDimensions(c, rt, at, info, 2, false);
+            }
+
+            if (name == (append ? "Consume" : "Append"))
+            {
+                Err(SemanticCodes.BadMember, "'" + name + "' belongs to " + (append ? "ConsumeStructuredBuffer" : "AppendStructuredBuffer") + ", but this is " + (append ? "an AppendStructuredBuffer" : "a ConsumeStructuredBuffer") + "; use " + (append ? "Append" : "Consume") + ".", ma.Member.Span);
+                return HlslType.Error;
+            }
+        }
+
         if (rt.ResourceKind is ResourceTypeKind.ByteAddressBuffer or ResourceTypeKind.RWByteAddressBuffer)
         {
             return CheckByteAddressMethod(c, ma, rt, name, at, info);

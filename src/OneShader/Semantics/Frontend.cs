@@ -217,9 +217,20 @@ internal sealed class Reflector
             }
 
             var slots = new List<TargetSlot>();
+            var counterSlots = new List<TargetSlot>();
             foreach (var t in _targets)
             {
                 slots.Add(t == CompileTarget.Msl ? new TargetSlot(t, 0, (uint)mslIndex) : new TargetSlot(t, (uint)r.Set, (uint)r.Binding));
+                if (r.HasCounter)
+                {
+                    // Metal has no sets: the counter takes the buffer index after its buffer.
+                    counterSlots.Add(t == CompileTarget.Msl ? new TargetSlot(t, 0, (uint)bufferIndex) : new TargetSlot(t, (uint)r.Set, (uint)r.CounterBinding));
+                }
+            }
+
+            if (r.HasCounter)
+            {
+                bufferIndex++;
             }
 
             resources.Add(new ResourceInfo
@@ -231,6 +242,7 @@ internal sealed class Reflector
                 HlslType = r.Buffer is not null ? "" : r.HlslTypeText,
                 ResourceType = r.ResourceType,
                 Slots = slots,
+                CounterSlots = counterSlots,
                 Layout = LayoutOf(r),
             });
         }

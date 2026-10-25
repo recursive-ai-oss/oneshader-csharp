@@ -144,6 +144,13 @@ module with warning OSH6001. Setting `Optimizer.VerifyEachPass` (tests do) verif
   outputs. Only the wrapper is an `EntryPoint`.
 - Resource arrays are globals whose value type is an `ArrayType` of the resource (`ResourceCount` set);
   an element is an `AccessChain` with the index. Constant-buffer members are `AccessChain(global, type, memberIndex)`.
+  A function that takes a resource is compiled once per distinct resource it is called with; a run-time index into a
+  resource array is passed to that copy as an ordinary `int` argument.
+- `NonUniformResourceIndex(i)` is the intrinsic `NonUniformIndex`: it yields `i` and tells the SPIR-V backend to
+  decorate the access chain, the loaded handle and the sampled image built from it as `NonUniform`.
+- An append or consume buffer comes with a second global, `counter.var.<name>`, a `RWByteAddressBuffer` in the same set.
+  `Append` is `AtomicRmw(Add, counter[0], 1)` followed by a store at the returned slot; `Consume` is an
+  `AtomicRmw(Add, counter[0], 0xFFFFFFFF)` followed by a load at the returned value minus one.
 - Non-constant `static` initializers run in a function `init_globals` that each wrapper calls first.
 - `&&`, `||` and non-pure `?:` are control flow with a `Phi`; pure `?:` is `Select`.
 - Initializer lists follow HLSL's flat rules: a run of values fills an aggregate in order (a vector-valued expression

@@ -123,6 +123,10 @@ internal sealed partial class SpirvEmitter
                 break;
             }
 
+            case Intrinsic.NonUniformIndex:
+                Direct(i, CopyObject, rt, Arg(i, 0));
+                MarkNonUniform(i);
+                break;
             case Intrinsic.CountBits: Direct(i, Op.BitCount, rt, Arg(i, 0)); break;
             case Intrinsic.ReverseBits: Direct(i, Op.BitReverse, rt, Arg(i, 0)); break;
             case Intrinsic.FirstBitHigh: ExtDirect(i, k == NK.SInt ? Glsl.FindSMsb : Glsl.FindUMsb, Arg(i, 0)); break;
@@ -332,15 +336,16 @@ internal sealed partial class SpirvEmitter
         // The variable's own type carries the storage format when [[vk::image_format]] gave one.
         uint p = Ptr(texture, out uint pointee);
         imageType = _formattedImages.Contains(pointee) ? pointee : ImageTypeId(rt);
-        return Emit(Op.Load, imageType, p);
+        return MarkLoaded(texture, Emit(Op.Load, imageType, p));
     }
 
     private uint SampledImageOf(IrValue texture, IrValue sampler, out ResourceType? rt)
     {
         uint img = LoadImage(texture, out rt, out uint imageType);
         uint sp = Ptr(sampler, out _);
-        uint smp = Emit(Op.Load, TypeId(SamplerType.State), sp);
-        return Emit(Op.SampledImage, SampledImageTypeId(imageType), img, smp);
+        uint smp = MarkLoaded(sampler, Emit(Op.Load, TypeId(SamplerType.State), sp));
+        uint combined = Emit(Op.SampledImage, SampledImageTypeId(imageType), img, smp);
+        return _nonUniform.Contains(texture) ? MarkLoaded(texture, combined) : MarkLoaded(sampler, combined);
     }
 
     private uint OffsetConst(List<int> values, int start)

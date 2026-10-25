@@ -2,8 +2,6 @@
 # NAME is a case name (corpus/cases) or a probe file name (corpus/probes). A listed entry that fails is
 # reported as skipped with its reason; a listed entry that passes fails the run until the line is deleted,
 # so the list can only shrink. Unlisted failures fail as usual.
-pbr_forward: a cbuffer and one of its members share a name (cbuffer Lights { Light Lights[8]; }); OSH0301 and OSH0309 instead of compiling
-cbuffer_member_name.hlsl: a cbuffer and one of its members share a name; OSH0301 and OSH0309 instead of compiling
 clip_distance.hlsl: SV_ClipDistance outputs throw KeyNotFoundException in the SPIR-V backend (SpirvEmitter.EmitEntryPoint)
 cull_distance.hlsl: SV_CullDistance outputs throw KeyNotFoundException in the SPIR-V backend (SpirvEmitter.EmitEntryPoint)
 clip_distance_array.hlsl: array stage output (float Clip[2] : SV_ClipDistance) is rejected with OSH0321
@@ -15,5 +13,4 @@ structured_float3.hlsl: StructuredBuffer<float3> is emitted with a 12-byte array
 cbuffer_bool.hlsl: a bool cbuffer member is emitted as OpTypeBool in uniform storage; DXC stores a 32-bit integer
 lod_query.hlsl: Texture2D.CalculateLevelOfDetail emits an OpLoad through a non-logical pointer
 gather_cmp.hlsl: Texture2D.GatherCmp is not supported (OSH0308)
-append_consume.hlsl: AppendStructuredBuffer.Append and ConsumeStructuredBuffer.Consume are not supported (OSH0350)
 packoffset_overlap.hlsl: two members at the same packoffset are accepted and emit invalid SPIR-V; DXC rejects it, so a diagnostic is expected

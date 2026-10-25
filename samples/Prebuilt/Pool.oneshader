@@ -1,0 +1,30 @@
+oneshader-reflection 1
+source name="Shaders/Pool.hlsl"
+targets list=SpirV
+resource name="Textures" kind=SampledTexture count=4 stages=Compute rtype=Texture2D hlsl="Texture2D<float4>"
+  slot target=SpirV set=0 binding=0
+resource name="Samplers" kind=Sampler count=2 stages=Compute rtype=Texture2D hlsl="SamplerState"
+  slot target=SpirV set=0 binding=1
+resource name="Hits" kind=StorageBuffer count=1 stages=Compute rtype=AppendStructuredBuffer hlsl="AppendStructuredBuffer<Hit>"
+  slot target=SpirV set=0 binding=2
+  counter target=SpirV set=0 binding=3
+  layout
+    type kind=Struct scalar=Bool rows=0 cols=0 name="Hit" size=16 align=16 length=0 stride=0 mstride=0 packing=ColumnMajor
+      member name="Position" offset=0
+        type kind=Vector scalar=Float rows=3 cols=0 name="" size=12 align=16 length=0 stride=0 mstride=0 packing=ColumnMajor
+      member name="Id" offset=12
+        type kind=Scalar scalar=UInt rows=0 cols=0 name="" size=4 align=4 length=0 stride=0 mstride=0 packing=ColumnMajor
+resource name="Work" kind=StorageBuffer count=1 stages=Compute rtype=ConsumeStructuredBuffer hlsl="ConsumeStructuredBuffer<uint>"
+  slot target=SpirV set=0 binding=4
+  counter target=SpirV set=0 binding=5
+  layout
+    type kind=Scalar scalar=UInt rows=0 cols=0 name="" size=4 align=4 length=0 stride=0 mstride=0 packing=ColumnMajor
+entry name="CSMain" stage=Compute workgroup=8,1,1 stride=0
+  uses name="Textures"
+  uses name="Samplers"
+  uses name="Hits"
+  uses name="Work"
+generate namespace="PrebuiltSample.Shaders" class=""
+blob entry="CSMain" target=SpirV data="AwIjByQrMjlAR05VXGNqcXh/ho2Um6KpsLe+xQ=="
+options hash=0
+dep file="Shaders/Pool.hlsl" sha=missing

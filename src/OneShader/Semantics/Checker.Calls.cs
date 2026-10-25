@@ -45,6 +45,12 @@ internal enum BuiltinKind
     /// <summary>Structured buffer <c>Load</c>.</summary>
     BufferLoad,
 
+    /// <summary><c>AppendStructuredBuffer.Append</c>.</summary>
+    Append,
+
+    /// <summary><c>ConsumeStructuredBuffer.Consume</c>.</summary>
+    Consume,
+
     /// <summary>A barrier; <see cref="BuiltinCall.Extra"/> holds the <see cref="BarrierFlags"/>.</summary>
     Barrier,
 
@@ -128,7 +134,7 @@ internal sealed partial class Checker
     [
         "dot", "length", "distance", "normalize", "cross", "reflect", "refract", "faceforward", "all", "any", "determinant",
         "mul", "transpose", "mad", "sign", "fmod", "asfloat", "asint", "asuint", "clip", "select", "sincos", "modf", "frexp",
-        "countbits", "reversebits", "firstbithigh", "firstbitlow", "f16tof32", "f32tof16",
+        "NonUniformResourceIndex", "countbits", "reversebits", "firstbithigh", "firstbitlow", "f16tof32", "f32tof16",
     ];
 
     private static IEnumerable<string> BuiltinNames()

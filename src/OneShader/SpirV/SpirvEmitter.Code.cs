@@ -812,7 +812,7 @@ internal sealed partial class SpirvEmitter
             // Indexing an array of resources; a non-constant index needs the matching dynamic-indexing capability.
             if (i.Operands[k] is not Constant)
             {
-                _s.Capabilities.Add(DynamicIndexingCapability(cur));
+                _s.Capabilities.Add(DynamicIndexingCapability(cur is ArrayType resourceElements ? resourceElements.Element : cur));
             }
 
             idx.Add(Id(i.Operands[k]));
@@ -851,6 +851,7 @@ internal sealed partial class SpirvEmitter
         }
 
         _ptrPointee[i] = pe;
+        bool nonUniformChain = baseValue is GlobalVariable { ResourceCount: not 1 } && i.Operands.Count > 1 && IsNonUniform(i.Operands[1]);
         if (idx.Count == 0)
         {
             Finish(i, bp);
@@ -862,7 +863,59 @@ internal sealed partial class SpirvEmitter
         ops[0] = bp;
         idx.CopyTo(ops, 1);
         Direct(i, Op.AccessChain, PointerTo(sc, pe), ops);
+        if (nonUniformChain)
+        {
+            MarkNonUniform(i);
+            var element = ((PointerType)baseValue.Type).Pointee is ArrayType resourceElements ? resourceElements.Element : cur;
+            _s.Capabilities.Add(5301); // ShaderNonUniform
+            _s.Capabilities.Add(NonUniformIndexingCapability(element));
+        }
     }
+
+    private readonly HashSet<IrValue> _nonUniform = [];
+
+    // The index may pass through a sign conversion on its way into the access chain.
+    private static bool IsNonUniformIntrinsic(IrValue v) => v is Instruction { Op: Opcode.CallIntrinsic, Intrinsic: Intrinsic.NonUniformIndex };
+
+    private static bool IsNonUniform(IrValue v)
+    {
+        while (v is Instruction { Op: Opcode.Bitcast or Opcode.Convert } c && c.Operands.Count > 0)
+        {
+            v = c.Operands[0];
+        }
+
+        return IsNonUniformIntrinsic(v);
+    }
+
+    /// <summary>Decorates a value derived from NonUniformResourceIndex so drivers do not assume the whole wave agrees on it.</summary>
+    private void MarkNonUniform(IrValue v)
+    {
+        _nonUniform.Add(v);
+        _s.Capabilities.Add(5301); // ShaderNonUniform
+        _s.Decorate(Id(v), Dec.NonUniform);
+    }
+
+    /// <summary>Decorates a descriptor loaded through a non-uniform index (and the sampled image built from it).</summary>
+    private uint MarkLoaded(IrValue pointer, uint loaded)
+    {
+        if (_nonUniform.Contains(pointer))
+        {
+            _s.Decorate(loaded, Dec.NonUniform);
+        }
+
+        return loaded;
+    }
+
+    // Vulkan: the shaderXxxArrayNonUniformIndexing features, one capability per descriptor type.
+    private static uint NonUniformIndexingCapability(HlslType resource) => resource switch
+    {
+        ResourceType { ResourceKind: ResourceTypeKind.ConstantBuffer } => 5306,
+        ResourceType { IsStorageBuffer: true } => 5308,
+        ResourceType { ResourceKind: ResourceTypeKind.Buffer } => 5311,
+        ResourceType { ResourceKind: ResourceTypeKind.RWBuffer } => 5312,
+        ResourceType { IsReadWrite: true } => 5309,
+        _ => 5307,
+    };
 
     private static uint DynamicIndexingCapability(HlslType resource) => resource switch
     {

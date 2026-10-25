@@ -205,7 +205,10 @@ internal sealed partial class SpirvEmitter
         var after = new List<uint>();
         foreach (var g in declared)
         {
-            after.Add(_globalIds[g]);
+            if (_globalIds.TryGetValue(g, out uint gid))
+            {
+                after.Add(gid);
+            }
         }
 
         SpirvModule.PutWithString(_s.EntryPoints, Op.EntryPoint, [model, _fnIds[_ep.Function]], _ep.Function.Name, after.ToArray());

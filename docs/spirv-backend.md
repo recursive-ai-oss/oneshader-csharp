@@ -21,6 +21,10 @@ options always give the same bytes. Code is in `src/OneShader/SpirV/`.
   with `OpSampledImage` at each use. Storage images use the format from `[[vk::image_format]]` when the shader gives one (no read/write-without-format
   capability then; formats outside the core set add `StorageImageExtendedFormat`) and `Unknown` otherwise. Atomics on a
   texel go through `OpImageTexelPointer`; atomic scopes and barrier semantics match what DXC emits.
+  A resource array is one variable of `OpTypeArray` (set and binding as for a single resource); a run-time index
+  adds the matching `*ArrayDynamicIndexing` capability, and `NonUniformResourceIndex` adds `ShaderNonUniform`, the
+  `*ArrayNonUniformIndexing` capability and `NonUniform` on the index, access chain, loaded handle and sampled image.
+  An append or consume buffer's counter is a second storage buffer variable (`counter.var.<name>`) in the buffer's set.
 - **Interface.** Every global variable the entry point references is listed on `OpEntryPoint`, as SPIR-V 1.4+
   requires, inputs first, then outputs, then the rest in module order. Integer and double fragment inputs (and the
   vertex outputs that feed them) are `Flat`. Pixel shaders get `OriginUpperLeft`, plus `DepthReplacing` when they
@@ -34,5 +38,5 @@ options always give the same bytes. Code is in `src/OneShader/SpirV/`.
 
 ## Not supported yet (reported as OSH5002)
 
-16-bit floating point, `SV_ClipDistance`/`SV_CullDistance`, wave and quad intrinsics, unbounded resource arrays,
+16-bit floating point, `SV_ClipDistance`/`SV_CullDistance`, wave and quad intrinsics, unbounded resource arrays (rejected by the front end),
 comparison or bit-casting of whole matrices, bool matrices, products involving one-row/column matrices.

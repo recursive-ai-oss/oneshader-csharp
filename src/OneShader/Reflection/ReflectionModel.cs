@@ -227,6 +227,13 @@ public sealed class ResourceInfo
     public IReadOnlyList<TargetSlot> Slots { get; init; } = [];
 
     /// <summary>
+    /// For append and consume buffers: where the hidden element counter lives, one slot per enabled target in
+    /// <see cref="CompileTarget"/> order. The counter is a separate 4-byte read-write storage buffer in the same set as
+    /// the buffer; the application must bind it (zeroed before the first dispatch to start empty). Empty for every other resource.
+    /// </summary>
+    public IReadOnlyList<TargetSlot> CounterSlots { get; init; } = [];
+
+    /// <summary>
     /// For constant and structured buffers: the layout of the buffer's struct / element; its
     /// <see cref="ReflectedType.Size"/> is the constant buffer size or the element stride. For textures and typed buffers: the texel type
     /// (offsets and strides are 0). Null for samplers and byte-address buffers.
