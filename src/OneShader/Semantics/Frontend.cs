@@ -89,7 +89,7 @@ internal static class Frontend
         }
         catch (Exception ex)
         {
-            bag.Error(SemanticCodes.Internal, "Internal compiler error (" + ex.GetType().Name + ": " + ex.Message + ") while compiling this file. This is a bug in the compiler; please report it with the shader.", new SourceSpan(path, 1, 1));
+            bag.Error(SemanticCodes.Internal, "Internal compiler error (" + InternalError.Describe(ex) + ") while compiling this file. This is a bug in the compiler; please report it with the shader.", new SourceSpan(path, 1, 1));
             return new FrontendResult(null, null, bag);
         }
     }
@@ -117,6 +117,15 @@ internal static class Frontend
         }
 
         var preprocessed = Preprocessor.Preprocess(new SourceFile(path, source), pp, bag, ct);
+        foreach (var d in bag.Items)
+        {
+            if (d.Code is PreprocessorCodes.LimitExceeded or PreprocessorCodes.ExpansionTooDeep)
+            {
+                // The preprocessor gave up part-way; the token stream is cut off at an arbitrary place, so parsing it would only pile up follow-on errors.
+                return new FrontendResult(null, null, bag);
+            }
+        }
+
         var unit = Parser.Parse(preprocessed.Tokens, bag, path, ct);
         var layout = new LayoutOptions { Enable16BitTypes = options.Enable16BitTypes, DefaultMatrixPacking = options.DefaultMatrixPacking };
         var targets = new List<CompileTarget>();

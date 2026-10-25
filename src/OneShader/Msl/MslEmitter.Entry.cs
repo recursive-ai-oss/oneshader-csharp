@@ -129,10 +129,20 @@ internal sealed partial class MslEmitter
 
     private void FinishBody(IrFunction f)
     {
-        string text = _fnText.ToString();
-        int end = text.Length;
-        int start = text.LastIndexOf('\n', end - 2) + 1;
-        string last = text.Substring(start, end - start).TrimEnd('\n');
+        // Only the last line matters. _fnText holds every function so far, so copying all of it per function is quadratic: look at a window first.
+        int end = _fnText.Length;
+        int window = Math.Min(end, 1024);
+        string text = _fnText.ToString(end - window, window);
+        int start = text.LastIndexOf('\n', text.Length - 2) + 1;
+        if (start == 0 && window < end)
+        {
+            text = _fnText.ToString();
+            window = end;
+            start = text.LastIndexOf('\n', end - 2) + 1;
+        }
+
+        string last = text.Substring(start).TrimEnd('\n');
+        start += end - window;
         if (f.ReturnType.IsVoid)
         {
             if (last == "    return;")

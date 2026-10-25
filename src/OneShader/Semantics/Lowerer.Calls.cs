@@ -132,8 +132,58 @@ internal sealed partial class Lowerer
 
     private IrValue Arg(CallExpression c, BuiltinCall bi, int i) => Coerce(Rv(c.Arguments[i]), bi.ParamTypes[i]);
 
+    /// <summary>
+    /// Component-wise built-ins on matrices (<c>saturate(M)</c>, <c>lerp(A, B, t)</c>, <c>pow(A, B)</c>): no target has these on matrix types,
+    /// so each row goes through the built-in as a vector and the rows are put back together.
+    /// </summary>
+    private IrValue CallBuiltinPerRow(CallExpression c, BuiltinCall bi, MatrixType result)
+    {
+        var ops = new IrValue[bi.ParamTypes.Length];
+        for (int i = 0; i < ops.Length; i++)
+        {
+            ops[i] = Arg(c, bi, i);
+        }
+
+        var rows = new IrValue[result.Rows];
+        var rowResult = HlslType.Vector(result.Element, result.Columns);
+        for (int r = 0; r < rows.Length; r++)
+        {
+            var rowOps = new IrValue[ops.Length];
+            for (int i = 0; i < ops.Length; i++)
+            {
+                rowOps[i] = ops[i].Type is MatrixType mo ? Extract(ops[i], HlslType.Vector(mo.Element, mo.Columns), r) : ops[i];
+            }
+
+            switch (bi.Kind)
+            {
+                case BuiltinKind.Mad when result.Element.IsFloatingPoint:
+                    rows[r] = _b.CallIntrinsic(Intrinsic.Fma, rowResult, rowOps[0], rowOps[1], rowOps[2]);
+                    break;
+                case BuiltinKind.Mad:
+                    rows[r] = _b.Binary(Opcode.Add, _b.Binary(Opcode.Mul, rowOps[0], rowOps[1]), rowOps[2]);
+                    break;
+                case BuiltinKind.Sign when rowOps[0].Type.ScalarElement!.IsFloatingPoint:
+                    rows[r] = _b.Convert(_b.CallIntrinsic(Intrinsic.Sign, rowOps[0].Type, rowOps[0]), rowResult);
+                    break;
+                case BuiltinKind.Sign:
+                    rows[r] = _b.CallIntrinsic(Intrinsic.Sign, rowOps[0].Type, rowOps[0]);
+                    break;
+                default:
+                    rows[r] = _b.CallIntrinsic(bi.Ir, rowResult, rowOps);
+                    break;
+            }
+        }
+
+        return _b.Construct(result, rows);
+    }
+
     private IrValue CallBuiltin(CallExpression c, BuiltinCall bi)
     {
+        if (bi.Result is MatrixType matrixResult && bi.Kind is BuiltinKind.Intrinsic or BuiltinKind.Mad or BuiltinKind.Sign)
+        {
+            return CallBuiltinPerRow(c, bi, matrixResult);
+        }
+
         switch (bi.Kind)
         {
             case BuiltinKind.Intrinsic:

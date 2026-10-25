@@ -202,6 +202,11 @@ internal sealed partial class Checker
 
     private void ReportUndeclared(QualifiedName name)
     {
+        if (_diag.IsFull)
+        {
+            return;
+        }
+
         string text = name.ToString();
         if (name.Parts.Count > 1)
         {
@@ -641,7 +646,7 @@ internal sealed partial class Checker
                 switch (n.Info?.Symbol)
                 {
                     case VariableSymbol { Kind: VarKind.CBufferMember } v:
-                        return "'" + v.Name + "' is a member of the constant buffer '" + v.Buffer!.Name + "', which shaders cannot write. Copy it into a local variable first.";
+                        return "'" + v.Name + "' is a member of the constant buffer '" + (v.Buffer?.Name ?? "") + "', which shaders cannot write. Copy it into a local variable first.";
                     case VariableSymbol { Kind: VarKind.Resource } v:
                         return "'" + v.Name + "' is a resource, not a variable.";
                     case VariableSymbol v when v.IsConst:
@@ -690,6 +695,17 @@ internal sealed partial class Checker
                 if (bt is ArrayType { Element: ResourceType })
                 {
                     return "resource arrays cannot be assigned.";
+                }
+
+                var indexed = ix.Target;
+                while (indexed is ParenthesizedExpression paren)
+                {
+                    indexed = paren.Inner;
+                }
+
+                if (indexed is MemberAccessExpression { SwizzleComponents.Count: > 1 })
+                {
+                    return "an element of a multi-component swizzle cannot be assigned. Index the vector itself, for example v[0] = ..., or assign the swizzle whole.";
                 }
 
                 return WriteBlocker(ix.Target);
@@ -917,7 +933,8 @@ internal sealed partial class Checker
         {
             case StructType st:
             {
-                if (_structInfos.TryGetValue(st, out var si) && si.FieldIndex.TryGetValue(name, out int idx))
+                // The index map can name a field the struct does not hold yet while a template instance or an erroneous struct is still being completed.
+                if (_structInfos.TryGetValue(st, out var si) && si.FieldIndex.TryGetValue(name, out int idx) && idx < st.Fields.Count)
                 {
                     info.FieldIndex = idx;
                     info.IsLValue = m.Target.Info?.IsLValue ?? false;
@@ -948,7 +965,7 @@ internal sealed partial class Checker
 
             case ResourceType { ResourceKind: ResourceTypeKind.ConstantBuffer, Element: StructType cst }:
             {
-                if (_structInfos.TryGetValue(cst, out var si) && si.FieldIndex.TryGetValue(name, out int idx))
+                if (_structInfos.TryGetValue(cst, out var si) && si.FieldIndex.TryGetValue(name, out int idx) && idx < cst.Fields.Count)
                 {
                     info.FieldIndex = idx;
                     info.IsLValue = true;

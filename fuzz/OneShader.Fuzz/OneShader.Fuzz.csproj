@@ -1,9 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- Fuzz targets. SharpFuzz is allowed here only: it instruments for libFuzzer/AFL and is never shipped. -->
+  <!-- Fuzz targets. SharpFuzz is allowed here only: it instruments the compiler for coverage and is never shipped. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- SharpFuzz's trace buffer is a raw pointer; this project is test tooling, the compiler itself has no unsafe code. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="SharpFuzz" Version="2.*" />

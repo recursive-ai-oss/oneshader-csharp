@@ -1,0 +1,1 @@
+struct QuadIn{[vk::location(4294967295)float4 Uv:UVRECT};struct QuadOut{}[shader("vertex"QuadOut VSMain(QuadIn{

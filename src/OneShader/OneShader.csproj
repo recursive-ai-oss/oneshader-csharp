@@ -11,5 +11,6 @@
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="/" />
     <InternalsVisibleTo Include="OneShader.Tests" />
+    <InternalsVisibleTo Include="OneShader.Fuzz" />
   </ItemGroup>
 </Project>

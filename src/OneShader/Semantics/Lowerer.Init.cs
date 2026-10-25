@@ -20,6 +20,8 @@ internal sealed partial class Lowerer
         public bool Exhausted => Pos >= Elems.Count && Pending.Count == 0;
     }
 
+    private const int MaxInitializedArray = 4096;
+
     private IrValue LowerInitList(InitializerListExpression il, HlslType target)
     {
         if (target is ScalarType)
@@ -47,6 +49,13 @@ internal sealed partial class Lowerer
 
             case ArrayType at:
             {
+                if (at.Length > MaxInitializedArray)
+                {
+                    // One composite construct holds every element, and a SPIR-V instruction is limited to 65535 words.
+                    _diag.Error(SemanticCodes.Limit, "An array initializer cannot cover more than " + MaxInitializedArray + " elements (this array has " + at.Length + "). Declare the array without an initializer and fill it in a loop.", _span);
+                    return Constant.Undef(at);
+                }
+
                 var parts = new List<IrValue>();
                 for (int i = 0; at.Length == 0 ? !c.Exhausted : i < at.Length; i++)
                 {

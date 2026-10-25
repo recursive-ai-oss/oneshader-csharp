@@ -453,6 +453,15 @@ internal sealed partial class Lowerer
         var body = _fns[bodySym];
         var wrapper = new IrFunction(UniqueFunctionName(bodySym.Name + "_entry"), HlslType.Void) { Span = bodySym.Span };
         // The wrapper carries the entry point's name; make that name available by renaming it after creation.
+        // Another overload (or a helper) may hold the name already; the entry point's name is the one that must stay as written.
+        foreach (var other in _mod.Functions)
+        {
+            if (other.Name == bodySym.Name && !ReferenceEquals(other, body))
+            {
+                other.Name = UniqueFunctionName(bodySym.Name + "_overload");
+            }
+        }
+
         wrapper.Name = bodySym.Name;
         body.Name = UniqueFunctionName(bodySym.Name + "_body");
         _mod.Functions.Add(wrapper);
@@ -512,7 +521,7 @@ internal sealed partial class Lowerer
                         continue;
                     }
 
-                    var val = IsDistance(v) ? LoadDistance(v, distanceSlots[v]) : _b.Load(v.Global!);
+                    var val = IsDistance(v) ? LoadDistance(v, distanceSlots[v]) : NarrowThreadId(v, _b.Load(v.Global!));
                     StoreAtPath(slot, p.Type, v.Path, val);
                 }
             }
@@ -651,9 +660,34 @@ internal sealed partial class Lowerer
         return n == 1 ? parts[0] : _b.Construct(v.Type, parts);
     }
 
+    private static bool IsThreadId(InterfaceVar v) => v.BuiltIn is BuiltIn.GlobalInvocationId or BuiltIn.LocalInvocationId or BuiltIn.WorkgroupId;
+
+    /// <summary>
+    /// The thread, group and dispatch ids are three-component built-ins in Vulkan, but HLSL lets a shader ask for fewer
+    /// (<c>uint2 id : SV_DispatchThreadID</c>): the variable stays a vector of three and the shader gets its leading components.
+    /// </summary>
+    private IrValue NarrowThreadId(InterfaceVar v, IrValue loaded)
+    {
+        if (!IsThreadId(v) || v.Global is null || v.Global.Type.Equals(v.Type))
+        {
+            return loaded;
+        }
+
+        int n = TypeOps.Count(v.Type);
+        var element = v.Type.ScalarElement ?? ScalarType.UInt;
+        var parts = new IrValue[n];
+        for (int j = 0; j < n; j++)
+        {
+            parts[j] = Extract(loaded, element, j);
+        }
+
+        return v.Type is ScalarType ? parts[0] : _b.Construct(v.Type, parts);
+    }
+
     private GlobalVariable MakeInterfaceGlobal(EntryInfo e, InterfaceVar v, GlobalKind kind, AddressSpace space)
     {
-        var g = new GlobalVariable(e.Function.Name + "." + v.Name, kind, space, v.Type)
+        var globalType = IsThreadId(v) && TypeOps.Count(v.Type) < 3 && v.Type.ScalarElement is { } ide ? HlslType.Vector(ide, 3) : v.Type;
+        var g = new GlobalVariable(e.Function.Name + "." + v.Name, kind, space, globalType)
         {
             Location = v.Location,
             BuiltIn = v.BuiltIn,

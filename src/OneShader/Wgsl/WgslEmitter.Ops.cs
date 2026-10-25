@@ -254,7 +254,7 @@ internal sealed partial class WgslEmitter
                 }
                 else
                 {
-                    Define(i, Paren(Val(i.Operands[0])) + "[" + Val(i.Operands[1]) + "]");
+                    Define(i, Paren(Val(i.Operands[0])) + "[" + Val(ClampIndex(i.Operands[1], i.Operands[0].Type)) + "]");
                 }
 
                 break;
@@ -266,7 +266,7 @@ internal sealed partial class WgslEmitter
                 else
                 {
                     string name = Define(i, Val(i.Operands[0]), true);
-                    Put(name + "[" + Val(i.Operands[2]) + "] = " + Val(i.Operands[1]) + ";");
+                    Put(name + "[" + Val(ClampIndex(i.Operands[2], i.Operands[0].Type)) + "] = " + Val(i.Operands[1]) + ";");
                 }
 
                 break;
@@ -374,7 +374,14 @@ internal sealed partial class WgslEmitter
             _ => "%",
         };
         string a = Val(i.Operands[0]);
-        string b = Val(i.Operands[1]);
+        IrValue divisor = i.Operands[1];
+        if (i.Op is Opcode.Div or Opcode.Rem && k is NK.SInt or NK.UInt && divisor is Constant dc)
+        {
+            // WGSL rejects a constant zero divisor at shader creation; at run time x / 0 is x and x % 0 is 0, which is what x / 1 and x % 1 give.
+            divisor = NonZero(dc);
+        }
+
+        string b = Val(divisor);
         if (i.Type is MatrixType m && !Degenerate(m) && i.Op is not (Opcode.Add or Opcode.Sub))
         {
             // WGSL's * on matrices is the matrix product and / and % do not exist for them, so work column by column.
@@ -393,6 +400,27 @@ internal sealed partial class WgslEmitter
         }
 
         Define(i, a + " " + op + " " + b);
+    }
+
+    private static Constant NonZero(Constant c)
+    {
+        if (c.ConstantKind == ConstantKind.Scalar)
+        {
+            return c.Bits == 0 && c.Type is ScalarType st ? Constant.FromBits(st, 1) : c;
+        }
+
+        if (c.ConstantKind != ConstantKind.Composite)
+        {
+            return c;
+        }
+
+        var list = new Constant[c.Elements.Count];
+        for (int n = 0; n < list.Length; n++)
+        {
+            list[n] = NonZero(c.Elements[n]);
+        }
+
+        return Constant.Composite(c.Type, list);
     }
 
     private void EmitNeg(Instruction i)

@@ -384,11 +384,20 @@ internal sealed partial class Checker
         return new ResourceType(rk, element is null ? null : CanonType(element), samples);
     }
 
+    /// <summary>Nested array types are walked recursively (printing, equality, layout), so their depth is bounded.</summary>
+    private const int MaxArrayDimensions = 16;
+
     public HlslType ApplyDims(HlslType baseType, IReadOnlyList<Expression?> dims, bool allowUnsized, SourceSpan where)
     {
         if (dims.Count == 0 || baseType.IsError)
         {
             return baseType;
+        }
+
+        if (dims.Count > MaxArrayDimensions)
+        {
+            Err(SemanticCodes.Limit, "An array has at most " + Num(MaxArrayDimensions) + " dimensions; this one has " + Num(dims.Count) + ". Use a struct or a flatter layout.", where);
+            return HlslType.Error;
         }
 
         var t = baseType;
@@ -437,8 +446,15 @@ internal sealed partial class Checker
         string? best = null;
         int bestScore = int.MaxValue;
         int limit = name.Length <= 3 ? 1 : name.Length <= 6 ? 2 : 3;
+        int looked = 0;
         foreach (var c in candidates)
         {
+            // A suggestion is a courtesy: with tens of thousands of names in scope, looking at all of them for every misspelling is quadratic.
+            if (++looked > 2000)
+            {
+                break;
+            }
+
             if (c.Length == 0 || c == name)
             {
                 continue;

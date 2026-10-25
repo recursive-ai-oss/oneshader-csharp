@@ -41,6 +41,7 @@ internal sealed class MslNames
     }
 
     private readonly HashSet<string> _used = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _nextSuffix = new(StringComparer.Ordinal);
 
     private static HashSet<string> BuildReserved()
     {
@@ -158,11 +159,15 @@ internal sealed class MslNames
             return s;
         }
 
-        for (int n = 1; ; n++)
+        // Names are never released, so every suffix below the last one handed out for this base is taken: resume after it.
+        // (Starting from 1 each time makes a file with thousands of functions that all name a parameter 'x' quadratic.)
+        _nextSuffix.TryGetValue(s, out int next);
+        for (int n = Math.Max(next, 1); ; n++)
         {
             string candidate = s + "_" + n.ToString(CultureInfo.InvariantCulture);
             if (_used.Add(candidate))
             {
+                _nextSuffix[s] = n + 1;
                 return candidate;
             }
         }

@@ -78,6 +78,21 @@ internal sealed partial class WgslEmitter
         int rc = Count(rt);
         var scalar = rt.ScalarElement ?? ScalarType.Float;
         NK k = i.Operands.Count > 0 ? KindOf(i.Operands[0].Type) : NK.Other;
+        if (i.Intrinsic is Intrinsic.Normalize or Intrinsic.Reflect or Intrinsic.Refract or Intrinsic.FaceForward && Count(i.Operands[0].Type) == 1)
+        {
+            // WGSL defines these for vectors only; HLSL accepts scalars. Widen to a vec2 with a zero second lane and keep lane x.
+            string wide(int n) => "vec2(" + Arg(i, n) + ", 0.0)";
+            string call = i.Intrinsic switch
+            {
+                Intrinsic.Normalize => "normalize(" + wide(0) + ")",
+                Intrinsic.Reflect => "reflect(" + wide(0) + ", " + wide(1) + ")",
+                Intrinsic.Refract => "refract(" + wide(0) + ", " + wide(1) + ", " + Arg(i, 2) + ")",
+                _ => "faceForward(" + wide(0) + ", " + wide(1) + ", " + wide(2) + ")",
+            };
+            Define(i, call + ".x");
+            return;
+        }
+
         if (Unary.TryGetValue(i.Intrinsic, out var unary))
         {
             Define(i, unary + "(" + Arg(i, 0) + ")");
