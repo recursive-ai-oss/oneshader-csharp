@@ -1,6 +1,7 @@
 # Allowlist: every new top-level path needs an explicit "!/path" line.
 /*
 !/.gitignore
+!/.gitattributes
 !/.github
 !/global.json
 !/Directory.Build.props

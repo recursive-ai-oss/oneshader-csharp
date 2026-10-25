@@ -20,7 +20,7 @@ public sealed class PackageFixture : IDisposable
         Root = Path.Combine(Harness.RealPath(Path.GetTempPath()), "osh-pkg-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Root);
         Feed = Path.Combine(Root, "feed");
-        var (code, output) = Run("bash", [Path.Combine(Harness.RepoRoot, "tools", "pack-local.sh"), Feed], Harness.RepoRoot, Path.Combine(Root, "pack-artifacts"));
+        var (code, output) = Run(Bash(), [Path.Combine(Harness.RepoRoot, "tools", "pack-local.sh"), Feed], Harness.RepoRoot, Path.Combine(Root, "pack-artifacts"));
         Assert.True(code == 0, output);
     }
 
@@ -31,6 +31,20 @@ public sealed class PackageFixture : IDisposable
     public void Dispose() => Directory.Delete(Root, recursive: true);
 
     /// <summary>Runs a process with its own artifacts folder and package cache; returns the exit code and combined output.</summary>
+    /// <summary>The bash that runs the repository's scripts. On Windows the bash found first on PATH can be the WSL launcher, so Git's bash is preferred.</summary>
+    private static string Bash()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            string git = Path.Combine(Environment.GetEnvironmentVariable("ProgramFiles") ?? @"C:\Program Files", "Git", "bin", "bash.exe");
+            if (File.Exists(git))
+            {
+                return git;
+            }
+        }
+        return "bash";
+    }
+
     public static (int Code, string Output) Run(string file, IEnumerable<string> args, string workingDirectory, string artifacts, string? packages = null)
     {
         var psi = new ProcessStartInfo(file)
