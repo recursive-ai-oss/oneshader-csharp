@@ -697,6 +697,17 @@ internal sealed partial class Checker
                     return "resource arrays cannot be assigned.";
                 }
 
+                var indexed = ix.Target;
+                while (indexed is ParenthesizedExpression paren)
+                {
+                    indexed = paren.Inner;
+                }
+
+                if (indexed is MemberAccessExpression { SwizzleComponents.Count: > 1 })
+                {
+                    return "an element of a multi-component swizzle cannot be assigned. Index the vector itself, for example v[0] = ..., or assign the swizzle whole.";
+                }
+
                 return WriteBlocker(ix.Target);
             }
 

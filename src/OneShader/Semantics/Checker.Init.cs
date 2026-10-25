@@ -48,7 +48,7 @@ internal sealed partial class Checker
     /// <summary>Length of an unsized array initialized from a list: flat values fill elements in order, so the count is not the number of list items.</summary>
     private int InferListLength(InitializerListExpression il, HlslType element)
     {
-        int per = FlatCount(element);
+        int per = Math.Max(1, FlatCount(element)); // an empty struct counts 0, which would never use up the elements
         int slots = 0;
         int partial = 0;
         foreach (var e in il.Elements)

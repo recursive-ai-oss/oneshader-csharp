@@ -169,6 +169,21 @@ public class FuzzRegressionTests
     }
 
     [Fact]
+    public void ARegisterNumberOutOfRangeIsRejected()
+    {
+        var r = Compile("register-number-out-of-range.hlsl", true);
+        Assert.Contains(r.Diagnostics, d => d.Code == "OSH0331" && d.Message.Contains("between 0 and", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AssigningAnElementOfASwizzleIsOneError()
+    {
+        var r = Compile("swizzle-element-assignment.hlsl", true);
+        Assert.Contains(r.Diagnostics, d => d.Message.Contains("swizzle cannot be assigned", StringComparison.Ordinal));
+        Assert.DoesNotContain(r.Diagnostics, d => d.Code is "OSH7000" or "OSH0399");
+    }
+
+    [Fact]
     public void AMemberFunctionCannotBeAnEntryPoint()
     {
         var r = Compile("entry-point-is-member-function.hlsl", true);

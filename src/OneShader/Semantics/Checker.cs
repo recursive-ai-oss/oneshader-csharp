@@ -892,13 +892,16 @@ internal sealed partial class Checker
         }
     }
 
+    /// <summary>Largest binding, set or register number accepted; far above any device limit, and small enough that a backend can add to it without overflow.</summary>
+    private const int MaxBindingNumber = 65535;
+
     private void ApplyBindingAnnotations(ResourceDecl res, IReadOnlyList<AttributeSyntax> attrs, IReadOnlyList<Annotation> annotations, char expectedClass)
     {
         var counter = FindAttribute(attrs, "vk::counter_binding");
         if (counter is not null)
         {
             int? cb = IntAttributeArg(counter, 0);
-            if (cb is null or < 0)
+            if (cb is null or < 0 or > MaxBindingNumber)
             {
                 Err(SemanticCodes.BadAttribute, "vk::counter_binding needs a non-negative binding number, for example [[vk::counter_binding(3)]].", counter.Span);
             }
@@ -918,9 +921,9 @@ internal sealed partial class Checker
                 res.ExplicitBinding = b;
                 res.ExplicitSet = set;
                 res.ExplicitFromVk = true;
-                if (b < 0 || set < 0)
+                if (b < 0 || set < 0 || b > MaxBindingNumber || set > MaxBindingNumber)
                 {
-                    Err(SemanticCodes.BadResource, "vk::binding values must not be negative.", vk.Span);
+                    Err(SemanticCodes.BadResource, "vk::binding values must be between 0 and " + Num(MaxBindingNumber) + ".", vk.Span);
                 }
             }
 
@@ -938,6 +941,12 @@ internal sealed partial class Checker
                 }
 
                 _ = expectedClass;
+                if (r.Index > MaxBindingNumber || r.Space > MaxBindingNumber)
+                {
+                    Err(SemanticCodes.BadResource, "Register numbers and spaces must be at most " + Num(MaxBindingNumber) + ".", r.Span);
+                    continue;
+                }
+
                 res.ExplicitBinding = (int)r.Index;
                 res.ExplicitSet = (int)r.Space;
             }
