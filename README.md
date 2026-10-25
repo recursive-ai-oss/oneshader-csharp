@@ -2,7 +2,7 @@
 
 A HLSL compiler for .NET with no dependencies beyond the base class library. Modern HLSL (Shader Model 6 style) for vertex, pixel and compute stages goes in; SPIR-V, MSL and WGSL come out, each with reflection. An MSBuild task and source generator compile `*.hlsl` files during `dotnet build`, report errors on the HLSL line, and generate matching C# structs and binding code.
 
-**Status: preview (0.2).** Vertex, pixel and compute shaders compile to optimized SPIR-V for Vulkan, Metal Shading Language and WGSL, with reflection, build-time C# bindings and hot-reload compatibility checks. SPIR-V is the only target with GPU execution parity testing so far; see the package READMEs in `src/OneShader` and `src/OneShader.Build`, and `CHANGELOG.md`.
+**Status: preview (0.2).** Vertex, pixel and compute shaders compile to optimized SPIR-V for Vulkan, Metal Shading Language and WGSL, with reflection, build-time C# bindings and hot-reload compatibility checks. SPIR-V is checked for execution parity against DXC on the GPU, WGSL through `naga` and the same harness, and MSL with Apple's `metal` compiler; see the package READMEs in `src/OneShader` and `src/OneShader.Build`, and `CHANGELOG.md`.
 
 ## Packages
 
