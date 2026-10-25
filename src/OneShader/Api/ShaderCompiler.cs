@@ -206,7 +206,7 @@ public static class ShaderCompiler
     /// <param name="cancellationToken">Cancels a long compile.</param>
     /// <returns>
     /// The result: all diagnostics, and when there were no errors the reflection and one blob per entry point
-    /// and target. SPIR-V and WGSL are available; asking for MSL is an error diagnostic.
+    /// and target. SPIR-V, MSL and WGSL are available.
     /// </returns>
     public static CompileResult Compile(string source, string path, CompileOptions? options = null, CancellationToken cancellationToken = default)
     {
@@ -323,6 +323,7 @@ public static class ShaderCompiler
 
         var targets = options.Targets.Count == 0 ? [CompileTarget.SpirV] : options.Targets;
         var spirvOptions = new SpirV.SpirvOptions { KeepNames = options.KeepNames };
+        var mslOptions = new Msl.MslOptions { KeepNames = options.KeepNames };
         var wgslOptions = new Wgsl.WgslOptions { KeepNames = options.KeepNames };
         foreach (var entry in module.EntryPoints)
         {
@@ -345,9 +346,14 @@ public static class ShaderCompiler
                     continue;
                 }
 
-                if (target != CompileTarget.SpirV)
+                if (target == CompileTarget.Msl)
                 {
-                    diagnostics.Error(ApiDiagnosticCodes.TargetNotAvailable, "The " + target + " target is not available yet; request SpirV or Wgsl.", new SourceSpan(path, 1, 1));
+                    string? text = Msl.MslBackend.Emit(module, entry.Function.Name, mslOptions, diagnostics);
+                    if (text is not null)
+                    {
+                        blobs.Add(new ShaderBlob(entry.Function.Name, entry.Stage, target, Encoding.UTF8.GetBytes(text)));
+                    }
+
                     continue;
                 }
 

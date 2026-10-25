@@ -6,6 +6,7 @@ Versions follow [Semantic Versioning](https://semver.org/); before 1.0 the API m
 ## [Unreleased]
 
 - New WGSL target (`CompileTarget.Wgsl`): vertex, fragment and compute entry points as WGSL text for WebGPU, with the same buffer byte layouts as the SPIR-V target. See docs/wgsl-backend.md for what is not available.
+- New: Metal Shading Language output (`CompileTarget.Msl`, `MslBackend`): one source file per entry point with the same buffer byte layout as the SPIR-V output, Metal argument indices in reflection, and `tools/validate-msl.sh` to check the files with Apple's compiler. See `docs/msl-backend.md`.
 
 ## [0.2.0-preview.1]
 
