@@ -42,6 +42,7 @@ public static class MetalBundle
             var options = new CompileOptions
             {
                 Targets = [CompileTarget.SpirV, CompileTarget.Msl],
+                Optimize = Environment.GetEnvironmentVariable("ONESHADER_OPTIMIZE") != "0",
                 Defines = model.Defines.Select(d => new KeyValuePair<string, string?>(d.Key, d.Value)).ToList(),
                 IncludeDirectories = [Path.GetDirectoryName(source)!],
                 EntryPoints = [new EntryPointRequest(entry, stage switch

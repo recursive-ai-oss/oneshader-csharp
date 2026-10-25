@@ -50,9 +50,9 @@ public static class WgslNagaCompiler
         };
         var result = ShaderCompiler.Compile(File.ReadAllText(request.SourcePath), request.SourcePath, options);
         var blob = result.Find(request.Entry, CompileTarget.Wgsl);
-        if (!result.Success && result.Diagnostics.Any(d => d.Code == "OSH5202"))
+        if (result.Diagnostics.Any(d => d.Code == "OSH5205") || !result.Success && result.Diagnostics.Any(d => d.Code == "OSH5202"))
         {
-            // A construct WGSL cannot express is a documented error, not a miscompile: the run reports it as unsupported.
+            // A construct WGSL cannot express is a documented diagnostic (an error, or for precise a warning), not a miscompile: the run reports it as unsupported.
             throw new UnsupportedOnTargetException("OneShader failed for " + request.Entry + " (" + request.Stage + ") in " + request.SourcePath + ":\n"
                 + string.Join('\n', result.Diagnostics.Select(d => d.ToString())));
         }

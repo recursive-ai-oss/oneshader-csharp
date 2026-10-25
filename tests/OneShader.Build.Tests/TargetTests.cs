@@ -133,6 +133,7 @@ public sealed class TargetTests : IDisposable
                 Assert.Equal(compiled.Find(entry, CompileTarget.Msl)!.ToArray(), Call<byte[]>("Msl", entry));
                 Assert.Equal(compiled.Find(entry, CompileTarget.Wgsl)!.ToArray(), Call<byte[]>("Wgsl", entry));
                 Assert.Equal(Msl.MslBackend.EntryFunctionName(entry), Call<string>("MslName", entry));
+                Assert.Equal(Wgsl.WgslBackend.EntryFunctionName(entry), Call<string>("WgslName", entry));
                 Assert.Contains("fn " + Call<string>("WgslName", entry) + "(", compiled.Find(entry, CompileTarget.Wgsl)!.AsText(), StringComparison.Ordinal);
                 Assert.Contains(Call<string>("MslName", entry) + "(", compiled.Find(entry, CompileTarget.Msl)!.AsText(), StringComparison.Ordinal);
             }
@@ -235,10 +236,28 @@ public sealed class TargetTests : IDisposable
     }
 
     [Fact]
-    public void WgslEntryNameIsReadFromTheDeclarationFollowingTheStageAttribute()
+    public void EntryPointsNamedLikeReservedWordsGetTheNamesTheBackendsEmit()
     {
-        const string text = "struct S { a: f32 }\n\n@compute @workgroup_size(8, 8, 1)\nfn main_(@builtin(global_invocation_id) id: vec3<u32>) {\n}\n";
-        Assert.Equal("main_", CompileShaders.WgslEntryName(text, "main"));
-        Assert.Equal("fallback", CompileShaders.WgslEntryName("fn helper() {}", "fallback"));
+        const string source = "RWStructuredBuffer<uint> B : register(u0);\n" +
+            "[shader(\"compute\")][numthreads(1,1,1)] void main(uint3 id : SV_DispatchThreadID) { B[0] = 1; }\n" +
+            "[shader(\"compute\")][numthreads(1,1,1)] void loop(uint3 id : SV_DispatchThreadID) { B[1] = 2; }\n" +
+            "[shader(\"compute\")][numthreads(1,1,1)] void kernel(uint3 id : SV_DispatchThreadID) { B[2] = 3; }\n";
+        var (ok, engine, output) = Run("Reserved", source, AllTargets);
+        Assert.True(ok, string.Join("; ", engine.Errors.Select(e => e.Message)));
+        string generated = Generate(output);
+        var compiled = ShaderCompiler.Compile(source, "Shaders/Reserved.hlsl", new CompileOptions { Targets = [CompileTarget.Msl, CompileTarget.Wgsl] }, TestContext.Current.CancellationToken);
+        Assert.True(compiled.Success);
+        foreach (string entry in new[] { "main", "loop", "kernel" })
+        {
+            string msl = Msl.MslBackend.EntryFunctionName(entry);
+            string wgsl = Wgsl.WgslBackend.EntryFunctionName(entry);
+            Assert.Contains("MslFunctionName = \"" + msl + "\"", generated, StringComparison.Ordinal);
+            Assert.Contains("WgslEntryPoint = \"" + wgsl + "\"", generated, StringComparison.Ordinal);
+            Assert.Contains(" " + msl + "(", compiled.Find(entry, CompileTarget.Msl)!.AsText(), StringComparison.Ordinal);
+            Assert.Contains("fn " + wgsl + "(", compiled.Find(entry, CompileTarget.Wgsl)!.AsText(), StringComparison.Ordinal);
+        }
+
+        Assert.Contains("WgslEntryPoint = \"loop_\"", generated, StringComparison.Ordinal);
+        Assert.Contains("MslFunctionName = \"main0\"", generated, StringComparison.Ordinal);
     }
 }

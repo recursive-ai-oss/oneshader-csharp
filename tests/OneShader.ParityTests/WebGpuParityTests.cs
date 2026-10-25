@@ -184,6 +184,13 @@ public class WebGpuParityTests
         };
         var result = ShaderCompiler.Compile(File.ReadAllText(source), source, options);
         var blob = result.Find(entry, CompileTarget.Wgsl);
+        if (result.Success && blob is not null && result.Diagnostics.Any(d => d.Code == "OSH5205"))
+        {
+            // 'precise' has no WGSL spelling; the compiler warns and the browser may fuse or reorder, so there is nothing to compare.
+            diagnostics = string.Join("; ", result.Diagnostics.Where(d => d.Code == "OSH5205").Select(d => d.Code + ": " + d.Message));
+            return null;
+        }
+
         if (result.Success && blob is not null)
         {
             // WebGPU has no push constants: the compiler binds the block as a uniform buffer, and the browser job supplies the bytes there.

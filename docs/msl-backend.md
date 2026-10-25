@@ -8,7 +8,7 @@ The same module and options always give the same text. Unsupported constructs ar
 ## Mapping decisions
 
 - **Functions.** `vertex`, `fragment` and `kernel` functions. The entry function's name is the HLSL name, except
-  reserved words (`main` becomes `main0`): `MslBackend.EntryFunctionName`.
+  reserved words (`main` becomes `main0`, `fragment` becomes `fragment0`): `MslBackend.EntryFunctionName`.
 - **Push constants** are a `constant T& name [[buffer(n)]]` argument, where `n` is the next buffer index in declaration order
   like any constant buffer (recorded in reflection's `Msl` slot of the push block). The host fills it with `setVertexBytes`,
   `setFragmentBytes` or `setBytes`; the struct has the same byte layout as the SPIR-V block.
@@ -57,8 +57,18 @@ query it); atomics on textures (Metal 3.1); wave and quad intrinsics; integer/bo
 buffers; unbounded resource arrays; jumps out of several nested loops at once; comparison sampling on 1D/3D textures; texel offsets on cube/1D textures; overlapping `packoffset` members.
 
 Known deviations: `discard` in a helper that was not inlined calls `discard_fragment()` and returns, so the caller keeps running with writes suppressed; memory-only barriers are emitted as full threadgroup barriers (MSL 2.4 has no fence); signed integer
-overflow is undefined in MSL where HLSL wraps; Metal enables fast-math by default, so NaN/infinity handling and
-`precise` are not honoured unless the host disables fast math.
+overflow is undefined in MSL where HLSL wraps; Metal enables fast-math by default, so NaN and infinity handling is not
+guaranteed unless the host disables fast math.
+
+`precise` is honoured whatever the host's math mode. A function with precise arithmetic starts with
+`#pragma clang fp reassociate(off)` and `#pragma clang fp contract(off)` (no fused multiply-add, no reordered sums; measured with
+`xcrun metal`: fast math sets `fast` on every operation, these two pragmas remove `reassoc` and `contract`), and a precise division is
+`precise::divide`, because there is no pragma that stops `a / b` becoming `a * (1 / b)`. The flags `nnan`, `ninf`, `nsz`, `arcp` and
+`afn` stay set under fast math. `tools/run-metal-parity.sh run` with `ONESHADER_METAL_MATH=fast` and `safe` both match DXC on
+`lang_precise_math`; without the pragmas the fast run differs in 11 bytes.
+
+A `switch` whose cases fall through is written as a C++ `switch` with the same fall-through; values of the case's phis that arrive
+from the switch are assigned before it, and a `break` or `continue` inside a nested `if` in a case is written out.
 
 ## Checking
 

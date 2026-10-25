@@ -12,6 +12,7 @@
 #
 # Environment:
 #   ONESHADER_METAL_CASES   export only these cases (comma-separated names)
+#   ONESHADER_OPTIMIZE      export: 0 writes the MSL from unoptimized IR (default: optimized)
 #   ONESHADER_METAL_MATH    run: `fast` (default, Metal's own default) or `safe` (no fast-math)
 #   ONESHADER_METAL_WORK    run: scratch directory for the runner binary (default ~/oneshader/metal-runner)
 # plus the variables of tools/run-parity.sh for export and compare.

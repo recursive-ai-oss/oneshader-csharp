@@ -78,6 +78,22 @@ internal sealed partial class MslEmitter
         _fnText.Append("}\n\n");
     }
 
+    private static bool HasPrecise(IrFunction f)
+    {
+        foreach (var b in f.Blocks)
+        {
+            foreach (var i in b.Instructions)
+            {
+                if (i.Precise)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     // ---- shared function body machinery ---------------------------------------------------------------
 
     private void EmitBody(IrFunction f, Action? prologue)
@@ -91,6 +107,15 @@ internal sealed partial class MslEmitter
         _constructs.Clear();
         _reachable = ComputeReachable(f);
         AnalyzeUses(f);
+        if (HasPrecise(f))
+        {
+            // Metal compiles with fast math unless the host says otherwise, and that lets it fuse a multiply and an add and reassociate
+            // sums. HLSL's precise forbids both, so a function with precise arithmetic switches them off for its own body
+            // (division is handled where it is written: precise::divide, because there is no pragma for reciprocal division).
+            W("#pragma clang fp reassociate(off)");
+            W("#pragma clang fp contract(off)");
+        }
+
         prologue?.Invoke();
         if (f.Entry is { } entry)
         {

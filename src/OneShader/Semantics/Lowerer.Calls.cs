@@ -668,7 +668,10 @@ internal sealed partial class Lowerer
                     sym.Ir = slot;
                     if (d.Initializer is not null)
                     {
-                        _b.Store(slot, LowerInitializer(d.Initializer, sym.Type));
+                        _b.Precise = (sym.Mods & Modifiers.Precise) != 0;
+                        var init = LowerInitializer(d.Initializer, sym.Type);
+                        _b.Precise = false;
+                        _b.Store(slot, init);
                     }
                 }
 
@@ -715,7 +718,10 @@ internal sealed partial class Lowerer
                 }
                 else
                 {
-                    _b.Return(Coerce(LowerInitializer(r.Value, _curRet), _curRet));
+                    _b.Precise = _returnsPrecise;
+                    var result = Coerce(LowerInitializer(r.Value, _curRet), _curRet);
+                    _b.Precise = false;
+                    _b.Return(result);
                 }
 
                 _terminated = true;
@@ -724,6 +730,9 @@ internal sealed partial class Lowerer
     }
 
     private HlslType _curRet => _f.ReturnType;
+
+    /// <summary>True while lowering the body of a function declared <c>precise</c>: its return value is computed exactly as written.</summary>
+    private bool _returnsPrecise;
 
     private void LowerIf(IfStatement i)
     {

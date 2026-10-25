@@ -24,6 +24,12 @@ Code is in `src/OneShader/Wgsl/`; naga validates every corpus entry point (`test
   struct. Arrays and matrices are split one location per element or row. Integer fragment inputs and vertex outputs are `flat`.
 - **Control flow** is rebuilt from the IR's structure markers: `if`, `switch`, `loop` with `continuing` (a do-while test becomes
   `break if`). A `break` out of a loop from inside a `switch` goes through a flag variable. Phis are variables assigned on each edge.
+  WGSL has no fall-through, so a `switch` case that runs into the next one gets that case's statements again after its own (a chain of
+  n cases that fall through each other is written out in full, so the text grows with n squared); a `default` in the middle becomes the
+  last clause.
+- **Entry names:** the HLSL name, with anything that is not a letter, digit or underscore turned into an underscore and a trailing
+  underscore added to names WGSL reserves or predeclares (`loop` becomes `loop_`): `WgslBackend.EntryFunctionName`, which reflection and the
+  generated `WgslEntryPoint` use.
 - **Textures:** a texture used with a comparison sampler is a depth texture; storage textures need `[[vk::image_format]]` and take
   `read`, `write` or `read_write` from how the entry point uses them.
 - **Derivatives:** pixel shaders that sample or take derivatives start with `diagnostic(off, derivative_uniformity);`, since HLSL allows
@@ -42,7 +48,7 @@ r32float/r32uint/r32sint; bool stage variables; texel offsets on cube textures; 
 
 WGSL lets an implementation fuse a multiply and an add, so float results can differ in the last bits from the SPIR-V target's; in the
 parity run against DXC the `particles` case differs in the last bits on one driver version and matches on others.
-`precise` has no WGSL equivalent. Memory-only barriers become full barriers and must sit in uniform control flow. `isnan`, `isinf` and
+`precise` has no WGSL equivalent: the arithmetic compiles, with warning OSH5205 once per entry point, and the result may differ from the other targets in the last bits. Memory-only barriers become full barriers and must sit in uniform control flow. `isnan`, `isinf` and
 `isfinite` test exponent bits, which WGSL implementations may assume never fire.
 
 ## Checking

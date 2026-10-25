@@ -1,0 +1,6 @@
+# precise arithmetic: no multiply-add fusing, no reassociation, no reciprocal division. Inputs are exact binary fractions.
+case lang_precise_math
+shader lang/precise_math.hlsl
+dispatch CSMain 1 1 1
+storage 0 0 : 1.0001220703125 -1.000244140625 100000000.0 1.0 7.0 3.0 0.0 0.0 100000000.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0
+storage 0 1 out size=32

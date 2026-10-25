@@ -659,9 +659,13 @@ internal sealed partial class Lowerer
             return nv;
         }
 
+        bool savedPrecise = _b.Precise;
+        bool precise = UnwrapParen(a.Target) is NameExpression { Info.Symbol: VariableSymbol { } pv } && (pv.Mods & Modifiers.Precise) != 0;
         if (a.Operator is null)
         {
+            _b.Precise = precise || savedPrecise;
             value = Coerce(Rv(a.Value), tt);
+            _b.Precise = savedPrecise;
             Store(a.Target, value);
             return value;
         }
@@ -669,8 +673,10 @@ internal sealed partial class Lowerer
         var op = a.Operator.Value;
         var operand = a.Info!.OperandType!;
         var cur2 = Rv(a.Target);
+        _b.Precise = precise || savedPrecise;
         var rhs = Coerce(Rv(a.Value), operand);
         var res = Coerce(BinaryOp(op, Coerce(cur2, operand), rhs, operand), tt);
+        _b.Precise = savedPrecise;
         Store(a.Target, res);
         return res;
     }
