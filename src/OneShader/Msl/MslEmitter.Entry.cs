@@ -454,27 +454,16 @@ internal sealed partial class MslEmitter
         switch (g.BuiltIn)
         {
             case BuiltIn.VertexIndex when stage == ShaderStage.Vertex:
-            {
-                // Vulkan and D3D report the vertex index with the base vertex included; Metal keeps the two apart.
-                string id = _names.ClaimExact("vertex_id");
-                string bv = _names.ClaimExact("base_vertex");
-                parms.Add("uint " + id + " [[vertex_id]]");
-                parms.Add("uint " + bv + " [[base_vertex]]");
-                expr = id + " + " + bv;
+                // Metal's vertex_id already includes the draw's base vertex (checked on a GPU: indexed draws report index + baseVertex),
+                // which is what Vulkan's VertexIndex is, so adding [[base_vertex]] would count it twice.
                 type = "uint";
+                attr = "[[vertex_id]]";
                 break;
-            }
-
             case BuiltIn.InstanceIndex when stage == ShaderStage.Vertex:
-            {
-                string id = _names.ClaimExact("instance_id");
-                string bi = _names.ClaimExact("base_instance");
-                parms.Add("uint " + id + " [[instance_id]]");
-                parms.Add("uint " + bi + " [[base_instance]]");
-                expr = id + " + " + bi;
+                // Likewise instance_id includes the base instance, as Vulkan's InstanceIndex does.
                 type = "uint";
+                attr = "[[instance_id]]";
                 break;
-            }
 
             case BuiltIn.FragCoord when stage == ShaderStage.Pixel:
                 type = "float4";

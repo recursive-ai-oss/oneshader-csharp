@@ -336,8 +336,12 @@ internal sealed partial class MslEmitter
                 r.ElementWrapped = true;
                 if (d.Dims.Length == 0)
                 {
-                    r.ElementType = stride == l.Size ? d.Type : CellName(d.Type, l.Size, stride);
-                    r.ElementWrapped = stride != l.Size;
+                    // The layout's size is already padded to the stride, but a packed three-component vector is only 12 bytes
+                    // wide in MSL: pad it with a cell so consecutive elements keep the SPIR-V stride (16 for float3).
+                    int natural = l.Type is VectorType vt ? vt.Element.StorageBytes(_enable16) * vt.Count : l.Size;
+                    stride = Math.Max(stride, l.Size);
+                    r.ElementType = stride == natural ? d.Type : CellName(d.Type, natural, stride);
+                    r.ElementWrapped = stride != natural;
                     return;
                 }
 

@@ -1,0 +1,25 @@
+# Where Metal output may differ from the reference (DXC SPIR-V on Vulkan), measured on an Apple M2 against an NVIDIA GPU. Cases not listed must match: storage buffers byte for byte (or as sorted
+# words where the case says `sorted`), 8-bit images within the case's own `tolerance`, float images within `ftolerance`.
+#
+#   CASE KEY bytes|float TOLERANCE [bad=N]
+#
+# KEY is the output name (target, depth, image:SET.BINDING, buffer:SET.BINDING). `float` compares 32-bit floats (buffers) or
+# float texels (images) as |a-b| <= TOLERANCE * (1 + |a|). `bad=N` lets N values exceed it. The numbers are the worst error
+# seen rounded up, so a regression shows up as a failure.
+
+# Float arithmetic in long loops accumulates different rounding on the two GPUs (Metal's default fast-math gives 1.5e-6
+# for cluster_build, `safe` math 6.7e-7; the other two are within 1e-7 either way).
+cluster_build buffer:0.1 float 3e-6
+particles buffer:0.1 float 3e-7
+lang_inheritance buffer:0.1 float 2e-7
+
+# f16tof32(f32tof16(x)): Metal returns the half-rounded value, which matches the packed bits in the other buffer, while the
+# NVIDIA reference returns x unchanged (and RADV gives yet another value), so the reference itself differs between GPUs.
+stage_layouts buffer:0.4 float 5e-4
+stage_layouts_off buffer:0.4 float 5e-4
+
+# Cube-map sampling: a small patch of pixels (about 8x8 at the specular highlight in ibl_gold) differs by up to 0.8%, the same
+# with fast and safe math, so it comes from texture filtering and not from shader arithmetic.
+ibl_gold target float 1e-2
+ibl_plastic target float 2e-3
+ibl_prefilter image:0.3 float 3e-3

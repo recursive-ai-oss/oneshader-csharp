@@ -29,7 +29,8 @@ The same module and options always give the same text. Unsupported constructs ar
 - **Stage I/O.** Vertex inputs are a `[[stage_in]]` struct with `[[attribute(n)]]`; vertex outputs and fragment inputs
   use `[[user(locnN)]]` with `[[flat]]`, `[[center_no_perspective]]`, `[[centroid_perspective]]`, `[[sample_perspective]]`;
   fragment outputs use `[[color(n)]]`, `[[depth(any)]]`, `[[sample_mask]]`. `SV_VertexID`/`SV_InstanceID` are
-  `vertex_id + base_vertex` and `instance_id + base_instance`, as in the SPIR-V target. Clip distances are
+  `[[vertex_id]]` and `[[instance_id]]`, which on Metal already include the draw's base vertex and base instance, as
+  `VertexIndex`/`InstanceIndex` do in the SPIR-V target (`tools/metal-runner/probe-draw-ids.swift` shows it). Clip distances are
   `[[clip_distance]]`. Clip-space Y points up in Metal and down in Vulkan: flip with the viewport, the shader does not.
 - **Textures.** Textures used with comparison sampling become `depth*` types. Read-write textures get `read`, `write`
   or `read_write` access from their use. Array layers are split from the coordinate. Comparison samplers need their
@@ -55,3 +56,16 @@ overflow is undefined in MSL where HLSL wraps; Metal enables fast-math by defaul
 asserts on) and packs it with `metallib`. Produce the files with
 `ONESHADER_MSL_OUT=<dir> dotnet test tests/OneShader.Tests --filter-method '*MslBackendTests*'` (optimized files in
 `<dir>`, unoptimized in `<dir>/O0`).
+
+## Running on a Metal GPU
+
+`tools/run-metal-parity.sh` runs every corpus case as MSL on a Metal device and compares it with DXC's SPIR-V on Vulkan.
+Three steps share one exchange directory: `export` (a machine with Vulkan and DXC) writes the MSL, the inputs and the
+reference outputs; `run` (a Mac with Xcode, no .NET needed) builds `tools/metal-runner` and executes each case with Metal API
+and shader validation on, so a validation message fails the case; `compare` prints the per-case table. Allowed differences
+are in `corpus/metal-tolerances.txt`; everything else must match as the Vulkan parity suite requires.
+
+The runner draws with a viewport of negative height. Clip-space Y points up in Metal and down in Vulkan, and the corpus
+shaders are written for Vulkan; the flipped viewport puts the same vertex positions on the same pixels (including
+`SV_Position`) and keeps Vulkan's counter-clockwise front face equal to Metal's clockwise one. Depth range and the
+texture origin already agree. Vertex buffer binding N is Metal buffer 30 - N, described to Metal with a vertex descriptor.
