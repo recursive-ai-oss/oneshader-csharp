@@ -20,7 +20,7 @@ OneShader, a bar to the left is a loss:
   <img alt="Bar chart: how many times faster or slower OneShader compiles than DXC, log scale. The NativeAOT build is about 2.4 times faster when warm and 2.7 times faster on the first run. Started as an ordinary .NET process, it is slower: about 5 to 6 times with ReadyToRun and 13 to 14 times with the JIT." src="https://raw.githubusercontent.com/recursive-ai-oss/oneshader-csharp/main/docs/img/oneshader-hero-light.svg">
 </picture>
 
-[Full results, with memory per compile, output size, the losses and the method →](docs/performance.md)
+[Full results, with allocations per compile, output size, the losses and the method →](docs/performance.md)
 
 ## Why OneShader
 
