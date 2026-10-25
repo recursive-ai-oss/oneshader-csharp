@@ -38,14 +38,21 @@ The same module and options always give the same text. Unsupported constructs ar
   post-dominators. The loop's continue block is repeated before each `continue`.
 - **Atomics** cast the address to `atomic_int`/`atomic_uint` with relaxed ordering. Compare-exchange loops over spurious failure.
 
+- **Resource arrays** (`Texture2D T[4]`, `SamplerState S[2]`, arrays of structured, byte-address and constant buffers) are
+  `array<texture2d<float>, 4>`, `array<sampler, 2>`, `array<device T*, N>` and `array<constant T*, N>` arguments; element
+  `i` has Metal index `base + i`, which is what reflection reports as the slot of the array (its first index).
+  `NonUniformResourceIndex(i)` is just `i`: Metal needs no hint.
+- **Append and consume buffers** use the hidden counter buffer as a second buffer argument, like the SPIR-V target:
+  `Append` adds one with an atomic and stores at the old value, `Consume` subtracts one and loads. `GetDimensions` on
+  them is the same error as on any structured buffer.
+
 ## Not supported (errors)
 
 `double` and 64-bit float; `SV_CullDistance`; `GetDimensions` on structured buffers (`ArrayLength`: Metal cannot
 query it); atomics on textures (Metal 3.1); wave and quad intrinsics; integer/bool matrices; 64-bit integer vectors in
-buffers; unbounded resource arrays; jumps out of several nested loops at once; `discard` in a function that was not
-inlined; comparison sampling on 1D/3D textures; texel offsets on cube/1D textures; overlapping `packoffset` members.
+buffers; unbounded resource arrays; jumps out of several nested loops at once; comparison sampling on 1D/3D textures; texel offsets on cube/1D textures; overlapping `packoffset` members.
 
-Known deviations: memory-only barriers are emitted as full threadgroup barriers (MSL 2.4 has no fence); signed integer
+Known deviations: `discard` in a helper that was not inlined calls `discard_fragment()` and returns, so the caller keeps running with writes suppressed; memory-only barriers are emitted as full threadgroup barriers (MSL 2.4 has no fence); signed integer
 overflow is undefined in MSL where HLSL wraps; Metal enables fast-math by default, so NaN/infinity handling and
 `precise` are not honoured unless the host disables fast math.
 

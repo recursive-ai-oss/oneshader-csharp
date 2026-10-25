@@ -192,6 +192,15 @@ internal sealed partial class WgslEmitter
         }
 
         CheckRecursion(callees);
+
+        // One clear error per array instead of a follow-on error at every use.
+        foreach (var g in _reachableGlobals)
+        {
+            if (g.ResourceCount != 1)
+            {
+                Unsupported("Resource arrays are not available in WGSL (WebGPU has no binding arrays); declare '" + g.Name + "' as separate resources, or use a texture array (Texture2DArray) when the elements are textures of one size.", g.Span);
+            }
+        }
     }
 
     private void CheckRecursion(Dictionary<IrFunction, List<IrFunction>> callees)

@@ -45,6 +45,8 @@ public sealed partial class WgslBackendTests
         ["clip_distance.hlsl"] = ("OSH5202", "SV_ClipDistance needs an optional WebGPU feature"),
         ["clip_distance_array.hlsl"] = ("OSH5202", "SV_ClipDistance needs an optional WebGPU feature"),
         ["cull_distance.hlsl"] = ("OSH5202", "SV_CullDistance needs an optional WebGPU feature"),
+        ["resource_arrays.hlsl"] = ("OSH5202", "WebGPU has no binding arrays"),
+        ["append_consume.hlsl"] = ("OSH5202", "append and consume buffers need a hidden counter that WGSL has no place for"),
         ["lod_query.hlsl"] = ("OSH5202", "CalculateLevelOfDetail has no WGSL equivalent"),
     };
 
@@ -114,6 +116,25 @@ public sealed partial class WgslBackendTests
         var r = ShaderCompiler.Compile(source, "stage_io.hlsl", new CompileOptions { Targets = [CompileTarget.Wgsl], Optimize = optimize }, TestContext.Current.CancellationToken);
         Assert.True(r.Success, string.Join("\n", r.Diagnostics.Select(d => d.ToString())));
         ValidateWithNaga(naga!, r);
+    }
+
+    [Fact]
+    public void ResourceArraysAreOneCleanDiagnosticPerArray()
+    {
+        var r = CompileWgsl(Path.Combine(CorpusFiles.Root(), "lang", "resource_arrays.hlsl"));
+        Assert.False(r.Success);
+        var errors = r.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
+        Assert.All(errors, d => Assert.Equal("OSH5202", d.Code));
+        Assert.Equal(4, errors.Count);
+        Assert.All(errors, d => Assert.Contains("binding arrays", d.Message, StringComparison.Ordinal));
+        Assert.Contains(errors, d => d.Message.Contains("Texture2DArray", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void NonUniformResourceIndexIsJustTheIndex()
+    {
+        var r = CompileWgslText("RWStructuredBuffer<uint> B : register(u0);\n[shader(\"compute\")][numthreads(1,1,1)] void CSMain(uint3 id : SV_DispatchThreadID) { B[NonUniformResourceIndex(id.x)] = 1; }");
+        Assert.True(r.Success, string.Join("\n", r.Diagnostics.Select(d => d.ToString())));
     }
 
     internal static void ValidateWithNaga(string naga, CompileResult r)

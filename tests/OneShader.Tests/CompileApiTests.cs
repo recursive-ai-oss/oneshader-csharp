@@ -61,12 +61,12 @@ public class CompileApiTests
     }
 
     [Fact]
-    public void UnavailableTargetsAreErrors()
+    public void UnknownTargetsAreErrors()
     {
         var r = ShaderCompiler.Compile(
             "[shader(\"compute\")][numthreads(1,1,1)] void main() {}\n",
             "t.hlsl",
-            new CompileOptions { Targets = [CompileTarget.SpirV, CompileTarget.Msl] },
+            new CompileOptions { Targets = [CompileTarget.SpirV, (CompileTarget)99] },
             TestContext.Current.CancellationToken);
         Assert.False(r.Success);
         Assert.Contains(r.Diagnostics, d => d.Code == ApiDiagnosticCodes.TargetNotAvailable);

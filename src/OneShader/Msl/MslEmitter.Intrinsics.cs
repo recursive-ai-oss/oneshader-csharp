@@ -110,6 +110,10 @@ internal sealed partial class MslEmitter
             case Intrinsic.SmoothStep:
                 Define(i, "smoothstep(" + FitArg(i, 0) + ", " + FitArg(i, 1) + ", " + FitArg(i, 2) + ")");
                 break;
+            case Intrinsic.NonUniformIndex:
+                // Metal indexes resource arrays freely; the hint only matters to backends with descriptor indexing.
+                Define(i, Arg(i, 0));
+                break;
             case Intrinsic.Rcp:
                 Define(i, ScalarLiteral(i.Type.ScalarElement ?? ScalarType.Float, BitConverter.SingleToUInt32Bits(1f)) + " / " + Arg(i, 0));
                 break;

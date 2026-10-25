@@ -110,7 +110,7 @@ options change; the output is deterministic.
 
 ## Known limits
 
-- SPIR-V only. Metal (MSL) and WebGPU (WGSL) output are in development.
+- The generated bindings and embedded blobs cover SPIR-V; Metal (MSL) and WebGPU (WGSL) are available from the compiler API only.
 - Unbounded resource arrays and wave intrinsics are not supported.
 - `dotnet build` only (not Visual Studio's .NET Framework MSBuild).
 

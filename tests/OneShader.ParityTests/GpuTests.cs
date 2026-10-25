@@ -54,6 +54,11 @@ public class GpuParityTests
             catch (System.Exception ex)
             {
                 ParityTable.Record(name, "vs-dxc", ex);
+                if (ex is UnsupportedOnTargetException)
+                {
+                    Assert.Skip("unsupported on this target: " + ex.Message);
+                }
+
                 throw;
             }
             ParityTable.Record(name, "vs-dxc", report);
@@ -79,6 +84,11 @@ public class GpuParityTests
             catch (System.Exception ex)
             {
                 ParityTable.Record(name, "vs-cpu", ex);
+                if (ex is UnsupportedOnTargetException)
+                {
+                    Assert.Skip("unsupported on this target: " + ex.Message);
+                }
+
                 throw;
             }
             ParityTable.Record(name, "vs-cpu", report);

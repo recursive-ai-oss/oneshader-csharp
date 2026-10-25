@@ -179,7 +179,7 @@ public static class ApiDiagnosticCodes
     /// <summary>The compiler pipeline is not available.</summary>
     public const string NotImplemented = "OSH0001";
 
-    /// <summary>A requested output target has no backend yet.</summary>
+    /// <summary>A requested output target is not one of the known <see cref="CompileTarget"/> values.</summary>
     public const string TargetNotAvailable = "OSH0002";
 
     /// <summary>The optimizer hit an internal problem; the shader was compiled without optimization (a warning).</summary>
@@ -322,6 +322,14 @@ public static class ShaderCompiler
         }
 
         var targets = options.Targets.Count == 0 ? [CompileTarget.SpirV] : options.Targets;
+        foreach (var requested in targets)
+        {
+            if (!Enum.IsDefined(requested))
+            {
+                diagnostics.Error(ApiDiagnosticCodes.TargetNotAvailable, "The output target " + (int)requested + " is not known; use SpirV, Msl or Wgsl.", new SourceSpan(path, 1, 1));
+            }
+        }
+
         var spirvOptions = new SpirV.SpirvOptions { KeepNames = options.KeepNames };
         var mslOptions = new Msl.MslOptions { KeepNames = options.KeepNames };
         var wgslOptions = new Wgsl.WgslOptions { KeepNames = options.KeepNames };

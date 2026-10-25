@@ -44,8 +44,12 @@ internal static class MslCorpus
     /// <summary>Corpus files the MSL backend refuses on purpose, with the construct and the diagnostic it must report.</summary>
     public static IReadOnlyDictionary<string, (string Code, string Text)> Documented { get; } = new Dictionary<string, (string, string)>
     {
-        ["cull_distance.hlsl"] = ("OSH5102", "cull distance"),
+        ["probes/cull_distance.hlsl"] = ("OSH5102", "cull distance"),
+        ["compute/append_consume.hlsl"] = ("OSH5102", "no way to ask a buffer for its length"),
     };
+
+    /// <summary>The key into <see cref="Documented"/>: the folder and file name, because two folders may hold the same file name.</summary>
+    public static string Key(string path) => Path.GetFileName(Path.GetDirectoryName(path)) + "/" + Path.GetFileName(path);
 
     public static bool IsMslCode(Diagnostic d) => d.Code.StartsWith("OSH51", StringComparison.Ordinal);
 }
@@ -65,7 +69,7 @@ public class MslBackendTests
             Assert.Skip("front end: " + errors[0]);
         }
 
-        if (MslCorpus.Documented.TryGetValue(Path.GetFileName(path), out _))
+        if (MslCorpus.Documented.TryGetValue(MslCorpus.Key(path), out _))
         {
             return;
         }
@@ -97,7 +101,7 @@ public class MslBackendTests
             Assert.Skip("front end: " + errors[0]);
         }
 
-        if (MslCorpus.Documented.TryGetValue(Path.GetFileName(path), out var expected))
+        if (MslCorpus.Documented.TryGetValue(MslCorpus.Key(path), out var expected))
         {
             Assert.Contains(errors, d => d.Code == expected.Code && d.Message.Contains(expected.Text, StringComparison.Ordinal));
             return;
@@ -120,7 +124,7 @@ public class MslBackendTests
     public void ResourceIndicesMatchReflectionAndOutputIsDeterministic(string path)
     {
         var r = MslCorpus.Compile(path);
-        if (!r.Success || r.Reflection is null || MslCorpus.Documented.ContainsKey(Path.GetFileName(path)))
+        if (!r.Success || r.Reflection is null || MslCorpus.Documented.ContainsKey(MslCorpus.Key(path)))
         {
             return;
         }
@@ -159,5 +163,39 @@ public class MslBackendTests
     {
         Assert.Equal("main0", Msl.MslBackend.EntryFunctionName("main"));
         Assert.Equal("VSMain", Msl.MslBackend.EntryFunctionName("VSMain"));
+    }
+
+    [Fact]
+    public void ResourceArraysTakeOneMetalIndexPerElement()
+    {
+        var r = MslCorpus.Compile(Path.Combine(global::OneShader.Tests.CorpusFiles.Root(), "lang", "resource_arrays.hlsl"));
+        Assert.True(r.Success, string.Join("\n", r.Diagnostics.Select(d => d.ToString())));
+        string text = r.Find("CSMain", CompileTarget.Msl)!.AsText();
+        Assert.Contains("array<texture2d<float, access::sample>, 4> Atlas [[texture(0)]]", text, StringComparison.Ordinal);
+        Assert.Contains("array<sampler, 2> Filters [[sampler(0)]]", text, StringComparison.Ordinal);
+
+        // Arrays of buffers are one argument per element, gathered into an array inside the function.
+        Assert.Contains("Tables_0 [[buffer(0)]]", text, StringComparison.Ordinal);
+        Assert.Contains("Tables_1 [[buffer(1)]]", text, StringComparison.Ordinal);
+        Assert.Contains("Picks_1 [[buffer(3)]]", text, StringComparison.Ordinal);
+        Assert.Contains("Results [[buffer(4)]]", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("NonUniform", text, StringComparison.Ordinal);
+        uint Slot(string name) => r.Reflection!.Resources.First(x => x.Name == name).Slots.First(x => x.Target == CompileTarget.Msl).Binding;
+        Assert.Equal(0u, Slot("Tables"));
+        Assert.Equal(2u, Slot("Picks"));
+        Assert.Equal(4u, Slot("Results"));
+    }
+
+    [Fact]
+    public void AppendAndConsumeCountersGetTheNextBufferIndex()
+    {
+        var r = MslCorpus.Compile(Path.Combine(global::OneShader.Tests.CorpusFiles.Root(), "probes", "append_consume.hlsl"));
+        Assert.True(r.Success, string.Join("\n", r.Diagnostics.Select(d => d.ToString())));
+        string text = r.Find("CSMain", CompileTarget.Msl)!.AsText();
+        var output = r.Reflection!.Resources.First(x => x.Name == "Output");
+        uint buffer = output.Slots.First(x => x.Target == CompileTarget.Msl).Binding;
+        uint counter = output.CounterSlots.First(x => x.Target == CompileTarget.Msl).Binding;
+        Assert.Equal(buffer + 1, counter);
+        Assert.Contains("[[buffer(" + counter.ToString(System.Globalization.CultureInfo.InvariantCulture) + ")]]", text, StringComparison.Ordinal);
     }
 }

@@ -65,6 +65,21 @@ if (!result.Success || result.Reflection is null || result.Reflection.EntryPoint
     return 3;
 }
 
+// The same shader through all three backends.
+var all = ShaderCompiler.Compile(Shader, "smoke.hlsl", new CompileOptions { Targets = [CompileTarget.SpirV, CompileTarget.Msl, CompileTarget.Wgsl] });
+if (!all.Success || all.Blobs.Count != 6
+    || all.Find("PS", CompileTarget.Msl) is not { } msl || !msl.AsText().Contains("fragment", StringComparison.Ordinal)
+    || all.Find("PS", CompileTarget.Wgsl) is not { } wgsl || !wgsl.AsText().Contains("@fragment", StringComparison.Ordinal))
+{
+    foreach (var d in all.Diagnostics)
+    {
+        Console.Error.WriteLine(d);
+    }
+
+    Console.Error.WriteLine("multi-target smoke test failed");
+    return 8;
+}
+
 // Hot-reload path: an edit that only touches a body is compatible, one that moves a constant-buffer member is not.
 var edited = ShaderCompiler.Compile(Shader.Replace("i.Uv);", "i.Uv) * 0.5;", StringComparison.Ordinal), "smoke.hlsl");
 var moved = ShaderCompiler.Compile(Shader.Replace("float4x4 M;", "float4 Pad; float4x4 M;", StringComparison.Ordinal), "smoke.hlsl");
