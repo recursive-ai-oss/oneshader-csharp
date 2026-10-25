@@ -81,8 +81,8 @@ sizes. Edits to function bodies, new entry points, and resources that become vis
 
 ## Known limits
 
-- SPIR-V only. Metal (MSL) and WebGPU (WGSL) output are in development; asking for them returns
-  diagnostic OSH0002.
+- SPIR-V, Metal (MSL) and WebGPU (WGSL) output. Limits are listed in `docs/msl-backend.md` and
+  `docs/wgsl-backend.md`.
 - Unbounded resource arrays and wave intrinsics are not supported.
 
 ## License

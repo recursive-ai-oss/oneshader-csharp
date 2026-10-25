@@ -61,15 +61,29 @@ public class CompileApiTests
     }
 
     [Fact]
-    public void UnavailableTargetsAreErrors()
+    public void UnknownTargetsAreErrors()
     {
         var r = ShaderCompiler.Compile(
             "[shader(\"compute\")][numthreads(1,1,1)] void main() {}\n",
             "t.hlsl",
-            new CompileOptions { Targets = [CompileTarget.SpirV, CompileTarget.Wgsl] },
+            new CompileOptions { Targets = [CompileTarget.SpirV, (CompileTarget)99] },
             TestContext.Current.CancellationToken);
         Assert.False(r.Success);
         Assert.Contains(r.Diagnostics, d => d.Code == ApiDiagnosticCodes.TargetNotAvailable);
+    }
+
+    [Fact]
+    public void WgslBlobIsTextAndDeterministic()
+    {
+        const string src = "[shader(\"compute\")][numthreads(4,1,1)] void main() {}\n";
+        var opts = new CompileOptions { Targets = [CompileTarget.SpirV, CompileTarget.Wgsl] };
+        var a = ShaderCompiler.Compile(src, "t.hlsl", opts, TestContext.Current.CancellationToken);
+        var b = ShaderCompiler.Compile(src, "t.hlsl", opts, TestContext.Current.CancellationToken);
+        Assert.True(a.Success, string.Join("\n", a.Diagnostics));
+        var w = a.Find("main", CompileTarget.Wgsl);
+        Assert.NotNull(w);
+        Assert.Contains("@compute @workgroup_size(4, 1, 1)", w!.AsText());
+        Assert.Equal(w.ToArray(), b.Find("main", CompileTarget.Wgsl)!.ToArray());
     }
 
     [Fact]

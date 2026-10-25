@@ -179,7 +179,7 @@ public static class ApiDiagnosticCodes
     /// <summary>The compiler pipeline is not available.</summary>
     public const string NotImplemented = "OSH0001";
 
-    /// <summary>A requested output target has no backend yet.</summary>
+    /// <summary>A requested output target is not one of the known <see cref="CompileTarget"/> values.</summary>
     public const string TargetNotAvailable = "OSH0002";
 
     /// <summary>The optimizer hit an internal problem; the shader was compiled without optimization (a warning).</summary>
@@ -206,7 +206,7 @@ public static class ShaderCompiler
     /// <param name="cancellationToken">Cancels a long compile.</param>
     /// <returns>
     /// The result: all diagnostics, and when there were no errors the reflection and one blob per entry point
-    /// and target. Only the SPIR-V target is available so far; asking for MSL or WGSL is an error diagnostic.
+    /// and target. SPIR-V, MSL and WGSL are available.
     /// </returns>
     public static CompileResult Compile(string source, string path, CompileOptions? options = null, CancellationToken cancellationToken = default)
     {
@@ -322,7 +322,17 @@ public static class ShaderCompiler
         }
 
         var targets = options.Targets.Count == 0 ? [CompileTarget.SpirV] : options.Targets;
+        foreach (var requested in targets)
+        {
+            if (!Enum.IsDefined(requested))
+            {
+                diagnostics.Error(ApiDiagnosticCodes.TargetNotAvailable, "The output target " + (int)requested + " is not known; use SpirV, Msl or Wgsl.", new SourceSpan(path, 1, 1));
+            }
+        }
+
         var spirvOptions = new SpirV.SpirvOptions { KeepNames = options.KeepNames };
+        var mslOptions = new Msl.MslOptions { KeepNames = options.KeepNames };
+        var wgslOptions = new Wgsl.WgslOptions { KeepNames = options.KeepNames };
         foreach (var entry in module.EntryPoints)
         {
             foreach (var target in (CompileTarget[])[CompileTarget.SpirV, CompileTarget.Msl, CompileTarget.Wgsl])
@@ -333,9 +343,25 @@ public static class ShaderCompiler
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
-                if (target != CompileTarget.SpirV)
+                if (target == CompileTarget.Wgsl)
                 {
-                    diagnostics.Error(ApiDiagnosticCodes.TargetNotAvailable, "The " + target + " target is not available yet; request SpirV only.", new SourceSpan(path, 1, 1));
+                    string? text = Wgsl.WgslBackend.Emit(module, entry.Function.Name, wgslOptions, diagnostics);
+                    if (text is not null)
+                    {
+                        blobs.Add(new ShaderBlob(entry.Function.Name, entry.Stage, target, Encoding.UTF8.GetBytes(text)));
+                    }
+
+                    continue;
+                }
+
+                if (target == CompileTarget.Msl)
+                {
+                    string? text = Msl.MslBackend.Emit(module, entry.Function.Name, mslOptions, diagnostics);
+                    if (text is not null)
+                    {
+                        blobs.Add(new ShaderBlob(entry.Function.Name, entry.Stage, target, Encoding.UTF8.GetBytes(text)));
+                    }
+
                     continue;
                 }
 

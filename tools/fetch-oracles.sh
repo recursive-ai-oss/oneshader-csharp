@@ -2,7 +2,7 @@
 # Fetches the pinned reference tools (see oracles.env) into a directory:
 #   fetch-oracles.sh [DIR]      DIR defaults to $ONESHADER_TOOLS, then .tools in the repo.
 # Result: DIR/bin/{dxc,spirv-val,spirv-dis,spirv-as,spirv-opt}, DIR/lib/ (DXC libraries),
-# DIR/vklayers/ (Khronos validation layer; point VK_ADD_LAYER_PATH at it).
+# DIR/vklayers/ (Khronos validation layer; point VK_ADD_LAYER_PATH at it), and DIR/bin/naga when cargo is on PATH.
 # The system Vulkan loader and GPU driver are used as they are; nothing here replaces them.
 # Idempotent (a stamp file records the pinned versions), verifies SHA-256, needs no sudo and
 # installs nothing outside DIR. Linux x64 only.
@@ -26,9 +26,10 @@ want="dxc=$DXC_SHA256 sdk=$VULKAN_SDK_SHA256"
 if [ -f "$stamp" ] && [ "$(cat "$stamp")" = "$want" ] && [ -x "$dir/bin/dxc" ] && [ -x "$dir/bin/spirv-val" ] \
    && [ -f "$dir/vklayers/libVkLayer_khronos_validation.so" ]; then
   echo "fetch-oracles: up to date in $dir (dxc $DXC_VERSION, SPIRV-Tools from Vulkan SDK $VULKAN_SDK_VERSION)"
-  exit 0
+  UP_TO_DATE=1
 fi
 
+if [ "${UP_TO_DATE:-0}" != 1 ]; then
 work="$(mktemp -d "$dir/.work.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 
@@ -67,3 +68,15 @@ sed 's#"library_path": *"[^"]*"#"library_path": "./libVkLayer_khronos_validation
 # dxc finds its libraries relative to its own location; keep them one level up from bin/.
 echo "$want" > "$stamp"
 echo "fetch-oracles: installed into $dir/bin"
+fi
+
+# naga (WGSL validator): installed with cargo when available; skipped with a note otherwise.
+if [ ! -x "$dir/bin/naga" ] || [ "$("$dir/bin/naga" --version 2>/dev/null || true)" != "$NAGA_VERSION" ]; then
+  if command -v cargo >/dev/null 2>&1; then
+    echo "fetch-oracles: naga $NAGA_VERSION (cargo install)"
+    cargo install naga-cli --version "$NAGA_VERSION" --locked --root "$dir/naga" >/dev/null 2>&1 \
+      && cp -f "$dir/naga/bin/naga" "$dir/bin/naga" || echo "fetch-oracles: naga install failed; WGSL validation tests will skip" >&2
+  else
+    echo "fetch-oracles: cargo not found; WGSL validation tests will skip" >&2
+  fi
+fi
