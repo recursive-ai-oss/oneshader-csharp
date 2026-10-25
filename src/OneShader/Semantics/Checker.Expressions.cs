@@ -922,7 +922,8 @@ internal sealed partial class Checker
         {
             case StructType st:
             {
-                if (_structInfos.TryGetValue(st, out var si) && si.FieldIndex.TryGetValue(name, out int idx))
+                // The index map can name a field the struct does not hold yet while a template instance or an erroneous struct is still being completed.
+                if (_structInfos.TryGetValue(st, out var si) && si.FieldIndex.TryGetValue(name, out int idx) && idx < st.Fields.Count)
                 {
                     info.FieldIndex = idx;
                     info.IsLValue = m.Target.Info?.IsLValue ?? false;
@@ -953,7 +954,7 @@ internal sealed partial class Checker
 
             case ResourceType { ResourceKind: ResourceTypeKind.ConstantBuffer, Element: StructType cst }:
             {
-                if (_structInfos.TryGetValue(cst, out var si) && si.FieldIndex.TryGetValue(name, out int idx))
+                if (_structInfos.TryGetValue(cst, out var si) && si.FieldIndex.TryGetValue(name, out int idx) && idx < cst.Fields.Count)
                 {
                     info.FieldIndex = idx;
                     info.IsLValue = true;

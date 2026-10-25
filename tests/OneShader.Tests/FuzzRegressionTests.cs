@@ -20,13 +20,28 @@ public class FuzzRegressionTests
     public static IEnumerable<TheoryDataRow<string>> Inputs() =>
         Directory.GetFiles(Dir(), "*.hlsl").OrderBy(p => p, StringComparer.Ordinal).Select(p => new TheoryDataRow<string>(Path.GetFileName(p)));
 
-    private static CompileResult Compile(string name, bool optimize) =>
-        ShaderCompiler.Compile(File.ReadAllText(Path.Combine(Dir(), name)), name, new CompileOptions
+    // As in the fuzz runner: U+0001 starts the next include file (f1.h, f2.h, ...).
+    private static CompileResult Compile(string name, bool optimize)
+    {
+        string[] parts = File.ReadAllText(Path.Combine(Dir(), name)).Split('\u0001');
+        return ShaderCompiler.Compile(parts[0], name, new CompileOptions
         {
             Targets = [CompileTarget.SpirV, CompileTarget.Msl, CompileTarget.Wgsl],
             Optimize = optimize,
-            IncludeResolver = (_, _, _) => null,
+            IncludeResolver = (requested, _, _) =>
+            {
+                for (int i = 1; i < parts.Length; i++)
+                {
+                    if (requested == "f" + i.ToString(System.Globalization.CultureInfo.InvariantCulture) + ".h")
+                    {
+                        return new ResolvedInclude(requested, parts[i]);
+                    }
+                }
+
+                return null;
+            },
         });
+    }
 
     [Theory]
     [MemberData(nameof(Inputs))]
