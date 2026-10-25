@@ -57,6 +57,15 @@ internal static class Optimizer
                 }
             }
 
+            current = "unused globals";
+            if (DeadGlobals.Run(module))
+            {
+                foreach (var f in module.Functions)
+                {
+                    Dce.Run(f);
+                }
+            }
+
             current = "final verification";
             Verify(module, current);
             return null;

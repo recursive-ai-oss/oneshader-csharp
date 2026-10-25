@@ -428,6 +428,32 @@ public class OptimizerTests
     }
 
     [Fact]
+    public void VariablesThatAreOnlyWrittenDisappear()
+    {
+        const string src = """
+            [[vk::binding(0, 0)]] RWStructuredBuffer<uint> Output;
+            static uint Unread;
+            static uint Counter;
+            groupshared uint Scratch[4];
+            [shader("compute")] [numthreads(4, 1, 1)]
+            void CSMain(uint3 id : SV_DispatchThreadID)
+            {
+                Unread = id.x;
+                Scratch[id.x & 3] = 1;
+                Counter = 2;
+                Output[0] = Counter;
+            }
+            """;
+        var r = Semantics.Frontend.Run(src, "t.hlsl", new CompileOptions(), TestContext.Current.CancellationToken);
+        Assert.Empty(r.Diagnostics.Items);
+        Assert.Contains(r.Module!.Globals, g => g.Name == "Unread");
+        Assert.Null(Optimizer.Run(r.Module, TestContext.Current.CancellationToken));
+        Assert.DoesNotContain(r.Module.Globals, g => g.Name is "Unread" or "Scratch");
+        Assert.Contains(r.Module.Globals, g => g.Name == "Counter"); // read, so it stays
+        Assert.DoesNotContain(r.Module.Functions.SelectMany(f => f.Blocks).SelectMany(b => b.Instructions), i => i.Op == Opcode.AccessChain && i.Operands[0] is GlobalVariable { Name: "Scratch" });
+    }
+
+    [Fact]
     public void ExponentialCallNestingStaysBounded()
     {
         // Each function calls the previous one twice: full inlining would be 2^24 copies.

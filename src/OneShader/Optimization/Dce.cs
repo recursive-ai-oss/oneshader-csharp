@@ -83,7 +83,7 @@ internal static class Dce
     }
 
     // True when the pointer is only ever stored through (directly or via access chains); collects those stores and chains.
-    private static bool OnlyWritten(Instruction ptr, Dictionary<IrValue, List<Instruction>> users, List<Instruction> derived, int depth)
+    internal static bool OnlyWritten(Instruction ptr, Dictionary<IrValue, List<Instruction>> users, List<Instruction> derived, int depth)
     {
         if (depth > 16)
         {
