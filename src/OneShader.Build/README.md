@@ -78,6 +78,8 @@ One static class per HLSL file (named after the file, in PascalCase), containing
   matrices are `Matrix4x4` members where element (i, j) is HLSL's `M[i][j]`;
 - a struct per structured-buffer element type;
 - `Bindings`: set, binding, count and kind of every resource, as constants;
+- for a `[[vk::push_constant]]` block: a blittable `PushConstants` struct and `Bindings.PushConstants` with its `Size`, the
+  stages for the `VkPushConstantRange`, and the Metal index and WebGPU group and binding of the targets you selected;
 - per entry point: stage, entry name, the SPIR-V bytes; for vertex shaders a `Vertex` struct,
   `Stride` and `Inputs`; for compute shaders the thread-group size. Entry points also carry the
   MSL and WGSL sources when those targets are selected (next section).
@@ -123,7 +125,7 @@ Properties: `EnableDefaultOneShaderItems`, `OneShaderNamespace`, `OneShaderTarge
 `OneShaderDefines`, `OneShaderIncludeDirectories`. Shaders are recompiled only when they, a file they include, or the
 options change; the output is deterministic.
 
-## What works in 0.2
+## What works in 0.3
 
 - Vertex, pixel and compute shaders in modern HLSL (Shader Model 6 style, HLSL 2021): structs,
   functions, templates, member functions, inheritance and operator overloads, constant buffers,
@@ -137,6 +139,11 @@ options change; the output is deterministic.
   compute culling.
 - Buffer layouts and descriptor bindings follow the conventions DXC uses for Vulkan, so existing
   shaders keep their layouts.
+- Metal Shading Language and WGSL embedded next to the SPIR-V when selected with `OneShaderTargets`, with
+  their entry names and Metal binding indices in the generated code; the same corpus runs on Metal and in a
+  browser on WebGPU against the DXC reference.
+- Push constants (`[[vk::push_constant]]`) on every target: a Vulkan push-constant block, a Metal `constant T&` buffer
+  argument, a WebGPU uniform buffer; one set of bytes for all three.
 - Hot reload: generated classes carry the reflection they were built from, and
   `InterfaceCompatibility.Compare` tells whether a shader recompiled at run time still matches
   them (see the `RecursiveAI.OneShader` package).

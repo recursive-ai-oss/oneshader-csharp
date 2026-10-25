@@ -116,22 +116,24 @@ public sealed partial class WgslBackendTests
                     continue;
                 }
 
-                var resource = fe.Reflection.Resources.Single(r => WgslEmitterAccess.Sanitize(r.Name) == buffer);
-                Assert.NotNull(resource.Layout);
-                bool uniform = resource.Kind == ResourceKind.ConstantBuffer;
+                // A push-constant block is a uniform buffer in WGSL; its layout is in the push-constant list, not the resources.
+                var resource = fe.Reflection.Resources.SingleOrDefault(r => WgslEmitterAccess.Sanitize(r.Name) == buffer);
+                var layout = resource?.Layout ?? fe.Reflection.PushConstants.Single(c => WgslEmitterAccess.Sanitize(c.Name) == buffer).Layout;
+                Assert.NotNull(layout);
+                bool uniform = resource is null || resource.Kind == ResourceKind.ConstantBuffer;
                 var expected = new Dictionary<string, int[]>();
                 if (uniform)
                 {
-                    ExpectedOffsets(resource.Layout!, "", 0, expected);
+                    ExpectedOffsets(layout, "", 0, expected);
                 }
                 else
                 {
-                    int stride = (int)Math.Max(resource.Layout!.Size, 1);
-                    int align = (int)Math.Max(resource.Layout.Alignment, 1);
+                    int stride = (int)Math.Max(layout.Size, 1);
+                    int align = (int)Math.Max(layout.Alignment, 1);
                     stride = (stride + align - 1) / align * align;
                     foreach (int e in new[] { 0, 3 })
                     {
-                        ExpectedOffsets(resource.Layout, "[" + e + "]", e * stride, expected);
+                        ExpectedOffsets(layout, "[" + e + "]", e * stride, expected);
                     }
                 }
 

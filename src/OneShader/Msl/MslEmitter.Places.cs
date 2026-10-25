@@ -464,7 +464,7 @@ internal sealed partial class MslEmitter
 
     private readonly Dictionary<IrValue, Place> _places = [];
 
-    private static string SpaceOf(AddressSpace s) => s == AddressSpace.Workgroup ? "threadgroup" : s is AddressSpace.StorageBuffer ? "device" : s is AddressSpace.Uniform ? "constant" : "thread";
+    private static string SpaceOf(AddressSpace s) => s == AddressSpace.Workgroup ? "threadgroup" : s is AddressSpace.StorageBuffer ? "device" : s is AddressSpace.Uniform or AddressSpace.PushConstant ? "constant" : "thread";
 
     private Place PlaceOf(IrValue v)
     {

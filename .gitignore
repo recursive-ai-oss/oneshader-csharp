@@ -12,6 +12,7 @@
 !/src
 !/tests
 !/fuzz
+!/bench
 !/tools
 !/corpus
 !/docs

@@ -11,6 +11,10 @@
     <Project Path="tests/AotSmoke/AotSmoke.csproj" />
     <Project Path="tests/OneShader.Build.Tests/OneShader.Build.Tests.csproj" />
   </Folder>
+  <Folder Name="/bench/">
+    <Project Path="bench/OneShader.Bench/OneShader.Bench.csproj" />
+    <Project Path="bench/OneShader.Bench.Cli/OneShader.Bench.Cli.csproj" />
+  </Folder>
   <Folder Name="/fuzz/">
     <Project Path="fuzz/OneShader.Fuzz/OneShader.Fuzz.csproj" />
   </Folder>

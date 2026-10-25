@@ -75,6 +75,6 @@ internal static class Bi
 /// <summary>Storage classes.</summary>
 internal static class Sc
 {
-    public const uint UniformConstant = 0, Input = 1, Uniform = 2, Output = 3, Workgroup = 4, Private = 6, Function = 7,
+    public const uint UniformConstant = 0, Input = 1, Uniform = 2, Output = 3, Workgroup = 4, PushConstant = 9, Private = 6, Function = 7,
         Image = 11, StorageBuffer = 12;
 }

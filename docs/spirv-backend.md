@@ -15,6 +15,9 @@ options always give the same bytes. Code is in `src/OneShader/SpirV/`.
   have no SPIR-V matrix type: they are vectors and scalars, and their indices disappear.
 - **Buffer layout** types (offset-decorated structs, strided arrays) are separate SPIR-V types from the plain types
   used in registers. Loading or storing a whole struct or array to a buffer converts member by member.
+- **Push constants.** A `[[vk::push_constant]]` block is a `Block` struct in the `PushConstant` storage class with no
+  descriptor decorations. Its offsets follow the vector-relaxed std430 rules of a structured-buffer element (what DXC emits,
+  checked against it by `PushConstantTests`), not the constant-buffer rules.
 - **Resources.** A constant buffer is a `Block` struct in `Uniform`; a structured or byte-address buffer is a
   `Block` struct holding one runtime array in `StorageBuffer` (`NonWritable` when read-only). Access chains into
   a storage buffer get the leading `0` for that struct. Textures and samplers are separate variables combined

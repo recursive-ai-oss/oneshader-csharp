@@ -1,0 +1,1 @@
+compute/append_consume.hlsl	compute/append_consume.hlsl(32,5): error OSH5102: Metal has no way to ask a buffer for its length. Pass the element count in a constant buffer instead of using GetDimensions.

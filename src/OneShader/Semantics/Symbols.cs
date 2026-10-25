@@ -74,6 +74,12 @@ public static class SemanticCodes
     /// <summary>A constant buffer layout problem.</summary>
     public const string BadLayout = "OSH0332";
 
+    /// <summary>A push-constant block is declared in a way that cannot work, or an entry point uses two.</summary>
+    public const string BadPushConstant = "OSH0333";
+
+    /// <summary>A push-constant block is larger than the 128 bytes every Vulkan device guarantees.</summary>
+    public const string PushConstantSize = "OSH0334";
+
     /// <summary>An attribute is unknown or misused.</summary>
     public const string BadAttribute = "OSH0340";
 
@@ -184,6 +190,9 @@ internal sealed class ResourceDecl
     public int? ExplicitBinding { get; set; }
 
     public bool ExplicitFromVk { get; set; }
+
+    /// <summary>True for a <c>[[vk::push_constant]]</c> block: no descriptor, a struct laid out like a structured-buffer element.</summary>
+    public bool IsPushConstant { get; set; }
 
     /// <summary>Lower-case <c>[[vk::image_format]]</c> name of a storage texture, or null.</summary>
     public string? ImageFormat { get; set; }

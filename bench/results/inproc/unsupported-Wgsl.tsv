@@ -1,0 +1,3 @@
+3d/stage_io.hlsl	3d/stage_io.hlsl(54,17): error OSH5202: CalculateLevelOfDetail has no WGSL equivalent; compute the level from derivatives or pass it in.
+compute/append_consume.hlsl	compute/append_consume.hlsl(12,77): error OSH5202: Append and consume buffers are not available in WGSL; keep a counter in a separate RWStructuredBuffer and use InterlockedAdd.
+lang/resource_arrays.hlsl	lang/resource_arrays.hlsl(14,46): error OSH5202: Resource arrays are not available in WGSL (WebGPU has no binding arrays); declare 'Tables' as separate resources, or use a texture array (Texture2DArray) when the elements are textures of one size.

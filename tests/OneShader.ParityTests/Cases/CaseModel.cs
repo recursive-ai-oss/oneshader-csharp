@@ -180,6 +180,9 @@ public sealed class CaseModel
     /// <summary>Float images (targets and storage images): largest allowed <c>|a-b| / (1+|a|)</c> between two compilers. Zero means bit-exact.</summary>
     public double FloatTolerance { get; set; }
     public List<ResourceDecl> Resources { get; } = new();
+
+    /// <summary>Data expression of the push-constant block (see <see cref="DataGen"/>); null when the shader has none.</summary>
+    public string? Push { get; set; }
     public List<ExpectDecl> Expects { get; } = new();
 
     public bool IsCompute => Dispatches.Count > 0;
