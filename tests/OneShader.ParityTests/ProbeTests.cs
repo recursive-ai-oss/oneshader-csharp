@@ -19,6 +19,11 @@ public class ProbeTests
     {
         ToolGate.RequireDxc();
         ToolGate.RequireSpirvVal();
+        KnownGaps.Check(file, () => Run(file));
+    }
+
+    private static void Run(string file)
+    {
         string path = Path.Combine(Tools.CorpusDir, "probes", file);
         string[] head = File.ReadLines(path).ElementAt(1).Replace("// probe:", "", StringComparison.Ordinal).Trim().Split(' ');
         var stage = head[1] switch { "vs" => ShaderStage.Vertex, "ps" => ShaderStage.Pixel, _ => ShaderStage.Compute };

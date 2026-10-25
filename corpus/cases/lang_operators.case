@@ -1,0 +1,5 @@
+# Member operator overloads on small structs.
+case lang_operators
+shader lang/operators.hlsl
+dispatch CSMain 1 1 1
+storage 0 0 out size=48

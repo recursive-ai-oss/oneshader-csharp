@@ -44,6 +44,12 @@ with `dxc -spirv -fspv-target-env=vulkan1.2`, and give every resource an explici
 | `compute/histogram.hlsl` | Luminance histogram with group-shared atomics into a read-write buffer | written for this repository | MIT OR Apache-2.0 |
 | `compute/image_filter.hlsl` | Tiled 3x3 sharpen on a `RWTexture2D` through group-shared memory | written for this repository | MIT OR Apache-2.0 |
 | `compute/particles.hlsl` | Per-particle integration over a `RWStructuredBuffer` of structs | written for this repository | MIT OR Apache-2.0 |
+| `lang/templates.hlsl` | Function and struct templates: deduced and explicit arguments, value parameters, defaults | written for this repository | MIT OR Apache-2.0 |
+| `lang/members.hlsl` | Member functions, this, static members, calls on buffer elements | written for this repository | MIT OR Apache-2.0 |
+| `lang/inheritance.hlsl` | Struct inheritance: inherited members, hiding, base-typed parameters, buffers of derived structs | written for this repository | MIT OR Apache-2.0 |
+| `lang/operators.hlsl` | Member operator overloads: arithmetic, bitwise, comparison, subscript, call | written for this repository | MIT OR Apache-2.0 |
+| `lang/sizeof_static.hlsl` | sizeof constants and non-const static locals | written for this repository | MIT OR Apache-2.0 |
+| `lang/resource_locals.hlsl` | Resource-typed locals and parameters resolved at compile time | written for this repository | MIT OR Apache-2.0 |
 
 ## Cases
 
@@ -113,3 +119,9 @@ for `expect-error` probes, a diagnostic). Each carries the same SPDX header and 
 | `probes/packoffset_overlap.hlsl` | Two members packed at the same offset: DXC reports an error; the candidate accepts it and emits invalid SPIR-V. |
 | `probes/resource_parameters.hlsl` | A texture and a sampler passed to a helper function; the candidate asks for [forceinline]. |
 | `probes/structured_float3.hlsl` | StructuredBuffer<float3>: DXC uses a 16-byte element stride; the candidate emits 12, which spirv-val rejects. |
+
+## Known gaps
+
+`known-gaps.txt` lists the cases and probes the compiler does not pass yet, one `NAME: what is wrong` line each. The
+tests report a listed entry that fails as skipped with that reason, and fail a listed entry that now passes until its
+line is deleted, so the list only shrinks. Failures of unlisted entries fail the run.

@@ -148,6 +148,22 @@ internal sealed partial class Lowerer
             return v;
         }
 
+        if (from is StructType derived && to is StructType && derived.IsDerivedFrom((StructType)to))
+        {
+            // Passing a derived struct where its base is expected copies the base part, which is the first member.
+            IrValue cur = v;
+            for (var s = derived; s.BaseStruct is { } bs; s = bs)
+            {
+                cur = Extract(cur, bs, 0);
+                if (bs.Equals(to))
+                {
+                    break;
+                }
+            }
+
+            return cur;
+        }
+
         var fs = from.ScalarElement;
         var ts = to.ScalarElement;
         if (fs is null || ts is null)
@@ -274,12 +290,23 @@ internal sealed partial class Lowerer
     /// <summary>The pointer to a resource variable or an element of a resource array.</summary>
     private IrValue? ResourcePointer(Expression e)
     {
+        e = UnwrapParen(e);
         switch (e)
         {
             case ParenthesizedExpression p:
                 return ResourcePointer(p.Inner);
             case NameExpression { Info.Symbol: VariableSymbol v }:
-                return VarPointer(v);
+            {
+                var vp = VarPointer(v);
+                if (vp is null && v.Kind == VarKind.Local)
+                {
+                    _diag.Error(SemanticCodes.BadResource, "The resource variable '" + v.Name + "' is used before it is assigned a resource. Initialize it where it is declared, or assign it on every path before this use.", e.Span);
+                    return Constant.Zero(ScalarType.Int);
+                }
+
+                return vp;
+            }
+
             case IndexExpression ix when ix.Target.Type is ArrayType at:
             {
                 var basePtr = ResourcePointer(ix.Target);
@@ -298,10 +325,11 @@ internal sealed partial class Lowerer
 
     private IrValue? Address(Expression e)
     {
+        e = UnwrapParen(e);
         switch (e)
         {
-            case ParenthesizedExpression p:
-                return Address(p.Inner);
+            case ThisExpression { Info.Symbol: VariableSymbol thisVar }:
+                return VarPointer(thisVar);
             case NameExpression { Info.Symbol: VariableSymbol v } when v.Kind != VarKind.Resource:
                 return VarPointer(v);
             case MemberAccessExpression m:
@@ -391,6 +419,11 @@ internal sealed partial class Lowerer
 
     private IrValue Rv(Expression e)
     {
+        if (e.Info?.Rewritten is { } rewritten)
+        {
+            return Rv(rewritten);
+        }
+
         if (e.Info?.Const is { } cv && e.Type is ScalarType st)
         {
             return ConstOf(cv, st);
@@ -422,6 +455,8 @@ internal sealed partial class Lowerer
         {
             case ParenthesizedExpression p:
                 return Rv(p.Inner);
+            case ThisExpression { Info.Symbol: VariableSymbol thisVar }:
+                return _b.Load(VarPointer(thisVar)!);
             case NameExpression n:
             {
                 if (n.Info?.Symbol is VariableSymbol v)
@@ -429,6 +464,12 @@ internal sealed partial class Lowerer
                     var ptr = VarPointer(v);
                     if (ptr is null)
                     {
+                        if (_inStaticInit)
+                        {
+                            _diag.Error(SemanticCodes.BadVariable, "The initializer of a static variable cannot use '" + v.Name + "': it runs once at shader start, before any local variable or parameter exists. Use constants and globals, or assign the value in the function.", e.Span);
+                            return Constant.Zero(e.Type!);
+                        }
+
                         Fail("The variable '" + v.Name + "' has no storage here.", e.Span);
                         return Constant.Zero(e.Type!);
                     }
@@ -504,6 +545,11 @@ internal sealed partial class Lowerer
     private IrValue RvBinary(BinaryExpression b)
     {
         var info = b.Info!;
+        if (info.Function is not null)
+        {
+            return CallUser(b.Span, info.Function, info.ThisArg, info.Args ?? [b.Right]);
+        }
+
         var operand = info.OperandType!;
         if (b.Operator is BinaryOperator.LogicalAnd or BinaryOperator.LogicalOr && operand is ScalarType && !IsPure(b.Right))
         {
@@ -577,6 +623,12 @@ internal sealed partial class Lowerer
     private IrValue RvAssign(AssignmentExpression a)
     {
         var tt = a.Target.Type!;
+        if (tt is ResourceType or SamplerType && UnwrapParen(a.Target) is NameExpression { Info.Symbol: VariableSymbol { Kind: VarKind.Local } resourceVar })
+        {
+            BindResourceLocal(resourceVar, a.Value, a.Span);
+            return Constant.Zero(ScalarType.Int);
+        }
+
         IrValue value;
         // Texture writes: tex[coord] = value.
         if (UnwrapParen(a.Target) is IndexExpression { Target.Type: ResourceType { IsTexture: true } rt } tix)
@@ -617,12 +669,21 @@ internal sealed partial class Lowerer
 
     private static Expression UnwrapParen(Expression e)
     {
-        while (e is ParenthesizedExpression p)
+        while (true)
         {
-            e = p.Inner;
+            if (e is ParenthesizedExpression p)
+            {
+                e = p.Inner;
+            }
+            else if (e.Info?.Rewritten is { } r)
+            {
+                e = r;
+            }
+            else
+            {
+                return e;
+            }
         }
-
-        return e;
     }
 
     private void Store(Expression target, IrValue value)
@@ -726,6 +787,7 @@ internal sealed partial class Lowerer
 
     private static bool IsPure(Expression e)
     {
+        e = UnwrapParen(e);
         switch (e)
         {
             case LiteralExpression or NameExpression:
@@ -832,6 +894,11 @@ internal sealed partial class Lowerer
 
     private IrValue RvIndex(IndexExpression ix)
     {
+        if (ix.Info?.Function is not null)
+        {
+            return CallUser(ix.Span, ix.Info.Function, ix.Info.ThisArg, ix.Info.Args ?? [ix.Index]);
+        }
+
         var tt = ix.Target.Type!;
         if (tt is ResourceType rt)
         {

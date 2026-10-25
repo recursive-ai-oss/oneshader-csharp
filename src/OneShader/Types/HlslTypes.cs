@@ -504,6 +504,23 @@ public sealed class StructType : HlslType
     /// <summary>The members in declaration order.</summary>
     public IReadOnlyList<StructField> Fields => _fields;
 
+    /// <summary>The base struct of an inheriting struct, which is also its first member; null otherwise.</summary>
+    internal StructType? BaseStruct { get; set; }
+
+    /// <summary>True when <paramref name="ancestor"/> is this struct's base, or the base of its base, and so on.</summary>
+    internal bool IsDerivedFrom(StructType ancestor)
+    {
+        for (var b = BaseStruct; b is not null; b = b.BaseStruct)
+        {
+            if (ReferenceEquals(b, ancestor))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <inheritdoc/>
     public override TypeKind Kind => TypeKind.Struct;
 

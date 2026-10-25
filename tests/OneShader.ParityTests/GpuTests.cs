@@ -44,18 +44,21 @@ public class GpuParityTests
     {
         ToolGate.RequireDxc();
         var ctx = Gpu.RequireOrSkip();
-        ParityReport report;
-        try
+        KnownGaps.Check(name, () =>
         {
-            report = Parity.Compare(ctx, Corpus.Load(name), ParityCompilers.Reference, ParityCompilers.Candidate);
-        }
-        catch (System.Exception ex)
-        {
-            ParityTable.Record(name, "vs-dxc", ex);
-            throw;
-        }
-        ParityTable.Record(name, "vs-dxc", report);
-        Assert.True(report.Failures.Count == 0, report.ToString());
+            ParityReport report;
+            try
+            {
+                report = Parity.Compare(ctx, Corpus.Load(name), ParityCompilers.Reference, ParityCompilers.Candidate);
+            }
+            catch (System.Exception ex)
+            {
+                ParityTable.Record(name, "vs-dxc", ex);
+                throw;
+            }
+            ParityTable.Record(name, "vs-dxc", report);
+            Assert.True(report.Failures.Count == 0, report.ToString());
+        });
     }
 
     [Theory]
@@ -66,18 +69,21 @@ public class GpuParityTests
         var ctx = Gpu.RequireOrSkip();
         var model = Corpus.Load(name);
         Assert.NotEmpty(model.Expects);
-        ParityReport report;
-        try
+        KnownGaps.Check(name, () =>
         {
-            report = Parity.CheckExpected(ctx, model, ParityCompilers.Candidate);
-        }
-        catch (System.Exception ex)
-        {
-            ParityTable.Record(name, "vs-cpu", ex);
-            throw;
-        }
-        ParityTable.Record(name, "vs-cpu", report);
-        Assert.True(report.Failures.Count == 0, report.ToString());
+            ParityReport report;
+            try
+            {
+                report = Parity.CheckExpected(ctx, model, ParityCompilers.Candidate);
+            }
+            catch (System.Exception ex)
+            {
+                ParityTable.Record(name, "vs-cpu", ex);
+                throw;
+            }
+            ParityTable.Record(name, "vs-cpu", report);
+            Assert.True(report.Failures.Count == 0, report.ToString());
+        });
     }
 }
 

@@ -2,7 +2,7 @@
 
 A HLSL compiler for .NET with no dependencies beyond the base class library. Modern HLSL (Shader Model 6 style) for vertex, pixel and compute stages goes in; SPIR-V, MSL and WGSL come out, each with reflection. An MSBuild task and source generator compile `*.hlsl` files during `dotnet build`, report errors on the HLSL line, and generate matching C# structs and binding code.
 
-**Status: early development.** Nothing is usable yet.
+**Status: preview (0.1).** Vertex, pixel and compute shaders compile to SPIR-V for Vulkan, with reflection and build-time C# bindings. Metal and WebGPU output, resource arrays and some HLSL 2021 features are not there yet; see the package READMEs in `src/OneShader` and `src/OneShader.Build`, and `CHANGELOG.md`.
 
 ## Packages
 

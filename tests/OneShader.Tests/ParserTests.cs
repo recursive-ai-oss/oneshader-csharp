@@ -17,7 +17,7 @@ internal static class CorpusFiles
         Path.GetFullPath(Path.Combine(Path.GetDirectoryName(here)!, "..", "..", "corpus"));
 
     /// <summary>The 2D graphics shaders: the main set and the renderer set.</summary>
-    public static IEnumerable<string> Graphics() => Shaders("2d").Concat(Shaders("2d/renderer"));
+    public static IEnumerable<string> Graphics() => Shaders("2d").Concat(Shaders("2d/renderer")).Concat(Shaders("lang"));
 
     public static IEnumerable<string> Shaders(string subdir) =>
         Directory.GetFiles(Path.Combine(Root(), subdir), "*.hlsl").OrderBy(p => p, StringComparer.Ordinal);

@@ -3,14 +3,13 @@
   <PropertyGroup>
     <AssemblyName>OneShader</AssemblyName>
     <PackageId>$(OneShaderLibraryPackageId)</PackageId>
-    <Description>A BCL-only HLSL compiler for .NET: SPIR-V, MSL and WGSL output with reflection.</Description>
-    <PackageTags>hlsl;shader;spirv;msl;wgsl;compiler</PackageTags>
-    <PackageProjectUrl>https://github.com/recursive-ai-oss/oneshader-csharp</PackageProjectUrl>
+    <Description>A HLSL compiler for .NET written in C# with no dependencies: vertex, pixel and compute shaders to SPIR-V for Vulkan, with reflection. Runtime compiler and the support types used by RecursiveAI.OneShader.Build.</Description>
+    <PackageTags>hlsl;shader;shaders;spirv;vulkan;compiler;gpu;reflection</PackageTags>
     <PackageLicenseExpression>MIT OR Apache-2.0</PackageLicenseExpression>
     <IsPackable>true</IsPackable>
   </PropertyGroup>
   <ItemGroup>
-    <None Include="../../README.md" Pack="true" PackagePath="/" />
+    <None Include="README.md" Pack="true" PackagePath="/" />
     <InternalsVisibleTo Include="OneShader.Tests" />
   </ItemGroup>
 </Project>

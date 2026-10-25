@@ -1,14 +1,14 @@
 <Project>
   <!-- Package identity and version: the only place they are defined. -->
   <PropertyGroup>
-    <OneShaderVersion>0.1.0-dev</OneShaderVersion>
+    <OneShaderVersion>0.2.0-dev</OneShaderVersion>
     <OneShaderLibraryPackageId>RecursiveAI.OneShader</OneShaderLibraryPackageId>
     <OneShaderBuildPackageId>RecursiveAI.OneShader.Build</OneShaderBuildPackageId>
     <RootNamespace>OneShader</RootNamespace>
     <Version>$(OneShaderVersion)</Version>
     <Authors>Recursive AI, LLC</Authors>
     <Company>Recursive AI, LLC</Company>
-    <Copyright>Copyright (c) Recursive AI, LLC</Copyright>
+    <Copyright>Copyright © Recursive AI, LLC</Copyright>
     <PackageLicenseExpression>MIT OR Apache-2.0</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>

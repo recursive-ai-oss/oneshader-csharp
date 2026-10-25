@@ -220,6 +220,11 @@ internal static class TypeOps
             return Conv.Exact;
         }
 
+        if (from is StructType fst && to is StructType && fst.IsDerivedFrom((StructType)to))
+        {
+            return Conv.Ok;
+        }
+
         if (from is EnumType fe && to.ScalarElement is not null)
         {
             return Classify(fe.Underlying, to);

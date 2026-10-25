@@ -192,18 +192,41 @@ internal sealed partial class Checker
             return HlslType.Error;
         }
 
-        if (c.TemplateArguments.Count > 0)
+        string name = ne.Name.Last.Text;
+        if (_fn?.Owner is { } owner && _fnScope is not null && ne.Name.Parts.Count == 1 && !ne.Name.IsGlobal
+            && _scope.LookupUpTo(name, _fnScope) is null && FindMethodGroup(owner, name, out var holder) is { } mg)
         {
-            CheckArgs(c);
-            Err(SemanticCodes.Unsupported, "Calling templates with explicit template arguments is not supported yet.", c.Span);
-            return HlslType.Error;
+            // A call to a sibling member function: the object is 'this'.
+            var memberArgs = CheckArgs(c);
+            Expression? recv = null;
+            if (_fn.ThisSymbol is not null)
+            {
+                var self = new ThisExpression(ne.Span);
+                CheckExpr(self);
+                recv = BuildBaseAccess(self, owner, holder, ne.Span);
+            }
+
+            return CallOverloaded(c.Span, name, mg, c.Arguments, memberArgs, info, c.TemplateArguments, recv);
         }
 
         var sym = LookupQualified(ne.Name, out _);
         var at = CheckArgs(c);
-        string name = ne.Name.Last.Text;
+        if (c.TemplateArguments.Count > 0 && sym is not FunctionGroup)
+        {
+            Err(SemanticCodes.BadOperator, "'" + ne.Name + "' is not a function template, so it takes no template arguments.", c.Span);
+            return HlslType.Error;
+        }
+
         switch (sym)
         {
+            case VariableSymbol { Type: StructType callable } when FindMethodGroup(callable, "operator()", out _) is not null:
+            {
+                CheckExpr(ne);
+                var cg = FindMethodGroup(callable, "operator()", out var ch)!;
+                var obj = BuildBaseAccess(ne, callable, ch, ne.Span);
+                return CallOverloaded(c.Span, "operator()", cg, c.Arguments, at, info, null, obj);
+            }
+
             case FunctionGroup g:
                 return CallUser(c, ne, g, at, info);
             case TypeSymbol ts:
@@ -228,150 +251,8 @@ internal sealed partial class Checker
 
     // ------------------------------------------------------------ user functions
 
-    private HlslType CallUser(CallExpression c, NameExpression ne, FunctionGroup g, HlslType[] at, ExprInfo info)
-    {
-        string name = ne.Name.Last.Text;
-        if (AnyError(at))
-        {
-            return OverloadReturn(g);
-        }
-
-        var candidates = new List<FunctionSymbol>();
-        foreach (var f in g.Overloads)
-        {
-            int required = 0;
-            foreach (var p in f.Params)
-            {
-                if (p.Default is null)
-                {
-                    required++;
-                }
-            }
-
-            if (at.Length >= required && at.Length <= f.Params.Count)
-            {
-                candidates.Add(f);
-            }
-        }
-
-        if (candidates.Count == 0)
-        {
-            var counts = new List<string>();
-            foreach (var f in g.Overloads)
-            {
-                counts.Add(Num(f.Params.Count));
-            }
-
-            string expected = g.Overloads.Count == 1
-                ? "expects " + Num(g.Overloads[0].Params.Count) + " argument" + (g.Overloads[0].Params.Count == 1 ? "" : "s")
-                : "takes " + string.Join(" or ", counts) + " arguments";
-            Err(SemanticCodes.ArgumentCount, "The function '" + name + "' " + expected + " but the call passes " + Num(at.Length) + ".", c.Span);
-            return OverloadReturn(g);
-        }
-
-        FunctionSymbol? best = null;
-        long bestCost = long.MaxValue;
-        bool tie = false;
-        foreach (var f in candidates)
-        {
-            long cost = 0;
-            for (int i = 0; i < at.Length && cost != long.MaxValue; i++)
-            {
-                var p = f.Params[i];
-                int pc = p.IsOut && !p.IsIn
-                    ? TypeOps.Cost(p.Type, at[i])
-                    : TypeOps.Cost(at[i], p.Type);
-                if (p.IsOut && p.IsIn && TypeOps.Cost(p.Type, at[i]) == int.MaxValue)
-                {
-                    pc = int.MaxValue;
-                }
-
-                if (pc == int.MaxValue)
-                {
-                    cost = long.MaxValue;
-                }
-                else
-                {
-                    cost += pc;
-                }
-            }
-
-            if (cost == long.MaxValue)
-            {
-                continue;
-            }
-
-            if (cost < bestCost)
-            {
-                best = f;
-                bestCost = cost;
-                tie = false;
-            }
-            else if (cost == bestCost)
-            {
-                tie = true;
-            }
-        }
-
-        if (best is null)
-        {
-            var sb = new System.Text.StringBuilder();
-            sb.Append("No overload of '").Append(name).Append("' accepts (");
-            for (int i = 0; i < at.Length; i++)
-            {
-                sb.Append(i > 0 ? ", " : "").Append(at[i]);
-            }
-
-            sb.Append("). Candidates: ");
-            for (int i = 0; i < g.Overloads.Count; i++)
-            {
-                sb.Append(i > 0 ? "; " : "").Append(Signature(g.Overloads[i]));
-            }
-
-            sb.Append('.');
-            Err(SemanticCodes.NoOverload, sb.ToString(), c.Span);
-            return OverloadReturn(g);
-        }
-
-        if (tie)
-        {
-            Err(SemanticCodes.AmbiguousCall, "The call to '" + name + "' is ambiguous: more than one overload converts the arguments equally well. Cast an argument to the exact parameter type.", c.Span);
-        }
-
-        var target = best.Definition ?? best;
-        var ptypes = new HlslType[at.Length];
-        for (int i = 0; i < at.Length; i++)
-        {
-            var p = best.Params[i];
-            ptypes[i] = p.Type;
-            if (p.IsOut)
-            {
-                string why = WriteBlocker(c.Arguments[i]);
-                if (why.Length > 0)
-                {
-                    Err(SemanticCodes.NotAssignable, "Argument " + Num(i + 1) + " of '" + name + "' is an " + ((p.Mods & Modifiers.In) != 0 ? "inout" : "out") + " parameter and must be a variable: " + why, c.Arguments[i].Span);
-                }
-            }
-
-            if (p.IsIn && !(p.IsOut && !p.IsIn))
-            {
-                CheckConvertible(c.Arguments[i], p.Type);
-            }
-        }
-
-        if (target.InProgress || ReferenceEquals(target, _fn))
-        {
-            Err(SemanticCodes.BadFunction, "The function '" + name + "' calls itself; HLSL does not allow recursion. Rewrite it as a loop.", c.Span);
-        }
-
-        info.Function = best;
-        info.ParamTypes = ptypes;
-        best.Called = true;
-        _fn?.Callees.Add(best);
-        return best.ReturnType;
-    }
-
-    private static HlslType OverloadReturn(FunctionGroup g) => HlslType.Error;
+    private HlslType CallUser(CallExpression c, NameExpression ne, FunctionGroup g, HlslType[] at, ExprInfo info) =>
+        CallOverloaded(c.Span, ne.Name.Last.Text, g, c.Arguments, at, info, c.TemplateArguments, null);
 
     private static string Signature(FunctionSymbol f)
     {
