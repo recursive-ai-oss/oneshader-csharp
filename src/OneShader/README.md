@@ -5,7 +5,7 @@
 with reflection: inputs and outputs, resource bindings, buffer layouts and thread-group sizes.
 NativeAOT and trimming are supported.
 
-**Preview.** Version 0.2 targets Vulkan (SPIR-V). The API may still change before 1.0.
+**Preview.** Version 0.3 compiles to SPIR-V (Vulkan), Metal Shading Language and WGSL (WebGPU). The API may still change before 1.0.
 
 Most projects want [RecursiveAI.OneShader.Build](https://www.nuget.org/packages/RecursiveAI.OneShader.Build),
 which compiles `*.hlsl` during `dotnet build` and generates C# bindings. This package is the
@@ -70,7 +70,7 @@ set, binding, kind, array size and stage visibility, the entry points present an
 sizes. Edits to function bodies, new entry points, and resources that become visible to fewer stages are compatible.
 `ShaderCompiler.Compile` can be called from several threads at once. `samples/HotReload` is a complete console loop.
 
-## What works in 0.2
+## What works in 0.3
 
 - Vertex, pixel and compute shaders in modern HLSL (HLSL 2021): structs, functions, constant
   buffers, textures and samplers, structured and byte-address buffers, storage images,
@@ -78,6 +78,9 @@ sizes. Edits to function bodies, new entry points, and resources that become vis
 - SPIR-V for Vulkan 1.2, validated with `spirv-val`, and checked by running each shader in its
   test corpus on a GPU against the same shader compiled by DXC.
 - Buffer layouts and descriptor bindings follow the conventions DXC uses for Vulkan.
+- Metal Shading Language (`CompileTarget.Msl`, Metal 2.4+) and WGSL (`CompileTarget.Wgsl`) with the same buffer byte
+  layouts as the SPIR-V, checked with Apple's `metal` compiler and `naga`, and by running the test corpus on Metal and in a
+  browser on WebGPU against the DXC reference.
 - Push constants (`[[vk::push_constant]]` on a struct global or `ConstantBuffer<T>`): a `PushConstant` block in SPIR-V with
   DXC's offsets, a `constant T&` argument in MSL, a uniform buffer in WGSL; `ShaderReflection.PushConstants` lists the
   layout, the stages and where each target takes the bytes.

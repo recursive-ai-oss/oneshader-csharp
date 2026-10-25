@@ -125,7 +125,7 @@ Properties: `EnableDefaultOneShaderItems`, `OneShaderNamespace`, `OneShaderTarge
 `OneShaderDefines`, `OneShaderIncludeDirectories`. Shaders are recompiled only when they, a file they include, or the
 options change; the output is deterministic.
 
-## What works in 0.2
+## What works in 0.3
 
 - Vertex, pixel and compute shaders in modern HLSL (Shader Model 6 style, HLSL 2021): structs,
   functions, templates, member functions, inheritance and operator overloads, constant buffers,
@@ -139,6 +139,9 @@ options change; the output is deterministic.
   compute culling.
 - Buffer layouts and descriptor bindings follow the conventions DXC uses for Vulkan, so existing
   shaders keep their layouts.
+- Metal Shading Language and WGSL embedded next to the SPIR-V when selected with `OneShaderTargets`, with
+  their entry names and Metal binding indices in the generated code; the same corpus runs on Metal and in a
+  browser on WebGPU against the DXC reference.
 - Push constants (`[[vk::push_constant]]`) on every target: a Vulkan push-constant block, a Metal `constant T&` buffer
   argument, a WebGPU uniform buffer; one set of bytes for all three.
 - Hot reload: generated classes carry the reflection they were built from, and
