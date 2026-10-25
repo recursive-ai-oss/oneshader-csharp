@@ -16,6 +16,8 @@ Versions follow [Semantic Versioning](https://semver.org/); before 1.0 the API m
 - Overlapping `packoffset` members are an error (OSH0332) instead of invalid SPIR-V.
 - `ShaderCompiler.Compile` turns an unexpected internal exception into error OSH7000 on line 1 of the file instead of throwing; the build task reports internal errors at line 1 as well.
 
+- Hot reload support: `CompileResult.Files` lists the files a compile read (for file watchers), `ShaderCompiler.CompileFile` compiles from disk and reports an unreadable file as diagnostic OSH0003, and `InterfaceCompatibility.Compare` tells whether a recompiled shader still matches the generated C# (constant-buffer offsets and types, vertex inputs, bindings, entry points, thread-group sizes), listing each difference. Generated shader classes gain a `Reflection` member with the reflection they were generated from. Concurrent `Compile` calls are tested to give the same bytes as serial ones. `samples/HotReload` shows the loop.
+
 ## [0.1.0-preview.1]
 
 First preview.

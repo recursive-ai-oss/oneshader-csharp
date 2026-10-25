@@ -83,6 +83,12 @@ internal sealed class ShaderFile
     public List<ResourceNode> Resources = new List<ResourceNode>();
     public List<EntryNode> Entries = new List<EntryNode>();
 
+    /// <summary>
+    /// The reflection records of the file as written (header line included, build bookkeeping excluded). Generated code embeds it so a
+    /// program can compare a recompiled shader against the interface it was built with.
+    /// </summary>
+    public string ReflectionText = "";
+
     /// <summary>SPIR-V blobs by entry point name.</summary>
     public Dictionary<string, byte[]> SpirV = new Dictionary<string, byte[]>(StringComparer.Ordinal);
 
@@ -120,6 +126,8 @@ internal sealed class ShaderFile
         }
 
         var recs = new List<Rec>();
+        var reflection = new StringBuilder("oneshader-reflection 1\n");
+        bool inReflection = true;
         for (int i = 1; i < lines.Length; i++)
         {
             string line = lines[i].TrimEnd('\r');
@@ -128,8 +136,21 @@ internal sealed class ShaderFile
                 continue;
             }
 
-            recs.Add(ParseLine(line, i + 1));
+            var rec = ParseLine(line, i + 1);
+            recs.Add(rec);
+            if (rec.Depth == 0)
+            {
+                // Records the compiler's reflection writer produces; the rest is build bookkeeping.
+                inReflection = rec.Keyword == "source" || rec.Keyword == "targets" || rec.Keyword == "resource" || rec.Keyword == "entry";
+            }
+
+            if (inReflection)
+            {
+                reflection.Append(line).Append('\n');
+            }
         }
+
+        ReflectionText = reflection.ToString();
 
         int pos = 0;
         while (pos < recs.Count)

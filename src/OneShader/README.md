@@ -45,6 +45,31 @@ if (result.Success)
 Errors are returned as diagnostics with file, line and column, never thrown. Includes can come from
 disk or from memory through `CompileOptions.IncludeResolver`. Output is deterministic.
 
+## Hot reload
+
+During development, watch the HLSL file, recompile it with the runtime API and swap the new SPIR-V in, as long as the
+interface the C# was built against has not changed. Projects using the build package get that interface as
+`Shaders.Sprite.Reflection` (generated from `Sprite.hlsl`).
+
+```csharp
+CompileResult result = ShaderCompiler.CompileFile("Shaders/Sprite.hlsl");   // diagnostics, not exceptions
+watcher.Watch(result.Files);                                              // the file and its #includes, even after an error
+
+if (!result.Success) { Print(result.Diagnostics); return; }                // keep running the last good shader
+
+CompatibilityReport report = InterfaceCompatibility.Compare(Shaders.Sprite.Reflection, result.Reflection!);
+if (report.IsCompatible)
+    renderer.Replace(result.Find("PSMain", CompileTarget.SpirV)!.Data);
+else
+    Console.WriteLine(report);   // "Frame.Tint moved from offset 64 to 80" ... "Rebuild the project ..."
+```
+
+Compatible means everything the generated C# relies on is unchanged: constant-buffer and structured-buffer layouts
+(member offsets, types, array and matrix strides, sizes), vertex input locations, formats, offsets and stride, resource
+set, binding, kind, array size and stage visibility, the entry points present and their stages, and compute thread-group
+sizes. Edits to function bodies, new entry points, and resources that become visible to fewer stages are compatible.
+`ShaderCompiler.Compile` can be called from several threads at once. `samples/HotReload` is a complete console loop.
+
 ## What works in 0.1
 
 - Vertex, pixel and compute shaders in modern HLSL (HLSL 2021): structs, functions, constant

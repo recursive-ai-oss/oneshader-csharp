@@ -195,6 +195,8 @@ internal sealed class CSharpWriter
     {
         var f = _file;
         _topNames.Add("Bindings");
+        _topNames.Add("Reflection");
+        _topNames.Add("ReflectionData");
         _topNames.Add(_className);
         foreach (var e in f.Entries)
         {
@@ -270,9 +272,38 @@ internal sealed class CSharpWriter
             EmitEntry(e);
         }
 
+        Line("");
+        EmitReflection();
         _indent--;
         Line("}");
         return _sb.ToString();
+    }
+
+    // The reflection the C# above was generated from, as data in the assembly (no I/O). A program that recompiles the shader
+    // at run time compares a fresh reflection with this one before swapping in the new code. Nothing here runs unless
+    // Reflection is read, so an AOT build that never asks drops the parser along with it.
+    private void EmitReflection()
+    {
+        EmitBytes("ReflectionData", new UTF8Encoding(false).GetBytes(_file.ReflectionText));
+        Line("");
+        Line("private static global::OneShader.Reflection.ShaderReflection? s_reflection;");
+        Line("");
+        Line("/// <summary>The reflection this class was generated from; parsed on first use.</summary>");
+        Line("public static global::OneShader.Reflection.ShaderReflection Reflection => s_reflection ??= ParseReflection();");
+        Line("");
+        Line("private static global::OneShader.Reflection.ShaderReflection ParseReflection()");
+        Line("{");
+        _indent++;
+        Line("if (!global::OneShader.Reflection.ReflectionFormat.TryRead(global::System.Text.Encoding.UTF8.GetString(ReflectionData), out var model, out var error) || model is null)");
+        Line("{");
+        _indent++;
+        Line("throw new global::System.InvalidOperationException(\"The embedded shader reflection is unreadable (\" + error + \"). Rebuild the project.\");");
+        _indent--;
+        Line("}");
+        Line("");
+        Line("return model;");
+        _indent--;
+        Line("}");
     }
 
     private void Separator(ref bool first)
