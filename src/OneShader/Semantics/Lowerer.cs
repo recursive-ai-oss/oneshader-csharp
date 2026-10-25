@@ -453,6 +453,15 @@ internal sealed partial class Lowerer
         var body = _fns[bodySym];
         var wrapper = new IrFunction(UniqueFunctionName(bodySym.Name + "_entry"), HlslType.Void) { Span = bodySym.Span };
         // The wrapper carries the entry point's name; make that name available by renaming it after creation.
+        // Another overload (or a helper) may hold the name already; the entry point's name is the one that must stay as written.
+        foreach (var other in _mod.Functions)
+        {
+            if (other.Name == bodySym.Name && !ReferenceEquals(other, body))
+            {
+                other.Name = UniqueFunctionName(bodySym.Name + "_overload");
+            }
+        }
+
         wrapper.Name = bodySym.Name;
         body.Name = UniqueFunctionName(bodySym.Name + "_body");
         _mod.Functions.Add(wrapper);
