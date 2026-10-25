@@ -5,6 +5,8 @@ Versions follow [Semantic Versioning](https://semver.org/); before 1.0 the API m
 
 ## [Unreleased]
 
+- New WGSL target (`CompileTarget.Wgsl`): vertex, fragment and compute entry points as WGSL text for WebGPU, with the same buffer byte layouts as the SPIR-V target. See docs/wgsl-backend.md for what is not available.
+
 ## [0.2.0-preview.1]
 
 - Optimizer, on by default (`CompileOptions.Optimize`): inlining, SSA promotion, constant folding, common-subexpression and dead-code elimination, control-flow simplification. SPIR-V is about 38% smaller than before and close to DXC's size.
