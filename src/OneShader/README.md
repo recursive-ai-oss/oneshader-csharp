@@ -78,6 +78,9 @@ sizes. Edits to function bodies, new entry points, and resources that become vis
 - SPIR-V for Vulkan 1.2, validated with `spirv-val`, and checked by running each shader in its
   test corpus on a GPU against the same shader compiled by DXC.
 - Buffer layouts and descriptor bindings follow the conventions DXC uses for Vulkan.
+- Push constants (`[[vk::push_constant]]` on a struct global or `ConstantBuffer<T>`): a `PushConstant` block in SPIR-V with
+  DXC's offsets, a `constant T&` argument in MSL, a uniform buffer in WGSL; `ShaderReflection.PushConstants` lists the
+  layout, the stages and where each target takes the bytes.
 
 ## Known limits
 

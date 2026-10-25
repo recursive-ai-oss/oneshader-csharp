@@ -60,6 +60,18 @@ public static class ReflectionFormat
             }
         }
 
+        foreach (var p in model.PushConstants)
+        {
+            Line(sb, 0, "push", ("name", Q(p.Name)), ("stages", Stages(p.Stages)));
+            foreach (var s in p.Slots)
+            {
+                Line(sb, 1, "slot", ("target", s.Target.ToString()), ("set", N(s.Set)), ("binding", N(s.Binding)));
+            }
+
+            Line(sb, 1, "layout");
+            WriteType(sb, p.Layout, 2, 0);
+        }
+
         foreach (var e in model.EntryPoints)
         {
             Line(
@@ -83,6 +95,11 @@ public static class ReflectionFormat
             foreach (var u in e.UsedResources)
             {
                 Line(sb, 1, "uses", ("name", Q(u)));
+            }
+
+            if (e.PushConstant is not null)
+            {
+                Line(sb, 1, "pushuse", ("name", Q(e.PushConstant)));
             }
         }
 
@@ -284,6 +301,7 @@ public static class ReflectionFormat
             var targets = new List<CompileTarget>();
             var resources = new List<ResourceInfo>();
             var entries = new List<EntryPointInfo>();
+            var pushes = new List<PushConstantInfo>();
             while (_pos < _nodes.Count)
             {
                 var n = _nodes[_pos];
@@ -304,12 +322,44 @@ public static class ReflectionFormat
 
                         break;
                     case "resource": resources.Add(ReadResource(n)); break;
+                    case "push": pushes.Add(ReadPush(n)); break;
                     case "entry": entries.Add(ReadEntry(n)); break;
                     default: break; // Unknown top-level records are ignored so newer writers stay readable.
                 }
             }
 
-            return new ShaderReflection { SourceName = source, Targets = targets, Resources = resources, EntryPoints = entries };
+            return new ShaderReflection { SourceName = source, Targets = targets, Resources = resources, PushConstants = pushes, EntryPoints = entries };
+        }
+
+        private PushConstantInfo ReadPush(Node n)
+        {
+            var slots = new List<TargetSlot>();
+            ReflectedType? layout = null;
+            while (_pos < _nodes.Count && _nodes[_pos].Depth > 0)
+            {
+                var c = _nodes[_pos++];
+                if (c.Depth != 1)
+                {
+                    throw Err(c, "unexpected indentation");
+                }
+
+                if (c.Keyword == "slot")
+                {
+                    slots.Add(new TargetSlot(Enm<CompileTarget>(c, Str(c, "target")), U(c, "set"), U(c, "binding")));
+                }
+                else if (c.Keyword == "layout")
+                {
+                    layout = ReadType(2, 0);
+                }
+            }
+
+            return new PushConstantInfo
+            {
+                Name = Str(n, "name"),
+                Stages = ParseStages(n, Str(n, "stages")),
+                Slots = slots,
+                Layout = layout ?? throw Err(n, "'push' has no layout"),
+            };
         }
 
         private ResourceInfo ReadResource(Node n)
@@ -409,6 +459,7 @@ public static class ReflectionFormat
             var inputs = new List<StageVariable>();
             var outputs = new List<StageVariable>();
             var uses = new List<string>();
+            string? push = null;
             while (_pos < _nodes.Count && _nodes[_pos].Depth > 0)
             {
                 var c = _nodes[_pos++];
@@ -417,6 +468,7 @@ public static class ReflectionFormat
                     case "input": inputs.Add(ReadVariable(c)); break;
                     case "output": outputs.Add(ReadVariable(c)); break;
                     case "uses": uses.Add(Str(c, "name")); break;
+                    case "pushuse": push = Str(c, "name"); break;
                     default: break;
                 }
             }
@@ -436,6 +488,7 @@ public static class ReflectionFormat
                 Inputs = inputs,
                 Outputs = outputs,
                 UsedResources = uses,
+                PushConstant = push,
             };
         }
 

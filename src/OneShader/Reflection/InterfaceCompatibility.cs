@@ -88,6 +88,7 @@ public static class InterfaceCompatibility
         ArgumentNullException.ThrowIfNull(recompiled);
         var diffs = new List<InterfaceDifference>();
         CompareResources(builtWith, recompiled, diffs);
+        ComparePushConstants(builtWith, recompiled, diffs);
         CompareEntryPoints(builtWith, recompiled, diffs);
         return new CompatibilityReport(diffs);
     }
@@ -125,6 +126,51 @@ public static class InterfaceCompatibility
             if (!seen.Contains(r.Name))
             {
                 Add(diffs, InterfaceDifferenceKind.Resource, "Resource " + r.Name + " was added (" + Describe(r) + ")");
+            }
+        }
+    }
+
+    private static void ComparePushConstants(ShaderReflection a, ShaderReflection b, List<InterfaceDifference> diffs)
+    {
+        foreach (var old in a.PushConstants)
+        {
+            PushConstantInfo? now = null;
+            foreach (var p in b.PushConstants)
+            {
+                if (p.Name == old.Name)
+                {
+                    now = p;
+                }
+            }
+
+            string n = "Push constants " + old.Name;
+            if (now is null)
+            {
+                Add(diffs, InterfaceDifferenceKind.Resource, n + " were removed");
+                continue;
+            }
+
+            CompareSlots(n, old.Slots, now.Slots, diffs);
+            var added = now.Stages & ~old.Stages;
+            if (added != ShaderStages.None)
+            {
+                Add(diffs, InterfaceDifferenceKind.Resource, n + " are now also read by the " + added + " stage, which the compiled-in push-constant range does not cover (was " + old.Stages + ")");
+            }
+
+            CompareType(old.Name, old.Layout, now.Layout, 0, diffs);
+        }
+
+        foreach (var p in b.PushConstants)
+        {
+            bool known = false;
+            foreach (var old in a.PushConstants)
+            {
+                known |= old.Name == p.Name;
+            }
+
+            if (!known)
+            {
+                Add(diffs, InterfaceDifferenceKind.Resource, "Push constants " + p.Name + " were added (" + U(p.Layout.Size) + " bytes)");
             }
         }
     }

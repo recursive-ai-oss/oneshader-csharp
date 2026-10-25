@@ -24,8 +24,38 @@ public static class Parity
     public static RunResult Run(VkContext ctx, CaseModel model, CaseData data, ParityCompiler compiler, bool yUp = false)
     {
         string source = Path.Combine(Tools.CorpusDir, model.Shader);
+        if (data.Push is not null && compiler.Name.EndsWith("wgsl", StringComparison.Ordinal))
+        {
+            // WebGPU has no push constants: the WGSL carries the block as a uniform buffer, so the run binds the bytes there.
+            model = PushAsUniform(model, source);
+            data = CaseData.Build(model);
+        }
+
         return VkRunner.Run(ctx, model, data, (entry, stage) =>
             compiler.Compile(new ShaderRequest(source, entry, stage, model.Defines)), yUp);
+    }
+
+    /// <summary>A copy of <paramref name="model"/> whose push-constant bytes are an ordinary uniform buffer at the slot the WGSL backend reports.</summary>
+    private static CaseModel PushAsUniform(CaseModel model, string source)
+    {
+        var result = ShaderCompiler.Compile(
+            File.ReadAllText(source),
+            source,
+            new CompileOptions
+            {
+                Targets = [CompileTarget.Wgsl],
+                Defines = model.Defines.Select(d => new KeyValuePair<string, string?>(d.Key, d.Value)).ToList(),
+                IncludeDirectories = [Path.GetDirectoryName(source)!],
+            });
+        var push = result.Reflection is { PushConstants.Count: > 0 } r ? r.PushConstants[0] : throw new InvalidOperationException("the shader has no push-constant block in its WGSL reflection");
+        var slot = push.Slots.First(s => s.Target == CompileTarget.Wgsl);
+        var copy = new CaseModel { Name = model.Name, Shader = model.Shader, FloatTolerance = model.FloatTolerance, Graphics = model.Graphics };
+        copy.Defines.AddRange(model.Defines);
+        copy.Dispatches.AddRange(model.Dispatches);
+        copy.Expects.AddRange(model.Expects);
+        copy.Resources.AddRange(model.Resources);
+        copy.Resources.Add(new ResourceDecl { Kind = ResourceKind.Uniform, Set = (int)slot.Set, Binding = (int)slot.Binding, Data = model.Push });
+        return copy;
     }
 
     /// <summary>Runs the case with both compilers and compares: buffers exactly, images within the case tolerance.</summary>

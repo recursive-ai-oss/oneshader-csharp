@@ -54,7 +54,7 @@ internal sealed partial class MslEmitter
             string pn = NameOf(a);
             if (a.Type is PointerType pt)
             {
-                if (pt.Space is AddressSpace.Uniform or AddressSpace.StorageBuffer or AddressSpace.UniformConstant)
+                if (pt.Space is AddressSpace.Uniform or AddressSpace.PushConstant or AddressSpace.StorageBuffer or AddressSpace.UniformConstant)
                 {
                     Unsupported("A resource is passed to '" + f.Name + "' as an argument; the function must be inlined first (mark it [forceinline]).", f.Span);
                 }

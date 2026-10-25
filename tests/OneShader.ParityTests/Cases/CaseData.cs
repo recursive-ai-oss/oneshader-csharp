@@ -17,6 +17,9 @@ public sealed class CaseData
 
     public byte[]? Indices { get; private set; }
 
+    /// <summary>Push-constant bytes (a multiple of 4 long), or null when the case has none.</summary>
+    public byte[]? Push { get; private set; }
+
     /// <summary>Encoded initial target contents in the target format (graphics cases).</summary>
     public byte[]? Background { get; private set; }
 
@@ -55,6 +58,10 @@ public sealed class CaseData
                         break;
                     }
             }
+        }
+        if (model.Push is not null)
+        {
+            d.Push = DataGen.Materialize(model.Push);
         }
         var g = model.Graphics;
         if (g is not null)

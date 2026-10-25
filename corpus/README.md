@@ -46,6 +46,8 @@ with `dxc -spirv -fspv-target-env=vulkan1.2`, and give every resource an explici
 | `compute/histogram.hlsl` | Luminance histogram with group-shared atomics into a read-write buffer | written for this repository | MIT OR Apache-2.0 |
 | `compute/image_filter.hlsl` | Tiled 3x3 sharpen on a `RWTexture2D` through group-shared memory | written for this repository | MIT OR Apache-2.0 |
 | `compute/particles.hlsl` | Per-particle integration over a `RWStructuredBuffer` of structs | written for this repository | MIT OR Apache-2.0 |
+| `3d/push_lit.hlsl` | A lit sphere whose per-draw model matrix, tint, palette index, light direction, uv scale and weights (112 bytes) come from a `[[vk::push_constant]] ConstantBuffer<T>` read by both the vertex and pixel stage | written for this repository | MIT OR Apache-2.0 |
+| `compute/push_kernel.hlsl` | A kernel configured only by a struct-typed `[[vk::push_constant]]` global (64 bytes, with a `float3` and padding) | written for this repository | MIT OR Apache-2.0 |
 | `lang/templates.hlsl` | Function and struct templates: deduced and explicit arguments, value parameters, defaults | written for this repository | MIT OR Apache-2.0 |
 | `lang/members.hlsl` | Member functions, this, static members, calls on buffer elements | written for this repository | MIT OR Apache-2.0 |
 | `lang/inheritance.hlsl` | Struct inheritance: inherited members, hiding, base-typed parameters, buffers of derived structs | written for this repository | MIT OR Apache-2.0 |
@@ -95,6 +97,8 @@ written for this repository and licensed `MIT OR Apache-2.0`.
 | `histogram` | `compute/histogram.hlsl` | dispatch | buffer exact, CPU result |
 | `image_filter` | `compute/image_filter.hlsl` | dispatch | image, CPU result within one 8-bit step |
 | `particles` | `compute/particles.hlsl` | 3 dispatches | buffer bit-exact between compilers, CPU result within 1e-4 relative |
+| `push_lit` | `3d/push_lit.hlsl` | draw, indexed, depth, back-face culling; push constants via `vkCmdPushConstants`, a Metal `setBytes` call and a uniform buffer in WebGPU | image, tolerance 1 |
+| `push_kernel` | `compute/push_kernel.hlsl` | dispatch, 100 elements; push constants as above | buffer within 1e-5 relative of the CPU result, exact between compilers |
 
 Tunable constants such as `UI_AA_WIDTH` and `PARTICLE_GRAVITY` have defaults in the shaders; the
 self-check tests recompile with another value to prove the comparison notices a difference.

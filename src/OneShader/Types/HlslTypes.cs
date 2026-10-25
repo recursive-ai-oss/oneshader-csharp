@@ -128,6 +128,9 @@ public enum AddressSpace
     /// <summary>Opaque handles: textures, samplers, typed buffers.</summary>
     UniformConstant,
 
+    /// <summary>Vulkan push constants (a Metal inline constant buffer, a WebGPU uniform buffer).</summary>
+    PushConstant,
+
     /// <summary>Stage input.</summary>
     Input,
 

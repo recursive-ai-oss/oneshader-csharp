@@ -112,6 +112,13 @@ public static class MetalBundle
             }
         }
 
+        if (data.Push is { } push && reflection!.PushConstants.Count > 0)
+        {
+            // The Metal host delivers the block with setBytes at the index reflection records.
+            File.WriteAllBytes(Path.Combine(dir, "push.bin"), push);
+            sb.Line($"push {reflection.PushConstants[0].Slots.Single(s => s.Target == CompileTarget.Msl).Binding} push.bin\n");
+        }
+
         foreach (var d in model.Dispatches)
         {
             var (tx, ty, tz) = groups[d.Entry];

@@ -34,6 +34,7 @@ public static class CpuReferences
         "histogram" => Histogram(model, data),
         "image_filter" => ImageFilter(model, data),
         "particles" => Particles(model, data),
+        "push_kernel" => PushKernel(model, data),
         "cull_instances" => CullInstances(model, data),
         "cluster_build" => ClusterBuild(model, data),
         "light_cull" => LightCull(model, data),
@@ -141,6 +142,43 @@ public static class CpuReferences
     }
 
     // Particle: float2 position, float2 velocity, float4 colour, age, maxAge, 2 padding = 12 floats.
+    // Reads the block the case pushed: Count 0, Scale 4, Offset 16, Mode 28, Bias 32, Mul 48. A kernel that never received
+    // the push constants would see Count 0 and write nothing, which this reference does not expect.
+    private static IReadOnlyList<Expectation> PushKernel(CaseModel m, CaseData d)
+    {
+        byte[] p = d.Push ?? throw new InvalidOperationException("push_kernel needs push constants");
+        uint count = BinaryPrimitives.ReadUInt32LittleEndian(p.AsSpan(0));
+        float scale = BitConverter.ToSingle(p, 4);
+        uint mode = BinaryPrimitives.ReadUInt32LittleEndian(p.AsSpan(28));
+        float[] offset = [BitConverter.ToSingle(p, 16), BitConverter.ToSingle(p, 20), BitConverter.ToSingle(p, 24)];
+        float[] bias = [BitConverter.ToSingle(p, 32), BitConverter.ToSingle(p, 36)];
+        float[] mul = [BitConverter.ToSingle(p, 48), BitConverter.ToSingle(p, 52), BitConverter.ToSingle(p, 56), BitConverter.ToSingle(p, 60)];
+        int input = Find(m, ResourceKind.Storage, 0, 0);
+        int output = Find(m, ResourceKind.Storage, 0, 1);
+        float[] src = new float[d.Buffers[input].Length / 4];
+        Buffer.BlockCopy(d.Buffers[input], 0, src, 0, d.Buffers[input].Length);
+        float[] dst = new float[d.Buffers[output].Length / 4];
+        for (int i = 0; i < count; i++)
+        {
+            float[] v = [(src[i * 4] * scale) + offset[0], (src[(i * 4) + 1] * scale) + offset[1], (src[(i * 4) + 2] * scale) + offset[2], src[(i * 4) + 3]];
+            v[0] += bias[0];
+            v[1] += bias[1];
+            for (int k = 0; k < 4; k++)
+            {
+                v[k] *= mul[k];
+            }
+
+            for (int k = 0; k < 4; k++)
+            {
+                dst[(i * 4) + k] = mode == 1 ? v[3 - k] : v[k];
+            }
+        }
+
+        byte[] bytes = new byte[dst.Length * 4];
+        Buffer.BlockCopy(dst, 0, bytes, 0, bytes.Length);
+        return [new Expectation(Key(m, output), bytes, ExpectKind.FloatRelative, 1e-5)];
+    }
+
     private static IReadOnlyList<Expectation> Particles(CaseModel m, CaseData d)
     {
         const float gravity = 9.8f;

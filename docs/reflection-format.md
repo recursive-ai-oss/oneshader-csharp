@@ -43,6 +43,10 @@ entry name="VSMain" stage=Vertex workgroup=0,0,0 stride=32
   `count` is the array size (1 for a single resource); an array occupies one `slot`. A `layout` child holds a `type` tree.
 - `counter` (child of `resource`, append and consume buffers only): `target`, `set`, `binding` of the hidden
   counter buffer, one record per target like `slot`. Readers that do not know it ignore it.
+- `push`: a push-constant block (not a `resource`): `name`, `stages`, a `layout` child with a `type` tree, and `slot`
+  children for the targets that deliver it as a bound buffer: `Msl` (`binding` is the `[[buffer(n)]]` index, `set` 0) and
+  `Wgsl` (`set` is the bind group, `binding` the binding). SPIR-V has no slot. An `entry` names the block it reads with a
+  `pushuse name=...` child.
 - `type`: `kind` is `Scalar`, `Vector`, `Matrix`, `Array` or `Struct`. `rows` is the vector component
   count or matrix rows; `cols` matrix columns; `size`, `align` in bytes; `length`/`stride` for
   arrays (length 0 = unsized); `mstride`/`packing` for matrices (the stride is between stored

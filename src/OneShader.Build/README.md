@@ -78,6 +78,8 @@ One static class per HLSL file (named after the file, in PascalCase), containing
   matrices are `Matrix4x4` members where element (i, j) is HLSL's `M[i][j]`;
 - a struct per structured-buffer element type;
 - `Bindings`: set, binding, count and kind of every resource, as constants;
+- for a `[[vk::push_constant]]` block: a blittable `PushConstants` struct and `Bindings.PushConstants` with its `Size`, the
+  stages for the `VkPushConstantRange`, and the Metal index and WebGPU group and binding of the targets you selected;
 - per entry point: stage, entry name, the SPIR-V bytes; for vertex shaders a `Vertex` struct,
   `Stride` and `Inputs`; for compute shaders the thread-group size. Entry points also carry the
   MSL and WGSL sources when those targets are selected (next section).
@@ -137,6 +139,8 @@ options change; the output is deterministic.
   compute culling.
 - Buffer layouts and descriptor bindings follow the conventions DXC uses for Vulkan, so existing
   shaders keep their layouts.
+- Push constants (`[[vk::push_constant]]`) on every target: a Vulkan push-constant block, a Metal `constant T&` buffer
+  argument, a WebGPU uniform buffer; one set of bytes for all three.
 - Hot reload: generated classes carry the reflection they were built from, and
   `InterfaceCompatibility.Compare` tells whether a shader recompiled at run time still matches
   them (see the `RecursiveAI.OneShader` package).

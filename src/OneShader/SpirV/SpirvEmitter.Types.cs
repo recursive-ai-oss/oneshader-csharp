@@ -159,6 +159,7 @@ internal sealed partial class SpirvEmitter
         AddressSpace.Private => Sc.Private,
         AddressSpace.Workgroup => Sc.Workgroup,
         AddressSpace.Uniform => Sc.Uniform,
+        AddressSpace.PushConstant => Sc.PushConstant,
         AddressSpace.StorageBuffer => Sc.StorageBuffer,
         AddressSpace.Input => Sc.Input,
         AddressSpace.Output => Sc.Output,
@@ -778,7 +779,9 @@ internal sealed partial class SpirvEmitter
             return;
         }
 
-        if (g.Set is not { } set || g.Binding is not { } binding)
+        bool push = ((PointerType)g.Type).Space == AddressSpace.PushConstant;
+        int set = g.Set ?? 0, binding = g.Binding ?? 0;
+        if (!push && (g.Set is null || g.Binding is null))
         {
             Fail(SpirvCodes.MissingBinding, "The resource '" + g.Name + "' has no descriptor set and binding; add [[vk::binding(b, s)]] or a register.", g.Span);
             return;
@@ -796,7 +799,13 @@ internal sealed partial class SpirvEmitter
         {
             var rt = (ResourceType)valueType;
             _resourceOf[g] = rt;
-            if (rt.ResourceKind == ResourceTypeKind.ConstantBuffer)
+            if (push)
+            {
+                // Vulkan: a push-constant block is a Block struct in the PushConstant storage class with no descriptor.
+                sc = Sc.PushConstant;
+                pointee = ConstantBlock(g, rt);
+            }
+            else if (rt.ResourceKind == ResourceTypeKind.ConstantBuffer)
             {
                 sc = Sc.Uniform;
                 pointee = ConstantBlock(g, rt);
@@ -830,8 +839,11 @@ internal sealed partial class SpirvEmitter
 
         _ = readOnlyBuffer;
         uint id = NewVariable(g, PointerTo(sc, pointee), sc, pointee, 0);
-        _s.Decorate(id, Dec.DescriptorSet, (uint)set);
-        _s.Decorate(id, Dec.Binding, (uint)binding);
+        if (!push)
+        {
+            _s.Decorate(id, Dec.DescriptorSet, (uint)set);
+            _s.Decorate(id, Dec.Binding, (uint)binding);
+        }
     }
 
     private TypeLayout? LayoutOfElement(GlobalVariable g, HlslType element, BufferLayoutRules rules)
@@ -858,14 +870,15 @@ internal sealed partial class SpirvEmitter
             return TypeId(ScalarType.UInt);
         }
 
-        var layout = LayoutOfElement(g, st, BufferLayoutRules.ConstantBuffer);
+        bool push = ((PointerType)g.Type).Space == AddressSpace.PushConstant;
+        var layout = LayoutOfElement(g, st, push ? BufferLayoutRules.StorageBuffer : BufferLayoutRules.ConstantBuffer);
         if (layout is null)
         {
             return TypeId(ScalarType.UInt);
         }
 
         // DXC names the block type after the cbuffer, or after the struct for ConstantBuffer<T>.
-        string name = st.Name.Length == 0 ? "type." + g.Name : "type.ConstantBuffer." + st.Name;
+        string name = push ? "type.PushConstant." + st.Name : st.Name.Length == 0 ? "type." + g.Name : "type.ConstantBuffer." + st.Name;
         return LayoutType(layout, true, name);
     }
 

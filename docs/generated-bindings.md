@@ -63,6 +63,34 @@ deterministic.
 - All counts, sizes, strides, offsets, locations and thread-group sizes are `uint`, matching
   the Vulkan API.
 
+### Push constants
+
+A struct-typed global or `ConstantBuffer<T>` marked `[[vk::push_constant]]` is a push-constant block, not a descriptor:
+
+```hlsl
+struct PerDraw { float4x4 Model; float4 Tint; uint Index; };
+[[vk::push_constant]] ConstantBuffer<PerDraw> Draw;   // or: [[vk::push_constant]] PerDraw Draw;
+```
+
+The generated class gets a blittable `PushConstants` struct (with `Size` and the SPIR-V member offsets) and
+`Bindings.PushConstants` with the delivery information; the block is not in `Bindings.All`.
+
+```csharp
+public static class PushConstants { public const uint Size = 96u; public const ShaderStages Stages = ShaderStages.Vertex | ShaderStages.Pixel;
+    public const uint MslIndex = 0u;                         // when Msl is selected
+    public const uint WgslGroup = 0u, WgslBinding = 2u; }    // when Wgsl is selected
+```
+
+- **Vulkan:** `vkCmdPushConstants(cmd, layout, (VkShaderStageFlags)Bindings.PushConstants.Stages, 0, Size, &data)`; the
+  pipeline layout's range is offset 0, `Size` bytes, those stages. Vulkan only guarantees 128 bytes; a larger block is warning OSH0334.
+- **Metal:** `setVertexBytes` / `setFragmentBytes` (or `setBytes` for compute) with the struct's bytes at `MslIndex`.
+- **WebGPU:** a uniform buffer at `@group(WgslGroup) @binding(WgslBinding)`, at least `Size` rounded up to 16 bytes long.
+  The binding is the one after the highest binding of the highest bind group the shader uses, so it never collides.
+- Members follow the vector-relaxed std430 rules DXC uses for push constants (a `float3` may share a 16-byte row with
+  the next scalar), not the constant-buffer rules; the same bytes are valid on every target.
+- A file may declare several blocks as long as no entry point reads more than one (OSH0333). With one block the struct and
+  the `Bindings` class are named `PushConstants`; with several, each is named after its variable, `<Name>PushConstants`.
+
 ### Resource arrays
 
 `Texture2D<float4> Tex[4]`, `SamplerState Smp[2]`, arrays of structured buffers and `ConstantBuffer<T> Cb[2]` are

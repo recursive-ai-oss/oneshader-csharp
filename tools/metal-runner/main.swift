@@ -116,6 +116,8 @@ let manifest = String(decoding: readFile("case.txt"), as: UTF8.self)
     .split(separator: "\n").map { $0.split(separator: " ").map(String.init) }.filter { !$0.isEmpty }
 
 var buffers: [(index: Int, buffer: MTLBuffer, out: String)] = []
+// Push constants: bytes handed to setBytes / setVertexBytes / setFragmentBytes at a buffer index, as a Metal host does.
+var pushes: [(index: Int, data: Data)] = []
 var textures: [(index: Int, texture: MTLTexture)] = []
 var samplers: [(index: Int, state: MTLSamplerState)] = []
 // Texture readbacks: texture, width, height, layers, bytes per texel, output file.
@@ -158,6 +160,9 @@ for t in manifest {
     switch t[0] {
     case "buffer":
         buffers.append((Int(t[1])!, makeBuffer(readFile(t[2])), t[3] == "-" ? "" : t[3]))
+    case "push":
+        // push INDEX FILE
+        pushes.append((Int(t[1])!, readFile(t[2])))
     case "texture":
         // texture INDEX TYPE W H LAYERS MIPS FORMAT FILE
         let (w, h, layers, mips) = (Int(t[3])!, Int(t[4])!, Int(t[5])!, Int(t[6])!)
@@ -250,6 +255,7 @@ setup.endEncoding()
 
 func bindCompute(_ e: MTLComputeCommandEncoder) {
     for b in buffers { e.setBuffer(b.buffer, offset: 0, index: b.index) }
+    for p in pushes { p.data.withUnsafeBytes { e.setBytes($0.baseAddress!, length: $0.count, index: p.index) } }
     for t in textures { e.setTexture(t.texture, index: t.index) }
     for s in samplers { e.setSamplerState(s.state, index: s.index) }
 }
@@ -258,6 +264,12 @@ func bindRender(_ e: MTLRenderCommandEncoder) {
     for b in buffers {
         e.setVertexBuffer(b.buffer, offset: 0, index: b.index)
         e.setFragmentBuffer(b.buffer, offset: 0, index: b.index)
+    }
+    for p in pushes {
+        p.data.withUnsafeBytes {
+            e.setVertexBytes($0.baseAddress!, length: $0.count, index: p.index)
+            e.setFragmentBytes($0.baseAddress!, length: $0.count, index: p.index)
+        }
     }
     for t in textures {
         e.setVertexTexture(t.texture, index: t.index)
