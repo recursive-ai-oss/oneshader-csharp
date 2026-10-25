@@ -1,7 +1,7 @@
 <Project>
   <!-- Package identity and version: the only place they are defined. -->
   <PropertyGroup>
-    <OneShaderVersion>0.4.0-dev</OneShaderVersion>
+    <OneShaderVersion>0.4.0-preview.1</OneShaderVersion>
     <OneShaderLibraryPackageId>RecursiveAI.OneShader</OneShaderLibraryPackageId>
     <OneShaderBuildPackageId>RecursiveAI.OneShader.Build</OneShaderBuildPackageId>
     <RootNamespace>OneShader</RootNamespace>

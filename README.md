@@ -124,7 +124,7 @@ byte[] spirv = result.Find("PSMain", CompileTarget.SpirV)!.ToArray();
 
 ## Status
 
-**Preview, version 0.3.** Vertex, pixel and compute shaders compile to
+**Preview, version 0.4.** Vertex, pixel and compute shaders compile to
 optimized SPIR-V, Metal Shading Language and WGSL with reflection; the build
 package embeds each selected target next to generated C# bindings (the
 `OneShaderTargets` switch), and the runtime API supports hot reload with a

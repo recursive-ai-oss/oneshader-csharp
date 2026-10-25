@@ -125,7 +125,7 @@ Properties: `EnableDefaultOneShaderItems`, `OneShaderNamespace`, `OneShaderTarge
 `OneShaderDefines`, `OneShaderIncludeDirectories`. Shaders are recompiled only when they, a file they include, or the
 options change; the output is deterministic.
 
-## What works in 0.3
+## What works in 0.4
 
 - Vertex, pixel and compute shaders in modern HLSL (Shader Model 6 style, HLSL 2021): structs,
   functions, templates, member functions, inheritance and operator overloads, constant buffers,

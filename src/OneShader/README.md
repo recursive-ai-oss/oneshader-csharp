@@ -5,7 +5,7 @@
 with reflection: inputs and outputs, resource bindings, buffer layouts and thread-group sizes.
 NativeAOT and trimming are supported.
 
-**Preview.** Version 0.3 compiles to SPIR-V (Vulkan), Metal Shading Language and WGSL (WebGPU). The API may still change before 1.0.
+**Preview.** Version 0.4 compiles to SPIR-V (Vulkan), Metal Shading Language and WGSL (WebGPU). The API may still change before 1.0.
 
 Most projects want [RecursiveAI.OneShader.Build](https://www.nuget.org/packages/RecursiveAI.OneShader.Build),
 which compiles `*.hlsl` during `dotnet build` and generates C# bindings. This package is the
@@ -70,7 +70,7 @@ set, binding, kind, array size and stage visibility, the entry points present an
 sizes. Edits to function bodies, new entry points, and resources that become visible to fewer stages are compatible.
 `ShaderCompiler.Compile` can be called from several threads at once. `samples/HotReload` is a complete console loop.
 
-## What works in 0.3
+## What works in 0.4
 
 - Vertex, pixel and compute shaders in modern HLSL (HLSL 2021): structs, functions, constant
   buffers, textures and samplers, structured and byte-address buffers, storage images,

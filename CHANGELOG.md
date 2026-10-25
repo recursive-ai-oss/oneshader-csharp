@@ -5,6 +5,10 @@ Versions follow [Semantic Versioning](https://semver.org/); before 1.0 the API m
 
 ## [Unreleased]
 
+## [0.4.0-preview.1]
+
+- Hardening from fuzzing every compile path: crashes, hangs and invalid SPIR-V or WGSL on unusual input are now diagnostics. Errors are capped at 100 per compile (OSH0004) and identical consecutive errors are dropped; array dimensions are limited to 16, local array initializers to 4096 elements, and binding, set and register numbers to 65535; the preprocessor's default output and expansion limits are 2M tokens and 20M steps. Component-wise intrinsics on matrices (`saturate`, `lerp`, `pow`, `sin` and others) work on every target.
+- Very deep call chains no longer overflow the stack on threads with a small stack (seen on macOS).
 - WGSL: `WgslBackend.EntryFunctionName` gives the name an entry point has in the WGSL text (reserved words such as `loop` or `fragment` get a trailing underscore). The build task uses it for `WgslEntryPoint` instead of reading the generated text, and a test checks entry points named after reserved words in MSL and WGSL against naga and `metal`.
 - MSL: `switch` cases that fall through and a `default` in the middle now run correctly. Before, a case entered by falling through re-ran the switch edge's phi copies and overwrote the value it fell in with, and a `break` or `continue` inside an `if` inside a case was dropped. WGSL, which has no fall-through, repeats the following case's statements; both are covered by the new `lang_switch_flow` parity case.
 - MSL honours `precise` under Metal's default fast math: functions with precise arithmetic turn off `reassociate` and `contract`, and precise divisions use `precise::divide`.
