@@ -1,0 +1,10 @@
+# A later bloom level: plain 13-tap box weights, 64x64 to 32x32.
+case bloom_down
+shader 3d/bloom_downsample.hlsl
+graphics vs=VSMain ps=PSMain
+target 32 32 format=rgba16f
+ftolerance 0.001
+draw vertices=3
+uniform 0 0 : 0.015625 0.015625 0.0 0u
+texture 0 1 64x64 rgba16f hdr_blobs
+sampler 0 2 linear clamp

@@ -1,0 +1,8 @@
+# Minimum and maximum depth of each 16x16 tile of an analytic depth buffer (zero marks background).
+case depth_bounds
+shader compute/depth_bounds.hlsl
+dispatch CSMain 8 8 1
+uniform 0 0 : 128u 128u 0u 0u
+texture 0 1 128x128 r32f scene_depth(60)
+storage 0 2 out size=512
+expect depth_bounds

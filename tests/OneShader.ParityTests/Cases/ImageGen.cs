@@ -9,8 +9,12 @@ namespace OneShader.ParityTests;
 /// </summary>
 public static class ImageGen
 {
-    /// <summary>Generates width*height*max(layers,1) RGBA texels, layer-major then row-major.</summary>
-    public static float[] Generate(string generator, int width, int height, int layers)
+    /// <summary>
+    /// Generates width*height*max(layers,1) RGBA texels, layer-major then row-major. <paramref name="level"/> and
+    /// <paramref name="levels"/> tell generators which mip level of how many this is (width and height are already
+    /// the level's size); the layer is the cube face for cube generators.
+    /// </summary>
+    public static float[] Generate(string generator, int width, int height, int layers, int level = 0, int levels = 1)
     {
         string name = generator;
         string[] args = [];
@@ -42,6 +46,15 @@ public static class ImageGen
                         "msdf_glyph" => [Sdf(u, v, 0.012f, 0f)[0], Sdf(u, v, -0.012f, 0.012f)[0], Sdf(u, v, 0f, -0.012f)[0], 1f],
                         "tiles" => Tile(x, y, u, v, l),
                         "ids" => Ids(x, y, l, uint.Parse(args[0], c), uint.Parse(args[1], c)),
+                        "albedo" => SceneGen.Albedo(u, v),
+                        "normalmap" => SceneGen.NormalMap(u, v),
+                        "orm" => SceneGen.Orm(u, v),
+                        "hdr_blobs" => SceneGen.HdrBlobs(x, y, u, v),
+                        "sky" => SceneGen.Sky(l, u, v, Arg(args, 0, c) < 0 ? (levels > 1 ? (float)level / (levels - 1) : 0f) : Arg(args, 0, c)),
+                        "brdf_lut" => SceneGen.BrdfLut(u, v),
+                        "shadowmap" => SceneGen.ShadowMap(l, u, v),
+                        "scene_depth" => SceneGen.Depth(u, v, Arg(args, 0, c), (float)width / height),
+                        "scene_normal" => SceneGen.Normal(u, v, Arg(args, 0, c), (float)width / height),
                         _ => throw new FormatException($"unknown image generator '{name}'"),
                     };
                     int o = (((l * height) + y) * width + x) * 4;
@@ -125,6 +138,8 @@ public static class ImageGen
         PixelFormat.Rgba8 => 4,
         PixelFormat.R32F => 4,
         PixelFormat.R32UInt => 4,
+        PixelFormat.Depth32F => 4,
+        PixelFormat.Rgba16F => 8,
         _ => 16,
     };
 
@@ -149,7 +164,14 @@ public static class ImageGen
                 case PixelFormat.R32UInt:
                     BitConverter.TryWriteBytes(bytes.AsSpan(i * 4), (uint)rgba[i * 4]);
                     break;
+                case PixelFormat.Rgba16F:
+                    for (int k = 0; k < 4; k++)
+                    {
+                        BitConverter.TryWriteBytes(bytes.AsSpan((i * 8) + (k * 2)), (Half)rgba[(i * 4) + k]);
+                    }
+                    break;
                 case PixelFormat.R32F:
+                case PixelFormat.Depth32F:
                     BitConverter.TryWriteBytes(bytes.AsSpan(i * 4), rgba[i * 4]);
                     break;
                 default:

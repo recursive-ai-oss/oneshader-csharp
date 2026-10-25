@@ -30,6 +30,12 @@ public enum PixelFormat
 
     /// <summary>One unsigned 32-bit integer per texel (the red channel of a generator, rounded down).</summary>
     R32UInt,
+
+    /// <summary>Four 16-bit floats per texel.</summary>
+    Rgba16F,
+
+    /// <summary>32-bit depth (the red channel of a generator); sampled with depth comparison or read back from a depth attachment.</summary>
+    Depth32F,
 }
 
 /// <summary>Vertex attribute formats a case can declare.</summary>
@@ -78,6 +84,21 @@ public sealed class ResourceDecl
     public bool Linear { get; init; }
     public bool Repeat { get; init; }
 
+    /// <summary>Mip levels of a texture; each level is generated at its own size.</summary>
+    public int MipLevels { get; init; } = 1;
+
+    /// <summary>Six-layer texture viewed as a cube map.</summary>
+    public bool Cube { get; init; }
+
+    /// <summary>Sampler: trilinear filtering across mip levels.</summary>
+    public bool MipFilter { get; init; }
+
+    /// <summary>Sampler: depth-comparison sampler (less-or-equal).</summary>
+    public bool Compare { get; init; }
+
+    /// <summary>Storage buffer outputs: compare the 32-bit words as a sorted multiset (for lists filled by atomics, whose order varies).</summary>
+    public bool Sorted { get; init; }
+
     /// <summary>Key identifying this resource in run outputs.</summary>
     public string OutputKey =>
         (Kind is ResourceKind.StorageImage ? "image:" : "buffer:") + Set + "." + Binding;
@@ -89,10 +110,30 @@ public sealed record VertexInputAttr(int Location, VertexFormat Format, int Offs
 /// <summary>One vertex buffer binding with its data expression; with <c>PerInstance</c> the attributes advance once per instance.</summary>
 public sealed record VertexBufferDecl(int Binding, int Stride, string Data, bool PerInstance = false);
 
-/// <summary>An offscreen draw into an RGBA8 target.</summary>
+/// <summary>Triangle culling for a draw.</summary>
+public enum CullMode
+{
+    None,
+    Back,
+    Front,
+}
+
+/// <summary>A depth attachment: cleared, optionally tested against, and optionally read back as an R32F image.</summary>
+public sealed record DepthDecl(float Clear, bool Test, bool Output);
+
+/// <summary>An offscreen draw into a colour target (RGBA8 unless the case says otherwise), with an optional depth attachment.</summary>
 public sealed class GraphicsDecl
 {
+    /// <summary>Format of the colour target.</summary>
+    public PixelFormat TargetFormat { get; init; } = PixelFormat.Rgba8;
+
+    public DepthDecl? Depth { get; init; }
+    public CullMode Cull { get; init; }
+
+
     public string VertexEntry { get; init; } = "";
+
+    /// <summary>Pixel entry point; empty for a depth-only draw.</summary>
     public string PixelEntry { get; init; } = "";
     public int Width { get; init; }
     public int Height { get; init; }
@@ -129,6 +170,9 @@ public sealed class CaseModel
     public List<KeyValuePair<string, string>> Defines { get; } = new();
     public GraphicsDecl? Graphics { get; set; }
     public List<DispatchDecl> Dispatches { get; } = new();
+
+    /// <summary>Float images (targets and storage images): largest allowed <c>|a-b| / (1+|a|)</c> between two compilers. Zero means bit-exact.</summary>
+    public double FloatTolerance { get; set; }
     public List<ResourceDecl> Resources { get; } = new();
     public List<ExpectDecl> Expects { get; } = new();
 

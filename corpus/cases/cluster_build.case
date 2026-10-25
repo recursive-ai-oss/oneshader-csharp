@@ -1,0 +1,7 @@
+# View-space bounds of a 16x9x24 cluster grid for a 1280x720 screen and exponential depth slices.
+case cluster_build
+shader compute/cluster_build.hlsl
+dispatch CSMain 4 3 6
+uniform 0 0 : @invproj(60,1.7778,0.1,100,col) 16u 9u 24u 80u 1280.0 720.0 0.1 100.0
+storage 0 1 out size=110592
+expect cluster_build

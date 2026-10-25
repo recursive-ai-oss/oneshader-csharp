@@ -9,7 +9,8 @@ namespace OneShader.ParityTests;
 /// Turns a case's data expression into bytes, deterministically. Tokens are whitespace separated:
 /// <c>1.5</c> or <c>2e-3</c> a float, <c>7u</c> or <c>0xFFu</c> an unsigned int, <c>-3i</c> a signed int,
 /// and generators <c>@f01(seed,count)</c> (floats in [0,1)), <c>@fpm1(seed,count)</c> (floats in [-1,1)),
-/// <c>@u32(seed,count[,modulus])</c> and <c>@quadindex(quadCount)</c> (0 1 2 2 1 3 per quad).
+/// <c>@u32(seed,count[,modulus])</c> and <c>@quadindex(quadCount)</c> (0 1 2 2 1 3 per quad). Meshes, camera
+/// matrices, record patterns and similar scene data are documented on <see cref="MeshGen"/>.
 /// </summary>
 public static class DataGen
 {
@@ -119,7 +120,11 @@ public static class DataGen
                     break;
                 }
             default:
-                throw new FormatException($"unknown generator '@{name}'");
+                if (!MeshGen.TryGenerate(name, a, words))
+                {
+                    throw new FormatException($"unknown generator '@{name}'");
+                }
+                break;
         }
     }
 

@@ -1,0 +1,11 @@
+# Final composite of an HDR scene and a bloom level with the ACES-style curve and the sRGB transfer function.
+case tonemap_aces
+shader 3d/tonemap.hlsl
+graphics vs=VSMain ps=PSMain
+target 128 128
+tolerance 1
+draw vertices=3
+uniform 0 0 : 1.2 0.5 4.0 0u
+texture 0 1 128x128 rgba16f hdr_blobs
+texture 0 2 64x64 rgba16f hdr_blobs
+sampler 0 3 linear clamp
