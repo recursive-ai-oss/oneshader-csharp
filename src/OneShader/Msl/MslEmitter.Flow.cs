@@ -165,11 +165,8 @@ internal sealed partial class MslEmitter
                     EmitReturn(t);
                     return Flow.Left;
                 case Opcode.Kill:
-                    if (!_isEntry)
-                    {
-                        Unsupported("discard in '" + _fn.Name + "', which is not an entry point and was not inlined, cannot be expressed in MSL; compile with Optimize enabled or call discard from the entry point.", t.Span);
-                    }
-
+                    // discard_fragment() is legal in any function called from a fragment function; it marks the fragment as
+                    // discarded and later writes are suppressed, so a helper simply returns and the caller carries on.
                     W("discard_fragment();");
                     if (_isEntry)
                     {

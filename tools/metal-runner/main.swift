@@ -12,7 +12,8 @@
 //
 // Y convention: Vulkan clip space has +Y down and the shaders are written for it. Metal has +Y up. The
 // draw uses a viewport with a negative height, which flips the mapping so the same vertex positions land
-// on the same pixels. Depth range (0..1) and the texture origin (top left) already agree.
+// on the same pixels. Depth range (0..1) and the texture origin (top left) already agree. The mirrored viewport
+// reverses triangle winding, so Vulkan's counter-clockwise front face is counter-clockwise here too.
 
 import Foundation
 import Metal
@@ -344,8 +345,10 @@ if let g = graphics, let target = targetTexture {
     e.setRenderPipelineState(pipeline)
     if let ds = depthState { e.setDepthStencilState(ds) }
     e.setViewport(MTLViewport(originX: 0, originY: Double(h), width: Double(w), height: -Double(h), znear: 0, zfar: 1))
-    // Vulkan's counter-clockwise front face, seen through the flipped viewport.
-    e.setFrontFacing(ProcessInfo.processInfo.environment["ONESHADER_METAL_WINDING"] == "ccw" ? .counterClockwise : .clockwise)
+    // Vulkan's front face is counter-clockwise. The negative-height viewport mirrors the image, which reverses the
+    // winding Metal sees, so the matching Metal setting is also counter-clockwise (checked with back-face culling
+    // on pbr_forward: the clockwise setting draws the far hemisphere of the sphere instead of the near one).
+    e.setFrontFacing(.counterClockwise)
     switch g[9] {
     case "back": e.setCullMode(.back)
     case "front": e.setCullMode(.front)

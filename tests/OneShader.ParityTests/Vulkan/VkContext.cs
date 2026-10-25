@@ -264,19 +264,33 @@ public sealed unsafe partial class VkContext : IDisposable
         };
 
         // DXC may use DrawParameters for SV_InstanceID/SV_VertexID; enable it when the device has it.
-        var v11Query = new PhysicalDeviceVulkan11Features { SType = StructureType.PhysicalDeviceVulkan11Features };
+        // NonUniformResourceIndex needs the 1.2 non-uniform indexing features.
+        var v12Query = new PhysicalDeviceVulkan12Features { SType = StructureType.PhysicalDeviceVulkan12Features };
+        var v11Query = new PhysicalDeviceVulkan11Features { SType = StructureType.PhysicalDeviceVulkan11Features, PNext = &v12Query };
         var query = new PhysicalDeviceFeatures2 { SType = StructureType.PhysicalDeviceFeatures2, PNext = &v11Query };
         Api.GetPhysicalDeviceFeatures2(Physical, &query);
+        var v12 = new PhysicalDeviceVulkan12Features
+        {
+            SType = StructureType.PhysicalDeviceVulkan12Features,
+            ShaderSampledImageArrayNonUniformIndexing = v12Query.ShaderSampledImageArrayNonUniformIndexing,
+            ShaderStorageBufferArrayNonUniformIndexing = v12Query.ShaderStorageBufferArrayNonUniformIndexing,
+        };
         var v11 = new PhysicalDeviceVulkan11Features
         {
             SType = StructureType.PhysicalDeviceVulkan11Features,
+            PNext = &v12,
             ShaderDrawParameters = v11Query.ShaderDrawParameters,
         };
-        // Shaders that write or read SV_ClipDistance / SV_CullDistance declare capabilities that need these features.
+        // Descriptor arrays indexed at run time need the dynamic-indexing features; shaders that use SV_ClipDistance /
+        // SV_CullDistance declare capabilities that need the clip and cull features.
         var features = new PhysicalDeviceFeatures
         {
             ShaderClipDistance = query.Features.ShaderClipDistance,
             ShaderCullDistance = query.Features.ShaderCullDistance,
+            ShaderSampledImageArrayDynamicIndexing = query.Features.ShaderSampledImageArrayDynamicIndexing,
+            ShaderStorageBufferArrayDynamicIndexing = query.Features.ShaderStorageBufferArrayDynamicIndexing,
+            ShaderUniformBufferArrayDynamicIndexing = query.Features.ShaderUniformBufferArrayDynamicIndexing,
+            ShaderStorageImageArrayDynamicIndexing = query.Features.ShaderStorageImageArrayDynamicIndexing,
         };
         var dci = new DeviceCreateInfo
         {

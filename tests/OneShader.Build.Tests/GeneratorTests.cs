@@ -52,6 +52,7 @@ public class GeneratorTests
     [InlineData("Sprite")]
     [InlineData("Particles")]
     [InlineData("Matrices")]
+    [InlineData("Pool")]
     public void InputFileMatchesTheWriter(string name)
     {
         // The generator must parse what the real writer emits; the checked-in file is the writer's output.
@@ -65,6 +66,7 @@ public class GeneratorTests
     [InlineData("Sprite")]
     [InlineData("Particles")]
     [InlineData("Matrices")]
+    [InlineData("Pool")]
     public void GeneratedSourceMatchesGolden(string name)
     {
         Harness.AssertGolden(name + ".g.cs", GenerateGolden(name)[0]);
@@ -76,7 +78,7 @@ public class GeneratorTests
         var files = GoldenModels.Names.Select(n => ("obj/" + n + ".oneshader", GoldenModels.FileText(n))).ToArray();
         var a = Harness.Generate(files).Sources;
         var b = Harness.Generate(files.Reverse().ToArray()).Sources;
-        Assert.Equal(3, a.Count);
+        Assert.Equal(GoldenModels.Names.Length, a.Count);
         Assert.Equal(a.OrderBy(s => s.Name, StringComparer.Ordinal).ToList(), b.OrderBy(s => s.Name, StringComparer.Ordinal).ToList());
     }
 
@@ -86,6 +88,52 @@ public class GeneratorTests
         var (sources, diagnostics) = Harness.Generate(files);
         Assert.Empty(diagnostics);
         return Harness.Compile(sources.Select(s => s.Text).Append(Probe), out context);
+    }
+
+    [Fact]
+    public void ArraysAndCountersAreExposed()
+    {
+        var asm = CompileAll(out var ctx);
+        try
+        {
+            var bindings = asm.GetType("PrebuiltSample.Shaders.Pool+Bindings")!;
+            uint Const(string cls, string field) => (uint)bindings.GetNestedType(cls)!.GetField(field)!.GetRawConstantValue()!;
+            Assert.Equal(4u, Const("Textures", "Count"));
+            Assert.Equal(2u, Const("Samplers", "Count"));
+            Assert.Equal(1u, Const("Hits", "Count"));
+            Assert.Equal(3u, Const("Hits", "CounterBinding"));
+            Assert.Equal(5u, Const("Work", "CounterBinding"));
+            Assert.Null(bindings.GetNestedType("Textures")!.GetField("CounterBinding"));
+            string text = GenerateGolden("Pool")[0];
+            Assert.Contains("new global::OneShader.ResourceBinding(\"Hits.counter\", 0u, 3u, 1u, global::OneShader.ResourceKind.StorageBuffer, global::OneShader.ShaderStages.Compute),", text, StringComparison.Ordinal);
+            Assert.Contains("new global::OneShader.ResourceBinding(\"Textures\", 0u, 0u, 4u, global::OneShader.ResourceKind.SampledTexture", text, StringComparison.Ordinal);
+        }
+        finally
+        {
+            ctx.Unload();
+        }
+    }
+
+    [Fact]
+    public void EmbeddedReflectionIsWhatTheCodeWasGeneratedFrom()
+    {
+        var asm = CompileAll(out var ctx);
+        try
+        {
+            foreach (string name in GoldenModels.Names)
+            {
+                var type = asm.GetType("PrebuiltSample.Shaders." + name)!;
+                var embedded = (ShaderReflection)type.GetProperty("Reflection")!.GetValue(null)!;
+                var expected = GoldenModels.Build(name).Reflection;
+                Assert.True(ReflectionFormat.AreEqual(expected, embedded), name + ": embedded reflection differs from the model the code was generated from");
+                Assert.True(InterfaceCompatibility.Compare(embedded, expected).IsCompatible);
+                Assert.Same(embedded, type.GetProperty("Reflection")!.GetValue(null));
+            }
+        }
+        finally
+        {
+            ctx.Unload();
+        }
     }
 
     [Fact]

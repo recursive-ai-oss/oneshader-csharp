@@ -42,7 +42,8 @@ public static class DxcCompiler
         var cache = new ConcurrentDictionary<string, byte[]>();
         return new ParityCompiler(name, request =>
         {
-            string key = request.SourcePath + "|" + request.Entry + "|" + request.Stage;
+            string key = request.SourcePath + "|" + request.Entry + "|" + request.Stage + "|"
+                + string.Join(';', request.Defines.Select(d => d.Key + "=" + d.Value));
             return cache.GetOrAdd(key, _ => Compile(request, extraDefines));
         });
     }
@@ -100,7 +101,8 @@ public static class ParityCompilers
     public static ParityCompiler Reference { get; } = DxcCompiler.Create("dxc");
 
     /// <summary>The compiler under test: this repository's own.</summary>
-    public static ParityCompiler Candidate { get; } = OneShaderCompiler.Create("oneshader");
+    public static ParityCompiler Candidate { get; } =
+        Environment.GetEnvironmentVariable("ONESHADER_PARITY_TARGET") == "wgsl" ? WgslNagaCompiler.Create("oneshader-wgsl") : OneShaderCompiler.Create("oneshader");
 
     /// <summary>Entry names a case needs, per stage, in the order they are compiled.</summary>
     public static IEnumerable<(string Entry, ShaderStage Stage)> Entries(CaseModel c)

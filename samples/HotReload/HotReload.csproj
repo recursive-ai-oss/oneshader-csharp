@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Shader hot reload: the shader is compiled at build time (generating the C# the program uses) and
+    again at run time whenever its file changes. The run-time compile is only swapped in when it still
+    matches the generated code. Restore from a local feed made by tools/pack-local.sh, as the other samples do.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>HotReloadSample</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="RecursiveAI.OneShader.Build" Version="0.2.0-dev.*" />
+  </ItemGroup>
+</Project>

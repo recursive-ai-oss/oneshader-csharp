@@ -194,6 +194,18 @@ internal sealed class ResourceDecl
 
     public GlobalVariable? Global { get; set; }
 
+    /// <summary>True for append and consume buffers, which carry a hidden element counter in a second buffer.</summary>
+    public bool HasCounter { get; set; }
+
+    /// <summary><c>[[vk::counter_binding(n)]]</c>, or null to assign the next free binding of the buffer's set.</summary>
+    public int? ExplicitCounterBinding { get; set; }
+
+    /// <summary>The counter's binding in the buffer's own set once bindings are assigned.</summary>
+    public int CounterBinding { get; set; }
+
+    /// <summary>The IR global of the counter.</summary>
+    public GlobalVariable? CounterGlobal { get; set; }
+
     public TypeLayout? Layout { get; set; }
 
     public CBufferSymbol? Buffer { get; init; }
@@ -440,6 +452,12 @@ internal sealed class ExprInfo
     public Symbol? Symbol { get; set; }
 
     public ConstValue? Const { get; set; }
+
+    /// <summary>
+    /// The exact value of an expression built only from unsuffixed integer literals. HLSL evaluates such
+    /// expressions in wide arithmetic and converts the result where it is used, so <c>(1 &lt;&lt; 31) &gt;&gt; 3</c> is 0x10000000.
+    /// </summary>
+    public long? LiteralValue { get; set; }
 
     public bool IsLValue { get; set; }
 

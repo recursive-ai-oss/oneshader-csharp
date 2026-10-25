@@ -1,0 +1,16 @@
+# Resource arrays: four textures and two samplers selected by data, elements passed to a function, non-uniform indexing,
+# two read-only buffers and two constant buffers addressed by a run-time index.
+case lang_resource_arrays
+shader lang/resource_arrays.hlsl
+dispatch CSMain 1 1 1
+texture 0 0 8x8 rgba8 photo element=0
+texture 0 0 8x8 rgba8 checker(2) element=1
+texture 0 0 8x8 rgba8 gradient element=2
+texture 0 0 8x8 rgba8 noise(7) element=3
+sampler 0 1 nearest clamp element=0
+sampler 0 1 linear repeat element=1
+storage 0 2 element=0 : @u32(3,8)
+storage 0 2 element=1 : @u32(4,8)
+uniform 0 3 element=0 : 0.0 0.0 0.0 0.0 1u 0u 0u 0u
+uniform 0 3 element=1 : 0.0625 0.03125 0.0 0.0 2u 0u 0u 0u
+storage 0 4 out size=256

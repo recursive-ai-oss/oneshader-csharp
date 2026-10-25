@@ -30,6 +30,9 @@ internal sealed partial class MslEmitter
 
         public int Count { get; init; }
 
+        /// <summary>The resource type of one element (the array's element type for a resource array).</summary>
+        public HlslType Elem { get; init; } = HlslType.Error;
+
         public bool Depth { get; set; }
 
         public bool Read { get; set; }
@@ -66,9 +69,10 @@ internal sealed partial class MslEmitter
             }
 
             int count = Math.Max(1, g.ResourceCount);
+            var elem = g.ValueType is ArrayType resourceArray ? resourceArray.Element : g.ValueType;
             ResClass cls;
             int index;
-            switch (g.ValueType)
+            switch (elem)
             {
                 case SamplerType:
                     cls = ResClass.Sampler;
@@ -105,7 +109,7 @@ internal sealed partial class MslEmitter
                     continue;
             }
 
-            _res[g] = new Res { G = g, Class = cls, Index = index, Count = count };
+            _res[g] = new Res { G = g, Class = cls, Index = index, Count = count, Elem = elem };
         }
 
         foreach (var f in _order)
@@ -221,7 +225,7 @@ internal sealed partial class MslEmitter
 
     private string TextureTypeText(Res r)
     {
-        var rt = (ResourceType)r.G.ValueType;
+        var rt = (ResourceType)r.Elem;
         string scalar = ScalarName(SampledScalarOf(rt));
         string access;
         if (rt.ResourceKind is ResourceTypeKind.Texture2DMS or ResourceTypeKind.Texture2DMSArray)
@@ -286,7 +290,7 @@ internal sealed partial class MslEmitter
             return;
         }
 
-        var rt = (ResourceType)r.G.ValueType;
+        var rt = (ResourceType)r.Elem;
         switch (r.Class)
         {
             case ResClass.ConstantBuffer:
@@ -373,6 +377,15 @@ internal sealed partial class MslEmitter
     /// <summary>The MSL type of a resource global as a function parameter, without the name or attribute.</summary>
     private string ResourceParamType(Res r)
     {
+        string one = ResourceElementParamType(r);
+        return r.G.ResourceCount != 1 && r.Count >= 1 && r.G.ResourceCount > 0 ? "array<" + one + ", " + Inv(r.Count) + ">" : one;
+    }
+
+    /// <summary>True for an array of buffers: Metal cannot take those as one argument, so each element is its own argument.</summary>
+    private static bool IsBufferArray(Res r) => r.Count > 1 && r.Class is ResClass.ConstantBuffer or ResClass.StructuredBuffer or ResClass.ByteAddressBuffer;
+
+    private string ResourceElementParamType(Res r)
+    {
         string one;
         switch (r.Class)
         {
@@ -389,13 +402,13 @@ internal sealed partial class MslEmitter
             default:
             {
                 PrepareBuffer(r);
-                bool rw = ((ResourceType)r.G.ValueType).IsReadWrite;
+                bool rw = ((ResourceType)r.Elem).IsReadWrite;
                 one = (rw ? "device " : "const device ") + r.ElementType + "*";
                 break;
             }
         }
 
-        return r.G.ResourceCount != 1 && r.Count >= 1 && r.G.ResourceCount > 0 ? "array<" + one + ", " + Inv(r.Count) + ">" : one;
+        return one;
     }
 
     private static string ResourceAttribute(Res r) => r.Class switch
@@ -517,16 +530,16 @@ internal sealed partial class MslEmitter
                 {
                     Kind = PlaceKind.Mem,
                     Expr = r.G.ResourceCount != 1 ? "(*" + expr + ")" : expr,
-                    Type = ((ResourceType)r.G.ValueType).Element ?? HlslType.Error,
+                    Type = ((ResourceType)r.Elem).Element ?? HlslType.Error,
                     Layout = r.Layout,
                     Space = "constant",
                     Resource = r,
                 };
             case ResClass.StructuredBuffer or ResClass.ByteAddressBuffer:
                 PrepareBuffer(r);
-                return new Place { Kind = PlaceKind.BufferRoot, Expr = expr, Type = r.G.ValueType, Space = "device", Resource = r };
+                return new Place { Kind = PlaceKind.BufferRoot, Expr = expr, Type = r.Elem, Space = "device", Resource = r };
             default:
-                return new Place { Kind = PlaceKind.Handle, Expr = expr, Type = r.G.ValueType, Resource = r };
+                return new Place { Kind = PlaceKind.Handle, Expr = expr, Type = r.Elem, Resource = r };
         }
     }
 
@@ -563,7 +576,7 @@ internal sealed partial class MslEmitter
             {
                 var r = p.Resource!;
                 string e = p.Expr + "[" + IndexText(index) + "]" + (r.ElementWrapped ? ".v" : "");
-                var rt = (ResourceType)r.G.ValueType;
+                var rt = (ResourceType)r.Elem;
                 return new Place { Kind = PlaceKind.Mem, Expr = e, Type = rt.Element ?? ScalarType.UInt, Layout = r.Layout, Space = "device", Resource = r };
             }
 

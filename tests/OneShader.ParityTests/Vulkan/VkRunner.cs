@@ -532,11 +532,12 @@ public static unsafe class VkRunner
             var typeCounts = new Dictionary<DescriptorType, uint>();
             for (int s = 0; s < setCount; s++)
             {
-                var bindings = model.Resources.Where(r => r.Set == s).Select(r => new DescriptorSetLayoutBinding
+                // Resources sharing a (set, binding) are the elements of one descriptor array.
+                var bindings = model.Resources.Where(r => r.Set == s).GroupBy(r => r.Binding).Select(g => new DescriptorSetLayoutBinding
                 {
-                    Binding = (uint)r.Binding,
-                    DescriptorType = TypeOf(r.Kind),
-                    DescriptorCount = 1,
+                    Binding = (uint)g.Key,
+                    DescriptorType = TypeOf(g.First().Kind),
+                    DescriptorCount = (uint)g.Count(),
                     StageFlags = stages,
                 }).ToArray();
                 fixed (DescriptorSetLayoutBinding* pb = bindings)
@@ -553,7 +554,7 @@ public static unsafe class VkRunner
                 cleanup.Add(() => vk.DestroyDescriptorSetLayout(dev, layoutCopy, null));
                 foreach (var b in bindings)
                 {
-                    typeCounts[b.DescriptorType] = typeCounts.GetValueOrDefault(b.DescriptorType) + 1;
+                    typeCounts[b.DescriptorType] = typeCounts.GetValueOrDefault(b.DescriptorType) + b.DescriptorCount;
                 }
             }
 
@@ -631,6 +632,7 @@ public static unsafe class VkRunner
                         SType = StructureType.WriteDescriptorSet,
                         DstSet = sets[r.Set],
                         DstBinding = (uint)r.Binding,
+                        DstArrayElement = (uint)r.Element,
                         DescriptorCount = 1,
                         DescriptorType = TypeOf(r.Kind),
                     };

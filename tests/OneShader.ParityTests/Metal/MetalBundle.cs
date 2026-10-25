@@ -19,7 +19,7 @@ public static class MetalBundle
     public static int VertexBufferIndex(int binding) => 30 - binding;
 
     /// <summary>Names a readback file from its output key (<c>buffer:0.2</c> becomes <c>buffer_0.2.bin</c>).</summary>
-    public static string FileFor(string key) => key.Replace(':', '_') + ".bin";
+    public static string FileFor(string key) => key.Replace(':', '_').Replace('[', '_').Replace("]", string.Empty, StringComparison.Ordinal) + ".bin";
 
     /// <summary>Exports <paramref name="model"/>; returns "ok" or a one-line reason when nothing could be exported.</summary>
     public static string Export(string bundleDir, CaseModel model, VkContext ctx)
@@ -70,10 +70,11 @@ public static class MetalBundle
 
         var sb = new StringBuilder();
         string Inv(double v) => v.ToString("R", CultureInfo.InvariantCulture);
+        // An array of N resources takes N consecutive Metal indices; the case names the element.
         int MslIndex(ResourceDecl r) => (int)reflection!.Resources
             .Where(x => x.Slots.Any(s => s.Target == CompileTarget.SpirV && s.Set == r.Set && s.Binding == r.Binding))
             .SelectMany(x => x.Slots)
-            .First(s => s.Target == CompileTarget.Msl).Binding;
+            .First(s => s.Target == CompileTarget.Msl).Binding + r.Element;
         bool Bound(ResourceDecl r) => reflection!.Resources.Any(x => x.Slots.Any(s => s.Target == CompileTarget.SpirV && s.Set == r.Set && s.Binding == r.Binding));
 
         for (int i = 0; i < model.Resources.Count; i++)

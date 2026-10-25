@@ -55,9 +55,11 @@ case "$mode" in
       MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION=1 ONESHADER_METAL_MATH="${ONESHADER_METAL_MATH:-fast}" \
         "$work/metal-runner" "$dir" >"$dir/stdout.log" 2>"$dir/stderr.log" &
       pid=$!
-      ( sleep 120 && kill -9 "$pid" 2>/dev/null ) &
+      ( sleep 120; kill -9 "$pid" 2>/dev/null ) >/dev/null 2>&1 &
       watchdog=$!
       wait "$pid" || code=$?
+      # Stop the watchdog and its sleep so nothing lingers (and a pipe reading this script's output closes).
+      pkill -P "$watchdog" 2>/dev/null || true
       kill "$watchdog" 2>/dev/null || true
       wait "$watchdog" 2>/dev/null || true
       echo "$code" >"$dir/exit.txt"

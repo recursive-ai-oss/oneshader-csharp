@@ -23,3 +23,7 @@ stage_layouts_off buffer:0.4 float 5e-4
 ibl_gold target float 1e-2
 ibl_plastic target float 2e-3
 ibl_prefilter image:0.3 float 3e-3
+
+# Linearly filtered, repeat-addressed texture reads feeding lighting (pbr_forward) or a buffer (lang_resource_arrays).
+pbr_forward target float 5e-3
+lang_resource_arrays buffer:0.4 float 5e-4

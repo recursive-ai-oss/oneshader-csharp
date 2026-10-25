@@ -340,6 +340,23 @@ internal sealed partial class MslEmitter
         {
             if (g.GlobalKind == GlobalKind.Resource && _res.TryGetValue(g, out var r))
             {
+                if (IsBufferArray(r))
+                {
+                    // Metal rejects arrays of buffers as arguments (array<T*, N> and T* x[N] both fail), so each element is
+                    // an argument at its own index and the shader sees them gathered back into an array.
+                    string one = ResourceElementParamType(r);
+                    var members = new List<string>();
+                    for (int k = 0; k < r.Count; k++)
+                    {
+                        string member = _names.Claim(NameOf(g) + "_" + Inv(k), "res");
+                        members.Add(member);
+                        resourceParams.Add(one + " " + member + " [[buffer(" + Inv(r.Index + k) + ")]]");
+                    }
+
+                    prologueLines.Add(ResourceParamType(r) + " " + NameOf(g) + " = { " + string.Join(", ", members) + " };");
+                    continue;
+                }
+
                 resourceParams.Add(ResourceParamType(r) + " " + NameOf(g) + " " + ResourceAttribute(r));
             }
         }
