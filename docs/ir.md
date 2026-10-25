@@ -98,15 +98,41 @@ bb1: ; loop merge=bb5 continue=bb4 hint=dontunroll (for.header)
 
 `IrVerifier.Verify` returns messages and never throws. It checks block shape (one terminator, last),
 parent links, operand ownership and in-block ordering, phi placement, the types of loads, stores,
-arithmetic, comparisons, selects, branches, calls and phis, and the structure markers. It does not
-compute dominance; a pass that moves code across blocks needs its own care. Tests run it after
-building and (once passes exist) after every pass.
+arithmetic, comparisons, selects, branches, calls and phis, and the structure markers. For reachable
+blocks it also checks that every definition dominates its uses and that each phi names exactly its
+block's predecessors (`Cfg` in `src/OneShader/IR/Cfg.cs` provides predecessors, reverse post-order,
+dominators and dominance frontiers). Tests run it after building and after every optimizer pass.
+
+## Optimizer
+
+`CompileOptions.Optimize` (default true) runs `Optimizer.Run` (`src/OneShader/Optimization/`) between lowering
+and the backends. Reflection is built from the unoptimized module, so it does not change with the optimizer.
+
+1. **Inlining** of every call, callees first. A callee whose only `ret` is outside every structured construct is
+   spliced in directly. Any other callee is wrapped in a loop that runs once: a `ret` stores the result and breaks;
+   a `ret` inside an inner loop or switch sets a flag and breaks, and that construct's merge block tests the flag
+   and breaks outward, so each branch is a legal SPIR-V break. Recursive calls are left alone, and growth is capped.
+2. Per function, repeated until nothing changes: **SROA** (structs and small arrays with constant indices become one
+   variable per element), **mem2reg** (scalars, vectors and matrices become SSA values; phis are placed on the
+   dominance frontier, pruned by liveness), **combine** (constant folding and exact algebraic identities; `precise`
+   instructions are only folded), **CSE** along the dominator tree (pure instructions, plus loads from constant
+   buffers, resources and stage inputs), **DCE** (mark and sweep, plus stores to variables nobody reads) and
+   **CFG simplification** (constant branches, unreachable blocks, straight-line merging).
+3. Folding is limited to results that are the same on every implementation: wrapping integer arithmetic, masked
+   shifts, float add/sub/mul/div/rem in the operand's own precision. Division by zero, `INT_MIN / -1`, NaN and
+   infinite or subnormal operands and results, out-of-range float-to-int conversions and transcendental
+   functions are left to the GPU.
+4. Merge and continue blocks that a live header names are kept even when unreachable (reduced to `unreachable` or a
+   branch to the header); headers, merge blocks and continue blocks are never merged away.
+
+If a pass fails, `Optimizer.Run` returns a message instead of throwing and `Compile` falls back to the unoptimized
+module with warning OSH6001. Setting `Optimizer.VerifyEachPass` (tests do) verifies the IR after every pass.
 
 ## Decisions worth knowing
 
 - One `Instruction` class for all opcodes, so passes can rewrite in place; `IrBuilder` provides typed
-  helpers. There are no use lists yet: `IrFunction.ReplaceUses` is linear. Add use lists when a pass
-  needs them.
+  helpers. There are no use lists: passes build a user map per run (`IrUtil.BuildUsers`) or collect
+  replacements in a map and apply them in one sweep (`IrUtil.ApplyReplacements`).
 - Constants keep exact bits (`Constant.Bits`), so folding wraps integers as HLSL does and keeps float
   results in the operand's own precision.
 - Block names and value names are hints and never take part in equality or output ordering.

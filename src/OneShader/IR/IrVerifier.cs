@@ -184,6 +184,66 @@ public static class IrVerifier
                 }
             }
         }
+
+        if (errors.Count == 0)
+        {
+            CheckDominance(f, where, errors);
+        }
+    }
+
+    // Every use must be dominated by its definition, and a phi must name exactly the block's predecessors.
+    private static void CheckDominance(IrFunction f, string where, List<string> errors)
+    {
+        var cfg = new Cfg(f);
+        for (int bi = 0; bi < f.Blocks.Count; bi++)
+        {
+            if (!cfg.IsReachable(bi))
+            {
+                continue;
+            }
+
+            var b = f.Blocks[bi];
+            for (int ii = 0; ii < b.Instructions.Count; ii++)
+            {
+                var i = b.Instructions[ii];
+                string iw = where + " bb" + bi + " #" + ii + " (" + i.Op + ")";
+                if (i.Op == Opcode.Phi)
+                {
+                    var seenPreds = new HashSet<int>();
+                    for (int k = 0; k < i.Targets.Count; k++)
+                    {
+                        int p = cfg.Index[i.Targets[k]];
+                        if (!seenPreds.Add(p) || !cfg.Preds[bi].Contains(p))
+                        {
+                            errors.Add(iw + ": phi names a block that is not a (distinct) predecessor");
+                            continue;
+                        }
+
+                        if (i.Operands[k] is Instruction d && cfg.IsReachable(p) && cfg.Index.TryGetValue(d.Parent!, out int db)
+                            && (!cfg.IsReachable(db) || !cfg.Dominates(db, p)))
+                        {
+                            errors.Add(iw + ": phi value does not dominate the end of its predecessor");
+                        }
+                    }
+
+                    if (seenPreds.Count != cfg.Preds[bi].Count)
+                    {
+                        errors.Add(iw + ": phi does not list every predecessor");
+                    }
+
+                    continue;
+                }
+
+                foreach (var o in i.Operands)
+                {
+                    if (o is Instruction d && !ReferenceEquals(d.Parent, b) && cfg.Index.TryGetValue(d.Parent!, out int db)
+                        && (!cfg.IsReachable(db) || !cfg.Dominates(db, bi)))
+                    {
+                        errors.Add(iw + ": operand definition does not dominate the use");
+                    }
+                }
+            }
+        }
     }
 
     private static void CheckTypes(Instruction i, string w, List<string> errors)

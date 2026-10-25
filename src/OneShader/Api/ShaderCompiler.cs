@@ -66,7 +66,11 @@ public sealed class CompileOptions
     /// <summary>True: <c>half</c> and <c>min16*</c> are 16-bit, as with DXC's <c>-enable-16bit-types</c>. Default false: they are stored and computed as 32-bit.</summary>
     public bool Enable16BitTypes { get; init; }
 
-    /// <summary>Run the optimizer. Default true.</summary>
+    /// <summary>
+    /// Run the optimizer: inlining, promotion of locals to SSA, constant folding, dead-code removal and control-flow simplification.
+    /// Default true. It never changes what the shader computes; if an internal check fails, the shader is compiled without
+    /// optimization and warning OSH6001 is reported. Set to false to compile the lowered code as written (for debugging).
+    /// </summary>
     public bool Optimize { get; init; } = true;
 
     /// <summary>Keep source-level names in the output where the target allows (SPIR-V debug names, MSL/WGSL identifiers). Default true.</summary>
@@ -168,6 +172,9 @@ public static class ApiDiagnosticCodes
 
     /// <summary>A requested output target has no backend yet.</summary>
     public const string TargetNotAvailable = "OSH0002";
+
+    /// <summary>The optimizer hit an internal problem; the shader was compiled without optimization (a warning).</summary>
+    public const string OptimizerFallback = "OSH6001";
 }
 
 /// <summary>The compiler's entry point.</summary>
@@ -198,6 +205,24 @@ public static class ShaderCompiler
         if (diagnostics.HasErrors || result.Module is not { } module)
         {
             return new CompileResult(diagnostics.Items, blobs, null);
+        }
+
+        if (options.Optimize)
+        {
+            var failure = Optimization.Optimizer.Run(module, cancellationToken);
+            if (failure is not null)
+            {
+                // Lowering is deterministic, so running the front end again gives a pristine module to emit instead.
+                diagnostics.Warning(ApiDiagnosticCodes.OptimizerFallback, "The optimizer failed (" + failure + "); the shader was compiled without optimization. Please report this with the shader; setting Optimize to false avoids the problem.", new SourceSpan(path, 1, 1));
+                var fresh = Semantics.Frontend.Run(source, path, options, cancellationToken);
+                if (fresh.Module is null)
+                {
+                    diagnostics.Error(ApiDiagnosticCodes.OptimizerFallback, "Recompiling without the optimizer failed; this is a compiler bug.", new SourceSpan(path, 1, 1));
+                    return new CompileResult(diagnostics.Items, blobs, null);
+                }
+
+                module = fresh.Module;
+            }
         }
 
         var targets = options.Targets.Count == 0 ? [CompileTarget.SpirV] : options.Targets;

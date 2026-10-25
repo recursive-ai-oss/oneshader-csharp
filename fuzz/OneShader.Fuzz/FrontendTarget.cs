@@ -22,6 +22,11 @@ internal static class FrontendTarget
         foreach (var d in result.Diagnostics)
         {
             _ = d.ToString();
+            if (d.Code == ApiDiagnosticCodes.OptimizerFallback)
+            {
+                // The compiler recovered, but a pass failed on this input: that is a bug to fix, so surface it.
+                throw new InvalidOperationException(d.ToString());
+            }
         }
     }
 }
