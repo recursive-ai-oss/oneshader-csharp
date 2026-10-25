@@ -127,14 +127,38 @@ internal static class WgslNames
             return name;
         }
 
-        for (int k = 1; ; k++)
+        // Suffixes are handed out in order, so the taken ones normally form a prefix 1..k. Gallop to the end of it and bisect, rather than
+        // counting from 1 each time (thousands of functions that all name a local 'x' would make that quadratic). If something else
+        // claimed a name in the middle, the result is still free and the same on every run.
+        bool Free(int k)
         {
             string candidate = name + "_" + k.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            if (!used.Contains(candidate) && (also is null || !also.Contains(candidate)) && !Avoid.Contains(candidate))
+            return !used.Contains(candidate) && (also is null || !also.Contains(candidate)) && !Avoid.Contains(candidate);
+        }
+
+        int lo = 0;
+        int hi = 1;
+        while (!Free(hi))
+        {
+            lo = hi;
+            hi = hi < (1 << 29) ? hi * 2 : hi + 1;
+        }
+
+        while (hi - lo > 1)
+        {
+            int mid = lo + (hi - lo) / 2;
+            if (Free(mid))
             {
-                used.Add(candidate);
-                return candidate;
+                hi = mid;
+            }
+            else
+            {
+                lo = mid;
             }
         }
+
+        string result = name + "_" + hi.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        used.Add(result);
+        return result;
     }
 }

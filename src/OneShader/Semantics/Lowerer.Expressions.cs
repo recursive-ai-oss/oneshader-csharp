@@ -301,7 +301,8 @@ internal sealed partial class Lowerer
                 if (vp is null && v.Kind == VarKind.Local)
                 {
                     _diag.Error(SemanticCodes.BadResource, "The resource variable '" + v.Name + "' is used before it is assigned a resource. Initialize it where it is declared, or assign it on every path before this use.", e.Span);
-                    return Constant.Zero(ScalarType.Int);
+                    // A stand-in of the right type, so the code that follows lowers without a second, confusing failure.
+                    return _b.Alloca(v.Type, v.Name);
                 }
 
                 return vp;
@@ -784,8 +785,13 @@ internal sealed partial class Lowerer
             return _b.Select(bcond, a, b);
         }
 
+        if (rtype is not MatrixType m)
+        {
+            // A scalar or a one-component vector.
+            return _b.Select(cond, a, b);
+        }
+
         // Matrices: select row by row.
-        var m = (MatrixType)rtype;
         var rows = new IrValue[m.Rows];
         var rowType = HlslType.Vector(m.Element, m.Columns);
         for (int r = 0; r < m.Rows; r++)

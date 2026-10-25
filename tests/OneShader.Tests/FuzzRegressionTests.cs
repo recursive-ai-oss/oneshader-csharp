@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using OneShader.Diagnostics;
 using System.Runtime.CompilerServices;
 using Xunit;
 
@@ -92,6 +93,7 @@ public class FuzzRegressionTests
     [InlineData("compute-thread-id-one-component.hlsl")]
     [InlineData("matrix-componentwise-intrinsics.hlsl")]
     [InlineData("scalar-swizzle-assignment.hlsl")]
+    [InlineData("conditional-selects-one-component-and-struct.hlsl")]
     public void ValidShadersWithUndefinedConstantsStillCompileOnEveryTarget(string name)
     {
         var r = Compile(name, true);
@@ -136,9 +138,78 @@ public class FuzzRegressionTests
     }
 
     [Fact]
+    public void AnArrayInitializerOverTheLimitIsRejected()
+    {
+        var r = Compile("huge-array-initializer.hlsl", true);
+        Assert.Contains(r.Diagnostics, d => d.Code == "OSH0353");
+        Assert.DoesNotContain(r.Diagnostics, d => d.Code is "OSH7000" or "OSH0399");
+    }
+
+    [Fact]
+    public void AnUnassignedLocalResourceIsOneErrorNotAnInternalFailure()
+    {
+        var r = Compile("unassigned-local-resource.hlsl", true);
+        Assert.Contains(r.Diagnostics, d => d.Code == "OSH0331");
+        Assert.DoesNotContain(r.Diagnostics, d => d.Code is "OSH7000" or "OSH0399");
+    }
+
+    [Fact]
     public void AMemberFunctionCannotBeAnEntryPoint()
     {
         var r = Compile("entry-point-is-member-function.hlsl", true);
         Assert.Contains(r.Diagnostics, d => d.Code == "OSH0320" && d.Message.Contains("member function", StringComparison.Ordinal));
+    }
+
+    // ---- generated inputs: sizes that cost memory, stack or time if any stage is worse than linear ----
+
+    private static CompileResult CompileText(string text, params CompileTarget[] targets) =>
+        ShaderCompiler.Compile(text, "gen.hlsl", new CompileOptions { Targets = targets.Length == 0 ? [CompileTarget.SpirV, CompileTarget.Msl, CompileTarget.Wgsl] : targets });
+
+    private static void AssertNoInternalError(CompileResult r) =>
+        Assert.DoesNotContain(r.Diagnostics, d => d.Code is "OSH7000" or "OSH6001" or "OSH0399");
+
+    [Fact]
+    public void ExponentialMacroStopsAtTheLimitWithOneError()
+    {
+        string text = string.Concat(Enumerable.Range(1, 39).Select(i => $"#define M{i} M{i - 1} M{i - 1}\n")) + "#define M0 1\nfloat f() { return M39; }";
+        var r = CompileText(text);
+        AssertNoInternalError(r);
+        Assert.Contains(r.Diagnostics, d => d.Code == "OSH0128");
+        Assert.Single(r.Diagnostics);
+    }
+
+    [Fact]
+    public void AnArrayWithThousandsOfDimensionsIsRejectedWithoutOverflowingTheStack()
+    {
+        var r = CompileText("void f() { float x" + string.Concat(Enumerable.Repeat("[2]", 100_000)) + "; }");
+        AssertNoInternalError(r);
+        Assert.Contains(r.Diagnostics, d => d.Code == "OSH0353");
+    }
+
+    [Fact]
+    public void ALongChainOfCallsCompilesInLinearTime()
+    {
+        const int n = 20_000;
+        string text = "float f0(float x) { return x; }\n"
+            + string.Concat(Enumerable.Range(1, n - 1).Select(i => $"float f{i}(float x) {{ return f{i - 1}(x); }}\n"))
+            + $"RWStructuredBuffer<float> O;\n[shader(\"compute\")] [numthreads(1, 1, 1)] void m() {{ O[0] = f{n - 1}(1.0); }}";
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var r = CompileText(text);
+        watch.Stop();
+        Assert.True(r.Success, string.Join("\n", r.Diagnostics.Take(3).Select(d => d.ToString())));
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(60), "took " + watch.Elapsed);
+    }
+
+    [Fact]
+    public void ThousandsOfErrorsAreCutOffAfterTheLimit()
+    {
+        string text = string.Concat(Enumerable.Range(0, 20_000).Select(i => $"float f{i}() {{ return y{i}; }}\n"));
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var r = CompileText(text);
+        watch.Stop();
+        AssertNoInternalError(r);
+        Assert.Equal(DiagnosticBag.MaxErrors + 1, r.Diagnostics.Count(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Equal(DiagnosticBag.TooManyErrors, r.Diagnostics[^1].Code);
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(30), "took " + watch.Elapsed);
     }
 }

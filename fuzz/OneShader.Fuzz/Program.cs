@@ -13,6 +13,7 @@ using System.Threading;
 //
 //   dotnet OneShader.Fuzz.dll --file <path> [target]      replay one input through a target (default: all); exit 1 on a finding
 //   dotnet OneShader.Fuzz.dll --diagnostics <path>        print the diagnostics for one input
+//   dotnet OneShader.Fuzz.dll --time <path>               compile time per target and optimizer setting
 //   dotnet OneShader.Fuzz.dll --run <target> --seconds N [--seed S] [--corpus dir] [--out dir] [--tools dir] [--sample N]
 //                                                          mutation fuzzing in-process, coverage-guided when OneShader.dll is instrumented
 //   dotnet OneShader.Fuzz.dll --libfuzzer <target>         SharpFuzz/libFuzzer loop on stdin (needs libfuzzer-dotnet)
@@ -59,6 +60,23 @@ if (args.Length >= 2 && args[0] == "--diagnostics")
     foreach (var d in OneShader.ShaderCompiler.Compile(input.Main, "fuzz.hlsl", input.Options(true)).Diagnostics)
     {
         Console.WriteLine(d);
+    }
+
+    return 0;
+}
+
+if (args.Length >= 2 && args[0] == "--time")
+{
+    // Compile time of one input per target and optimizer setting, for finding the input that makes a stage slow.
+    var input = new FuzzInput(File.ReadAllText(args[1]));
+    foreach (bool optimize in new[] { false, true })
+    {
+        foreach (var target in new[] { OneShader.CompileTarget.SpirV, OneShader.CompileTarget.Msl, OneShader.CompileTarget.Wgsl })
+        {
+            var watch = Stopwatch.StartNew();
+            var r = OneShader.ShaderCompiler.Compile(input.Main, "fuzz.hlsl", input.Options(optimize, target));
+            Console.WriteLine($"optimize={optimize} {target}: {watch.ElapsedMilliseconds} ms, success={r.Success}");
+        }
     }
 
     return 0;

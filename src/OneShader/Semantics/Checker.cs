@@ -97,7 +97,13 @@ internal sealed partial class Checker
 
     // ---- diagnostics
 
-    private void Err(string code, string message, SourceSpan span) => _diag.Error(code, message, span);
+    private void Err(string code, string message, SourceSpan span)
+    {
+        if (!_diag.IsFull)
+        {
+            _diag.Error(code, message, span);
+        }
+    }
 
     private void Warn(string code, string message, SourceSpan span) => _diag.Warning(code, message, span);
 

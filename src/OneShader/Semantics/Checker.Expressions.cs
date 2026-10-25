@@ -202,6 +202,11 @@ internal sealed partial class Checker
 
     private void ReportUndeclared(QualifiedName name)
     {
+        if (_diag.IsFull)
+        {
+            return;
+        }
+
         string text = name.ToString();
         if (name.Parts.Count > 1)
         {

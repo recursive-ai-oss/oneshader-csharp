@@ -117,6 +117,15 @@ internal static class Frontend
         }
 
         var preprocessed = Preprocessor.Preprocess(new SourceFile(path, source), pp, bag, ct);
+        foreach (var d in bag.Items)
+        {
+            if (d.Code is PreprocessorCodes.LimitExceeded or PreprocessorCodes.ExpansionTooDeep)
+            {
+                // The preprocessor gave up part-way; the token stream is cut off at an arbitrary place, so parsing it would only pile up follow-on errors.
+                return new FrontendResult(null, null, bag);
+            }
+        }
+
         var unit = Parser.Parse(preprocessed.Tokens, bag, path, ct);
         var layout = new LayoutOptions { Enable16BitTypes = options.Enable16BitTypes, DefaultMatrixPacking = options.DefaultMatrixPacking };
         var targets = new List<CompileTarget>();

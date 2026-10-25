@@ -52,11 +52,11 @@ public sealed class PreprocessorOptions
     /// <summary>Most files opened by <c>#include</c> in one run (catches exponential include trees). Default 4096.</summary>
     public int MaxIncludeCount { get; set; } = 4096;
 
-    /// <summary>Most tokens read while expanding macros before the run stops (catches exponential macros). Default 50 million.</summary>
-    public long MaxExpansionSteps { get; set; } = 50_000_000;
+    /// <summary>Most tokens read while expanding macros before the run stops (catches exponential macros). Default 20 million.</summary>
+    public long MaxExpansionSteps { get; set; } = 20_000_000;
 
-    /// <summary>Most tokens in the output before the run stops. Default 8 million.</summary>
-    public int MaxOutputTokens { get; set; } = 8_000_000;
+    /// <summary>Most tokens in the output before the run stops. Default 2 million (the largest shaders have a few hundred thousand tokens).</summary>
+    public int MaxOutputTokens { get; set; } = 2_000_000;
 
     /// <summary>Deepest nesting of macro calls inside macro arguments. Default 128.</summary>
     public int MaxMacroNesting { get; set; } = 128;
