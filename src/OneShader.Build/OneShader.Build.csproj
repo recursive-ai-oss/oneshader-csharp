@@ -8,9 +8,8 @@
   -->
   <PropertyGroup>
     <PackageId>$(OneShaderBuildPackageId)</PackageId>
-    <Description>MSBuild integration for OneShader: compiles *.hlsl during dotnet build and generates C# bindings.</Description>
-    <PackageTags>hlsl;shader;msbuild;sourcegenerator</PackageTags>
-    <PackageProjectUrl>https://github.com/recursive-ai-oss/oneshader-csharp</PackageProjectUrl>
+    <Description>Compiles HLSL shaders during dotnet build: SPIR-V embedded in the assembly, shader errors as build errors on the HLSL line, and generated C# structs and binding constants laid out to match each shader.</Description>
+    <PackageTags>hlsl;shader;shaders;spirv;vulkan;msbuild;source-generator;gpu</PackageTags>
     <IsPackable>true</IsPackable>
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
@@ -35,6 +34,6 @@
     <None Include="$(_TasksOut)/OneShader.Build.Tasks.dll" Pack="true" PackagePath="tasks/net10.0/" Visible="false" />
     <None Include="$(_TasksOut)/OneShader.dll" Pack="true" PackagePath="tasks/net10.0/" Visible="false" />
     <None Include="$(_GeneratorOut)/OneShader.Build.Generator.dll" Pack="true" PackagePath="analyzers/dotnet/cs/" Visible="false" />
-    <None Include="../../README.md" Pack="true" PackagePath="/" />
+    <None Include="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 </Project>

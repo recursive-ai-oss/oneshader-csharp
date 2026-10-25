@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Packs RecursiveAI.OneShader and RecursiveAI.OneShader.Build into a local NuGet feed folder.
 #   pack-local.sh [FEED_DIR]     FEED_DIR defaults to .feed in the repo (ignored by git).
-# The version is <base>-dev.<n>, where <base> is OneShaderVersion's number from
+# The version is <base>-dev.<n>, where <base> is OneShaderVersion's number (without its label) from
 # Directory.Build.props and <n> is the commit count, so one commit always packs to one version.
 # Set ONESHADER_BUILD_NUMBER to pack another number. NuGet caches packages by version: when you
 # repack uncommitted changes, pick a new number or clear the consumer's package cache.
@@ -14,9 +14,9 @@ feed="${1:-$root/.feed}"
 mkdir -p "$feed"
 feed="$(cd "$feed" && pwd)"
 
-base="$(sed -n 's|.*<OneShaderVersion>\([0-9][0-9.]*\)-dev</OneShaderVersion>.*|\1|p' "$root/Directory.Build.props")"
+base="$(sed -n 's|.*<OneShaderVersion>\([0-9][0-9.]*\)[-<].*|\1|p' "$root/Directory.Build.props")"
 if [ -z "$base" ]; then
-  echo "pack-local: cannot read OneShaderVersion (expected <number>-dev) from Directory.Build.props" >&2
+  echo "pack-local: cannot read OneShaderVersion (expected <number> or <number>-<label>) from Directory.Build.props" >&2
   exit 1
 fi
 n="${ONESHADER_BUILD_NUMBER:-$(git -C "$root" rev-list --count HEAD 2>/dev/null || echo 0)}"
