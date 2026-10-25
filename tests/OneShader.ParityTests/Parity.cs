@@ -21,22 +21,28 @@ public sealed class ParityReport
 public static class Parity
 {
     /// <summary>Compiles the case's entry points with <paramref name="compiler"/> and runs it on the GPU.</summary>
-    public static RunResult Run(VkContext ctx, CaseModel model, CaseData data, ParityCompiler compiler)
+    public static RunResult Run(VkContext ctx, CaseModel model, CaseData data, ParityCompiler compiler, bool yUp = false)
     {
         string source = Path.Combine(Tools.CorpusDir, model.Shader);
         return VkRunner.Run(ctx, model, data, (entry, stage) =>
-            compiler.Compile(new ShaderRequest(source, entry, stage, model.Defines)));
+            compiler.Compile(new ShaderRequest(source, entry, stage, model.Defines)), yUp);
     }
 
     /// <summary>Runs the case with both compilers and compares: buffers exactly, images within the case tolerance.</summary>
     public static ParityReport Compare(VkContext ctx, CaseModel model, ParityCompiler reference, ParityCompiler candidate)
     {
         var data = CaseData.Build(model);
-        var report = new ParityReport();
         var a = Run(ctx, model, data, reference);
         var b = Run(ctx, model, data, candidate);
-        AddValidation(report, reference.Name, a);
-        AddValidation(report, candidate.Name, b);
+        return CompareRuns(model, a, b, reference.Name, candidate.Name);
+    }
+
+    /// <summary>Compares two finished runs of the same case: buffers exactly, images within the case tolerance.</summary>
+    public static ParityReport CompareRuns(CaseModel model, RunResult a, RunResult b, string referenceName, string candidateName, bool allowFloatBufferTolerance = false)
+    {
+        var report = new ParityReport();
+        AddValidation(report, referenceName, a);
+        AddValidation(report, candidateName, b);
         if (a.Outputs.Count != b.Outputs.Count)
         {
             report.Failures.Add($"{model.Name}: output count differs ({a.Outputs.Count} vs {b.Outputs.Count})");
@@ -48,10 +54,15 @@ public static class Parity
             var y = b.Get(x.Key);
             if (x.IsImage && IsFloatImage(x.Format))
             {
-                CompareFloatImages(report, model, x, y, reference.Name, candidate.Name, model.FloatTolerance);
+                CompareFloatImages(report, model, x, y, referenceName, candidateName, model.FloatTolerance);
                 continue;
             }
-            CompareBlobs(report, model, x, y, reference.Name, candidate.Name, x.IsImage ? tolerance : 0);
+            if (allowFloatBufferTolerance && !x.IsImage && model.Resources.FirstOrDefault(r => r.OutputKey == x.Key) is { FloatTolerance: > 0 } fr)
+            {
+                CompareFloatBuffers(report, model, x, y, referenceName, candidateName, fr.FloatTolerance);
+                continue;
+            }
+            CompareBlobs(report, model, x, y, referenceName, candidateName, x.IsImage ? tolerance : 0);
         }
         if (Environment.GetEnvironmentVariable("ONESHADER_PARITY_DUMP") == "1")
         {
@@ -129,6 +140,34 @@ public static class Parity
                 }
                 WriteImage(model, a, "diff", diff);
             }
+        }
+    }
+
+    // Float buffers: |a-b| <= tolerance * (1 + |a|) per 32-bit word, two NaNs count as equal.
+    private static void CompareFloatBuffers(ParityReport report, CaseModel model, OutputBlob a, OutputBlob b, string nameA, string nameB, double tolerance)
+    {
+        int differing = 0;
+        int first = -1;
+        double worst = 0;
+        for (int i = 0; i + 4 <= a.Bytes.Length; i += 4)
+        {
+            float fa = BitConverter.ToSingle(a.Bytes, i);
+            float fb = BitConverter.ToSingle(b.Bytes, i);
+            if (float.IsNaN(fa) && float.IsNaN(fb))
+            {
+                continue;
+            }
+            double err = Math.Abs((double)fa - fb) / (1.0 + Math.Abs(fa));
+            if (!(err <= tolerance))
+            {
+                differing++;
+                first = first < 0 ? i : first;
+                worst = double.IsNaN(err) ? double.PositiveInfinity : Math.Max(worst, err);
+            }
+        }
+        if (differing > 0)
+        {
+            report.Failures.Add($"{model.Name} {a.Key}: {nameA} and {nameB} differ in {differing} floats (largest relative error {worst:G3}, tolerance {tolerance:G3}), first at byte offset {first}: {BitConverter.ToSingle(a.Bytes, first):R} vs {BitConverter.ToSingle(b.Bytes, first):R}");
         }
     }
 

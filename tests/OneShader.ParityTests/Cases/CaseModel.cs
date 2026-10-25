@@ -99,6 +99,9 @@ public sealed class ResourceDecl
     /// <summary>Storage buffer outputs: compare the 32-bit words as a sorted multiset (for lists filled by atomics, whose order varies).</summary>
     public bool Sorted { get; init; }
 
+    /// <summary>Storage buffer outputs of 32-bit floats: largest <c>|a-b| / (1+|a|)</c> accepted when a comparison allows float tolerance. Zero means bit-exact.</summary>
+    public double FloatTolerance { get; init; }
+
     /// <summary>Key identifying this resource in run outputs.</summary>
     public string OutputKey =>
         (Kind is ResourceKind.StorageImage ? "image:" : "buffer:") + Set + "." + Binding;

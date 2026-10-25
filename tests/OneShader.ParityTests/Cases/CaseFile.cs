@@ -34,7 +34,8 @@ public sealed class CaseFormatException : Exception
 /// draw vertices=N|indexed=N [instances=M]
 /// dispatch ENTRY X Y Z
 /// uniform SET BINDING : DATA
-/// storage SET BINDING [out] [sorted] [size=BYTES] [: DATA]
+/// storage SET BINDING [out] [sorted] [size=BYTES] [float=X] [: DATA]
+///   (float=X: an output of 32-bit floats that implementations with looser math, such as WebGPU, may reproduce within |a-b| &lt;= X * (1 + |a|))
 /// texture SET BINDING WxH[xLAYERS] FORMAT GENERATOR [mips=N] [cube]
 /// image SET BINDING WxH FORMAT GENERATOR [out]
 /// sampler SET BINDING linear|nearest clamp|repeat [mips] [compare]
@@ -235,6 +236,7 @@ public static class CaseFile
                         Binding = Int(Arg(t, 2, fail), fail),
                         Output = Array.IndexOf(t, "out") >= 0,
                         Sorted = Array.IndexOf(t, "sorted") >= 0,
+                        FloatTolerance = double.Parse(OptionOrNull(t, "float") ?? "0", CultureInfo.InvariantCulture),
                         SizeBytes = int.Parse(OptionOrNull(t, "size") ?? "0", CultureInfo.InvariantCulture),
                         Data = data,
                     });

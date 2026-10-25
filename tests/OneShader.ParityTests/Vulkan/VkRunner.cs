@@ -60,11 +60,15 @@ public sealed class RunResult
 /// </summary>
 public static unsafe class VkRunner
 {
-    /// <summary>Runs <paramref name="model"/> with SPIR-V supplied by <paramref name="spirv"/> (entry point name, stage).</summary>
-    public static RunResult Run(VkContext ctx, CaseModel model, CaseData data, Func<string, ShaderStage, byte[]> spirv)
+    /// <summary>
+    /// Runs <paramref name="model"/> with SPIR-V supplied by <paramref name="spirv"/> (entry point name, stage).
+    /// With <paramref name="yUp"/> the draw uses a negative-height viewport and clockwise front faces, which puts clip-space
+    /// y up the way D3D, Metal and WebGPU do; the default keeps Vulkan's native y-down orientation.
+    /// </summary>
+    public static RunResult Run(VkContext ctx, CaseModel model, CaseData data, Func<string, ShaderStage, byte[]> spirv, bool yUp = false)
     {
         ctx.DrainMessages();
-        using var run = new RunState(ctx, model, data, spirv);
+        using var run = new RunState(ctx, model, data, spirv) { YUp = yUp };
         var outputs = run.Execute();
         ctx.Api.DeviceWaitIdle(ctx.Device);
         return new RunResult(outputs, ctx.DrainMessages());
@@ -115,6 +119,8 @@ public static unsafe class VkRunner
         private readonly CaseData data;
         private readonly Func<string, ShaderStage, byte[]> spirv;
         private readonly List<Action> cleanup = new();
+
+        public bool YUp { get; init; }
         private readonly Dictionary<int, (VkBuffer Buffer, nint Map, int Size)> buffers = new();
         private readonly Dictionary<int, (VkImage Image, ImageView View, int Layers)> images = new();
         private readonly Dictionary<int, VkSampler> samplers = new();
@@ -857,7 +863,7 @@ public static unsafe class VkRunner
                 DstAlphaBlendFactor = BlendFactor.OneMinusSrcAlpha,
                 AlphaBlendOp = BlendOp.Add,
             };
-            var viewport = new Viewport(0, 0, g.Width, g.Height, 0, 1);
+            var viewport = YUp ? new Viewport(0, g.Height, g.Width, -g.Height, 0, 1) : new Viewport(0, 0, g.Width, g.Height, 0, 1);
             var scissor = new Rect2D(new Offset2D(0, 0), new Extent2D((uint)g.Width, (uint)g.Height));
             Pipeline pipeline;
             fixed (VertexInputBindingDescription* pbd = bindingDescs)
@@ -889,7 +895,7 @@ public static unsafe class VkRunner
                     SType = StructureType.PipelineRasterizationStateCreateInfo,
                     PolygonMode = PolygonMode.Fill,
                     CullMode = g.Cull switch { CullMode.Back => CullModeFlags.BackBit, CullMode.Front => CullModeFlags.FrontBit, _ => CullModeFlags.None },
-                    FrontFace = FrontFace.CounterClockwise,
+                    FrontFace = YUp ? FrontFace.Clockwise : FrontFace.CounterClockwise,
                     LineWidth = 1f,
                 };
                 var multisample = new PipelineMultisampleStateCreateInfo
