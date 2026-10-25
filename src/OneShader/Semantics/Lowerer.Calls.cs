@@ -403,7 +403,7 @@ internal sealed partial class Lowerer
 
             case Opcode.TextureQueryLod:
             {
-                ops.Add(Arg(c, bi, 0));
+                ops.Add(ResourcePointer(c.Arguments[0])!);
                 ops.Add(Arg(c, bi, 1));
                 var q = _b.Emit(Opcode.TextureQueryLod, HlslType.Vector(ScalarType.Float, 2), [.. ops]);
                 return Extract(q, ScalarType.Float, bi.Extra);

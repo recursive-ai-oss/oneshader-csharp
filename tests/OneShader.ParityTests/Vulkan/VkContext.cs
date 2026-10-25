@@ -272,10 +272,17 @@ public sealed unsafe partial class VkContext : IDisposable
             SType = StructureType.PhysicalDeviceVulkan11Features,
             ShaderDrawParameters = v11Query.ShaderDrawParameters,
         };
+        // Shaders that write or read SV_ClipDistance / SV_CullDistance declare capabilities that need these features.
+        var features = new PhysicalDeviceFeatures
+        {
+            ShaderClipDistance = query.Features.ShaderClipDistance,
+            ShaderCullDistance = query.Features.ShaderCullDistance,
+        };
         var dci = new DeviceCreateInfo
         {
             SType = StructureType.DeviceCreateInfo,
             PNext = &v11,
+            PEnabledFeatures = &features,
             QueueCreateInfoCount = 1,
             PQueueCreateInfos = &qci,
         };

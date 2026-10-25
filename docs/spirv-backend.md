@@ -25,6 +25,13 @@ options always give the same bytes. Code is in `src/OneShader/SpirV/`.
   requires, inputs first, then outputs, then the rest in module order. Integer and double fragment inputs (and the
   vertex outputs that feed them) are `Flat`. Pixel shaders get `OriginUpperLeft`, plus `DepthReplacing` when they
   write depth.
+- **Stage variables.** Arrays and matrices (at least 2x2) become one variable per element or row, each with its own
+  location, which occupies the same locations as DXC's single array-typed variable. Clip and cull distances are the
+  exception: every `SV_ClipDistance`/`SV_CullDistance` variable of an entry point is a slice of one `ClipDistance` /
+  `CullDistance` built-in array, ordered by semantic index (an array's elements in order), as DXC lays them out.
+- **Booleans in memory.** `OpTypeBool` is not allowed in uniform or storage memory, so `bool` members of buffers are
+  32-bit unsigned integers (0 or 1), converted to bool on load and back on store. A structured buffer's element stride
+  is its size rounded up to its alignment (16 bytes for a `float3`).
 - **Control flow.** Blocks are emitted in reverse post-order of a walk that visits a header's merge and continue
   blocks first, which puts every merge after the blocks inside its construct. Unreachable blocks are dropped; a
   block without a terminator becomes `OpUnreachable`.
@@ -34,5 +41,5 @@ options always give the same bytes. Code is in `src/OneShader/SpirV/`.
 
 ## Not supported yet (reported as OSH5002)
 
-16-bit floating point, `SV_ClipDistance`/`SV_CullDistance`, wave and quad intrinsics, unbounded resource arrays,
+16-bit floating point, wave and quad intrinsics, unbounded resource arrays,
 comparison or bit-casting of whole matrices, bool matrices, products involving one-row/column matrices.

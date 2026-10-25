@@ -1,0 +1,9 @@
+# The same kernel with the flags off: the bool members read as false.
+case stage_layouts_off
+shader compute/stage_layouts.hlsl
+dispatch CSMain 4 1 1
+uniform 0 0 : 1.0 0.5 0.25 0.0  0u 2.0 1u 0u
+storage 0 1 : @fpm1(12,256)
+storage 0 2 out size=1024
+storage 0 3 out size=1024
+storage 0 4 out size=1024

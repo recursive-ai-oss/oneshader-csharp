@@ -205,7 +205,11 @@ internal sealed partial class SpirvEmitter
         var after = new List<uint>();
         foreach (var g in declared)
         {
-            after.Add(_globalIds[g]);
+            // A global that could not be declared has already been reported.
+            if (_globalIds.TryGetValue(g, out uint id))
+            {
+                after.Add(id);
+            }
         }
 
         SpirvModule.PutWithString(_s.EntryPoints, Op.EntryPoint, [model, _fnIds[_ep.Function]], _ep.Function.Name, after.ToArray());

@@ -180,6 +180,7 @@ internal sealed partial class Checker
 
     private void BuildEntry(FunctionSymbol f, ShaderStage stage)
     {
+        _interfaceOverflow = false;
         var entry = new EntryInfo { Function = f, Stage = stage };
         var d = f.Decl;
         var nameSpan = d.Name.Span;
@@ -276,8 +277,19 @@ internal sealed partial class Checker
         Entries.Add(entry);
     }
 
+    /// <summary>Most stage variables one entry point may declare after arrays and matrices are expanded (devices offer a few dozen locations).</summary>
+    private const int MaxInterfaceVars = 1024;
+
+    private bool _interfaceOverflow;
+
     private void Flatten(EntryInfo entry, List<InterfaceVar> into, HlslType type, string name, string? semantic, List<int> path, int paramIndex, bool isOutput, Interpolation interp, int? location, string? format, SourceSpan span, int depth)
     {
+        if (_interfaceOverflow || type.IsError)
+        {
+            // An error was already reported for the declaration; do not add a second one about its type.
+            return;
+        }
+
         if (depth > 8)
         {
             Err(SemanticCodes.BadSemantic, "Entry point structs are nested too deeply.", span);
@@ -310,13 +322,55 @@ internal sealed partial class Checker
             return;
         }
 
-        if (type is not (ScalarType or VectorType))
+        if (into.Count >= MaxInterfaceVars)
         {
-            Err(SemanticCodes.BadSemantic, "'" + (name.Length == 0 ? entry.Function.Name : name) + "' has type '" + type + "', which cannot be a shader input or output; use scalars and vectors (split matrices into rows).", span);
+            _interfaceOverflow = true;
+            Err(SemanticCodes.BadSemantic, "'" + (name.Length == 0 ? entry.Function.Name : name) + "' and the other stage variables expand to more than " + Num(MaxInterfaceVars) + " inputs or outputs (arrays and matrices count once per element or row). Shrink the arrays.", span);
             return;
         }
 
         var (sn, si) = SplitSemantic(semantic);
+        bool distance = sn.Equals("SV_ClipDistance", StringComparison.OrdinalIgnoreCase) || sn.Equals("SV_CullDistance", StringComparison.OrdinalIgnoreCase);
+
+        // Arrays and matrices take one location per element or row, with the semantic index counting up (TEXCOORD1 on a
+        // float3x3 covers TEXCOORD1 to TEXCOORD3), as DXC lays them out. Clip and cull distances keep their index and
+        // are merged into one built-in array later, so their elements stay in order.
+        if (type is ArrayType { Length: > 0 } arr)
+        {
+            for (int i = 0; i < arr.Length; i++)
+            {
+                string es = distance ? semantic : sn + (si + (uint)i).ToString(CultureInfo.InvariantCulture);
+                var p2 = new List<int>(path) { i };
+                Flatten(entry, into, arr.Element, name + "[" + i.ToString(CultureInfo.InvariantCulture) + "]", es, p2, paramIndex, isOutput, interp, location is { } l0 ? l0 + i * ElementLocations(arr.Element) : null, format, span, depth + 1);
+            }
+
+            return;
+        }
+
+        if (type is MatrixType { Rows: > 1, Columns: > 1 } mat)
+        {
+            for (int i = 0; i < mat.Rows; i++)
+            {
+                string es = distance ? semantic : sn + (si + (uint)i).ToString(CultureInfo.InvariantCulture);
+                var p2 = new List<int>(path) { i };
+                Flatten(entry, into, HlslType.Vector(mat.Element, mat.Columns), name + "[" + i.ToString(CultureInfo.InvariantCulture) + "]", es, p2, paramIndex, isOutput, interp, location is { } l1 ? l1 + i : null, format, span, depth + 1);
+            }
+
+            return;
+        }
+
+        if (type is not (ScalarType or VectorType))
+        {
+            Err(SemanticCodes.BadSemantic, "'" + (name.Length == 0 ? entry.Function.Name : name) + "' has type '" + type + "', which cannot be a shader input or output; use scalars, vectors, matrices of at least 2x2, and arrays of them (a one-row or one-column matrix: use a vector).", span);
+            return;
+        }
+
+        if (distance && type.ScalarElement is not { ScalarKind: ScalarKind.Float })
+        {
+            Err(SemanticCodes.BadSemantic, "'" + name + "' is a " + sn.Substring(3) + " and must be float, float2, float3 or float4 (or an array of float); it is declared '" + type + "'.", span);
+            return;
+        }
+
         into.Add(new InterfaceVar
         {
             Name = name.Length == 0 ? "result" : name,
@@ -332,6 +386,14 @@ internal sealed partial class Checker
             ExplicitLocation = location,
         });
     }
+
+    /// <summary>How many consecutive locations one element of an array of stage variables uses.</summary>
+    private static int ElementLocations(HlslType t) => t switch
+    {
+        ArrayType { Length: > 0 } a => a.Length * ElementLocations(a.Element),
+        MatrixType { Rows: > 1, Columns: > 1 } m => m.Rows,
+        _ => 1,
+    };
 
     private void ClassifyAndAssign(EntryInfo e)
     {
@@ -465,10 +527,10 @@ internal sealed partial class Checker
                 valid = (stage == ShaderStage.Vertex && output) || (stage == ShaderStage.Pixel && !output);
                 return BuiltIn.ViewportIndex;
             case "clipdistance":
-                valid = stage == ShaderStage.Vertex && output;
+                valid = (stage == ShaderStage.Vertex && output) || (stage == ShaderStage.Pixel && !output);
                 return BuiltIn.ClipDistance;
             case "culldistance":
-                valid = stage == ShaderStage.Vertex && output;
+                valid = (stage == ShaderStage.Vertex && output) || (stage == ShaderStage.Pixel && !output);
                 return BuiltIn.CullDistance;
             case "target":
                 valid = stage == ShaderStage.Pixel && output;
