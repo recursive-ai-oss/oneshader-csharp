@@ -56,8 +56,8 @@ disk or from memory through `CompileOptions.IncludeResolver`. Output is determin
 
 ## Known limits
 
-- SPIR-V only. Metal (MSL) and WebGPU (WGSL) output are planned; asking for them returns
-  diagnostic OSH0002.
+- SPIR-V and Metal (MSL) output; WebGPU (WGSL) is planned and asking for it returns
+  diagnostic OSH0002. MSL limits are listed in `docs/msl-backend.md`.
 - Resources are single (`Count == 1`); resource arrays are not supported yet.
 - HLSL templates, struct member functions, operator overloads and wave intrinsics report
   "not supported yet".
