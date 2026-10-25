@@ -5,6 +5,12 @@ Versions follow [Semantic Versioning](https://semver.org/); before 1.0 the API m
 
 ## [Unreleased]
 
+- WGSL: `WgslBackend.EntryFunctionName` gives the name an entry point has in the WGSL text (reserved words such as `loop` or `fragment` get a trailing underscore). The build task uses it for `WgslEntryPoint` instead of reading the generated text, and a test checks entry points named after reserved words in MSL and WGSL against naga and `metal`.
+- MSL: `switch` cases that fall through and a `default` in the middle now run correctly. Before, a case entered by falling through re-ran the switch edge's phi copies and overwrote the value it fell in with, and a `break` or `continue` inside an `if` inside a case was dropped. WGSL, which has no fall-through, repeats the following case's statements; both are covered by the new `lang_switch_flow` parity case.
+- MSL honours `precise` under Metal's default fast math: functions with precise arithmetic turn off `reassociate` and `contract`, and precise divisions use `precise::divide`.
+- `precise` on local variables, assignments and function return values now marks the arithmetic that feeds them in every target (the SPIR-V output gets `NoContraction` on the same operations as DXC; before, the modifier was parsed and ignored).
+- WGSL: arithmetic marked `precise` compiles with warning OSH5205, because WGSL cannot forbid a fused multiply-add.
+
 ## [0.3.0-preview.1]
 
 - Push constants: `[[vk::push_constant]]` on a struct-typed global or a `ConstantBuffer<T>` compiles on every target. SPIR-V gets a `PushConstant` block whose member offsets equal DXC's (vector-relaxed std430, not the cbuffer rules); MSL takes it as a `constant T&` at a Metal buffer index (set it with `setVertexBytes`, `setFragmentBytes` or `setBytes`); WGSL binds it as a uniform buffer at the next free binding of the highest bind group (WebGPU has no push constants). Reflection gains `ShaderReflection.PushConstants` (layout, stages, per-target slots) and `EntryPointInfo.PushConstant`; the generated class gains a `PushConstants` struct (offsets and `Size` equal to SPIR-V) and `Bindings.PushConstants` (`Size`, `Stages` for the `VkPushConstantRange`, `MslIndex`, `WgslGroup`/`WgslBinding`). An entry point that reads two blocks is OSH0333 at the second block; a block over 128 bytes (Vulkan's guaranteed `maxPushConstantsSize`) is warning OSH0334; `[[vk::push_constant]]` on a `cbuffer` is OSH0333 (DXC rejects it too).

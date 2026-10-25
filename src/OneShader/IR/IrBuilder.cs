@@ -27,6 +27,12 @@ public sealed class IrBuilder
     /// <summary>Source position stamped on new instructions.</summary>
     public SourceSpan Span { get; set; }
 
+    /// <summary>
+    /// When true, floating-point arithmetic emitted from now on is marked <see cref="Instruction.Precise"/> (the front end sets it while it
+    /// lowers an expression whose result goes into a <c>precise</c> variable or return value).
+    /// </summary>
+    public bool Precise { get; set; }
+
     /// <summary>Appends an instruction with a explicit result type.</summary>
     public Instruction Emit(Opcode op, HlslType type, params IrValue[] operands)
     {
@@ -41,6 +47,11 @@ public sealed class IrBuilder
         }
 
         var i = new Instruction(op, type, new List<IrValue>(operands)) { Span = Span, Parent = Block };
+        if (Precise && op is Opcode.Add or Opcode.Sub or Opcode.Mul or Opcode.Div or Opcode.Rem or Opcode.Neg or Opcode.MatMul && type.ScalarElement is { IsFloatingPoint: true })
+        {
+            i.Precise = true;
+        }
+
         Block.Instructions.Add(i);
         return i;
     }

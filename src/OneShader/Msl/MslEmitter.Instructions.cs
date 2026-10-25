@@ -279,6 +279,13 @@ internal sealed partial class MslEmitter
             return;
         }
 
+        if (i.Op == Opcode.Div && i.Precise && k == NumKind.Float)
+        {
+            // Fast math turns a / b into a * (1 / b); precise::divide is the correctly rounded quotient.
+            Define(i, "precise::divide(" + Fit(a, i.Operands[0].Type, i.Type) + ", " + Fit(b, i.Operands[1].Type, i.Type) + ")");
+            return;
+        }
+
         Define(i, a + " " + sym + " " + b);
     }
 

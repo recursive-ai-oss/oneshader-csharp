@@ -50,6 +50,8 @@ with `dxc -spirv -fspv-target-env=vulkan1.2`, and give every resource an explici
 | `compute/push_kernel.hlsl` | A kernel configured only by a struct-typed `[[vk::push_constant]]` global (64 bytes, with a `float3` and padding) | written for this repository | MIT OR Apache-2.0 |
 | `lang/templates.hlsl` | Function and struct templates: deduced and explicit arguments, value parameters, defaults | written for this repository | MIT OR Apache-2.0 |
 | `lang/members.hlsl` | Member functions, this, static members, calls on buffer elements | written for this repository | MIT OR Apache-2.0 |
+| `lang/switch_flow.hlsl` | `switch` with fall-through between cases, stacked labels, a `default` in the middle, negative labels, `return` from a case and a switch inside a loop with `continue` | written for this repository | MIT OR Apache-2.0 |
+| `lang/precise_math.hlsl` | `precise` variables and functions: a multiply-add that differs when fused, `(x + y) - x`, Kahan summation | written for this repository | MIT OR Apache-2.0 |
 | `lang/inheritance.hlsl` | Struct inheritance: inherited members, hiding, base-typed parameters, buffers of derived structs | written for this repository | MIT OR Apache-2.0 |
 | `lang/operators.hlsl` | Member operator overloads: arithmetic, bitwise, comparison, subscript, call | written for this repository | MIT OR Apache-2.0 |
 | `lang/sizeof_static.hlsl` | sizeof constants and non-const static locals | written for this repository | MIT OR Apache-2.0 |
@@ -86,6 +88,8 @@ written for this repository and licensed `MIT OR Apache-2.0`.
 | `skinned` | `3d/skinned.hlsl` | draw, indexed, two vertex buffers, depth | image, tolerance 1 |
 | `lang_resource_arrays` | `lang/resource_arrays.hlsl` | dispatch, descriptor arrays (4 textures, 2 samplers, 2 buffers, 2 constant buffers) | buffer exact vs DXC |
 | `lang_statics_and_literals` | `lang/statics_and_literals.hlsl` | dispatch | buffer exact vs DXC |
+| `lang_switch_flow` | `lang/switch_flow.hlsl` | dispatch, 64 threads | buffers exact vs DXC |
+| `lang_precise_math` | `lang/precise_math.hlsl` | dispatch, one thread | buffer exact vs DXC (the WGSL targets skip it: OSH5205) |
 | `append_consume` | `compute/append_consume.hlsl` | dispatch, 56 items, 48 consumed and appended when even | buffers exact vs DXC (result list as a sorted set), counters |
 | `cull_instances` | `compute/cull_instances.hlsl` | dispatch, 1000 instances | buffers exact (index list as a sorted set), CPU result |
 | `cluster_build` | `compute/cluster_build.hlsl` | dispatch, 3456 clusters | buffer, CPU result within 1e-4 relative |

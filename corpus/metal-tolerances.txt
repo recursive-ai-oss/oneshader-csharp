@@ -12,6 +12,8 @@
 cluster_build buffer:0.1 float 3e-6
 particles buffer:0.1 float 3e-7
 lang_inheritance buffer:0.1 float 2e-7
+# One-ulp differences in a few results with `safe` math (fast math matches exactly).
+push_kernel buffer:0.1 float 2e-7
 
 # f16tof32(f32tof16(x)): Metal returns the half-rounded value, which matches the packed bits in the other buffer, while the
 # NVIDIA reference returns x unchanged (and RADV gives yet another value), so the reference itself differs between GPUs.

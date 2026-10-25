@@ -383,6 +383,7 @@ internal sealed partial class Lowerer
     {
         EnsureInit();
         BeginFunction(f);
+        _returnsPrecise = (sym.Decl.Modifiers & Modifiers.Precise) != 0;
         _span = sym.Span;
         _b.Span = _span;
         int next = 0;

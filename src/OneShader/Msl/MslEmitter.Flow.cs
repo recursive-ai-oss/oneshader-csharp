@@ -536,10 +536,22 @@ internal sealed partial class MslEmitter
         var fnBlocks = _fn.Blocks;
         targets.Sort((x, y) => fnBlocks.IndexOf(x).CompareTo(fnBlocks.IndexOf(y)));
 
+        // A case that other cases fall into must not repeat the switch edge's phi copies in its body: a body entered by falling through
+        // already holds the previous case's values. The switch edge's values are known before the switch, so they are copied there.
+        var copiedBefore = new HashSet<BasicBlock>();
+        foreach (var target in targets)
+        {
+            if (target != merge && HasOtherPredecessorEdge(target, b))
+            {
+                EdgeCopies(b, target);
+                copiedBefore.Add(target);
+            }
+        }
+
+        var enclosingContinue = InnermostLoop()?.Continue;
         W("switch (" + V(selector) + ")");
         W("{");
         _constructs.Add(new Construct { Merge = merge });
-        bool anyFell = false;
         for (int i = 0; i < targets.Count; i++)
         {
             var target = targets[i];
@@ -554,12 +566,22 @@ internal sealed partial class MslEmitter
                 _indent++;
                 W("break;");
                 _indent--;
-                anyFell = true;
                 continue;
             }
 
             BasicBlock? following = i + 1 < targets.Count && targets[i + 1] != merge ? targets[i + 1] : null;
-            var caseStops = new List<BasicBlock>(stops) { merge };
+
+            // The switch's own merge and the enclosing loop's continue block are not stops here: reaching one, even from inside a nested
+            // if, must write `break;` or `continue;` because the case body is the only code that runs between the jump and its target (see Jump).
+            var caseStops = new List<BasicBlock>(stops.Count + 1);
+            foreach (var s in stops)
+            {
+                if (s != merge && s != enclosingContinue)
+                {
+                    caseStops.Add(s);
+                }
+            }
+
             if (following is not null)
             {
                 caseStops.Add(following);
@@ -567,23 +589,13 @@ internal sealed partial class MslEmitter
 
             var flow = Flow.Left;
             _lastStop = null;
-            string body = Capture(() => flow = Go(b, target, caseStops));
+            string body = Capture(() => flow = copiedBefore.Contains(target) ? EmitChain(target, caseStops) : Go(b, target, caseStops));
             _indent++;
             W("{");
             Raw(body);
-            if (flow == Flow.Fell)
+            if (flow == Flow.Fell && (_lastStop is null || _lastStop != following))
             {
-                if (_lastStop == merge)
-                {
-                    _indent++;
-                    W("break;");
-                    _indent--;
-                    anyFell = true;
-                }
-                else if (_lastStop is null || _lastStop != following)
-                {
-                    Unsupported("A switch case falls into a block that is not the next case.", t.Span);
-                }
+                Unsupported("A switch case falls into a block that is not the next case.", t.Span);
             }
 
             W("}");
@@ -592,7 +604,7 @@ internal sealed partial class MslEmitter
 
         _constructs.RemoveAt(_constructs.Count - 1);
         W("}");
-        if (!anyFell || !_reachable.Contains(merge))
+        if (!_reachable.Contains(merge))
         {
             return new Next(true, Flow.Left, null);
         }
@@ -604,6 +616,28 @@ internal sealed partial class MslEmitter
         }
 
         return new Next(false, Flow.Fell, merge);
+    }
+
+    /// <summary>True when a phi at the start of <paramref name="target"/> takes a value from a block other than <paramref name="from"/>, that is, another case falls into it.</summary>
+    private static bool HasOtherPredecessorEdge(BasicBlock target, BasicBlock from)
+    {
+        foreach (var inst in target.Instructions)
+        {
+            if (inst.Op != Opcode.Phi)
+            {
+                break;
+            }
+
+            foreach (var p in inst.Targets)
+            {
+                if (p != from)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     // ---- post-dominators -------------------------------------------------------------------------------------

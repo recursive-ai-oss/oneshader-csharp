@@ -243,7 +243,7 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
             }
             else if (b.Target == CompileTarget.Wgsl)
             {
-                sb.Append(" function=").Append(Quote(WgslEntryName(b.AsText(), b.EntryPoint)));
+                sb.Append(" function=").Append(Quote(Wgsl.WgslBackend.EntryFunctionName(b.EntryPoint)));
             }
 
             sb.Append(" data=").Append(Quote(Convert.ToBase64String(b.Data))).Append('\n');
@@ -282,48 +282,6 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
         }
 
         return false;
-    }
-
-    /// <summary>
-    /// The name of the entry function in WGSL text. The backend renames entry points whose names WGSL reserves, so the name is read from
-    /// the declaration that follows the stage attribute (<c>@vertex</c>, <c>@fragment</c> or <c>@compute</c>); the HLSL name is the fallback.
-    /// </summary>
-    internal static string WgslEntryName(string wgsl, string fallback)
-    {
-        int from = 0;
-        while (from < wgsl.Length)
-        {
-            int at = wgsl.IndexOf('@', from);
-            if (at < 0)
-            {
-                break;
-            }
-
-            from = at + 1;
-            var rest = wgsl.AsSpan(at);
-            if (!(rest.StartsWith("@vertex", StringComparison.Ordinal) || rest.StartsWith("@fragment", StringComparison.Ordinal) || rest.StartsWith("@compute", StringComparison.Ordinal)))
-            {
-                continue;
-            }
-
-            // Other attributes (@workgroup_size(...)) may sit between the stage attribute and the fn keyword.
-            int fn = wgsl.IndexOf("fn ", at, StringComparison.Ordinal);
-            if (fn < 0)
-            {
-                break;
-            }
-
-            int start = fn + 3;
-            int end = start;
-            while (end < wgsl.Length && (char.IsAsciiLetterOrDigit(wgsl[end]) || wgsl[end] == '_'))
-            {
-                end++;
-            }
-
-            return end > start ? wgsl.Substring(start, end - start) : fallback;
-        }
-
-        return fallback;
     }
 
     private static void AppendDep(StringBuilder sb, string relative, string full)

@@ -1,0 +1,6 @@
+# switch with fall-through, a default in the middle, stacked labels and negative labels, 64 threads.
+case lang_switch_flow
+shader lang/switch_flow.hlsl
+dispatch CSMain 4 1 1
+storage 0 0 out size=256
+storage 0 1 out size=256

@@ -23,6 +23,7 @@ internal static class WgslCodes
     public const string Unsupported = "OSH5202";
     public const string MissingBinding = "OSH5203";
     public const string MalformedIr = "OSH5204";
+    public const string PreciseNotHonoured = "OSH5205";
 }
 
 /// <summary>Turns IR into WGSL source for WebGPU.</summary>
@@ -45,6 +46,17 @@ public static class WgslBackend
         ArgumentNullException.ThrowIfNull(diagnostics);
         return new WgslEmitter(module, options ?? new WgslOptions(), diagnostics).Run(entryPointName);
     }
+
+    /// <summary>
+    /// The name of the entry point's function in the WGSL source, which a host passes as the entry point of a pipeline stage.
+    /// It is the HLSL name, except that characters outside letters and digits become underscores and names WGSL reserves or predeclares
+    /// (<c>loop</c>, <c>fragment</c>, <c>select</c>, ...) get a trailing underscore.
+    /// </summary>
+    public static string EntryFunctionName(string hlslName)
+    {
+        ArgumentNullException.ThrowIfNull(hlslName);
+        return WgslNames.Sanitize(hlslName, "main");
+    }
 }
 
 internal sealed partial class WgslEmitter
@@ -57,6 +69,7 @@ internal sealed partial class WgslEmitter
     private EntryPoint _ep = null!;
     private bool _failed;
 
+    private bool _warnedPrecise;
     private readonly HashSet<string> _moduleNames = new(StringComparer.Ordinal);
     private readonly Dictionary<GlobalVariable, string> _globalNames = [];
     private readonly Dictionary<IrFunction, string> _fnNames = [];
@@ -146,6 +159,13 @@ internal sealed partial class WgslEmitter
             {
                 foreach (var i in b.Instructions)
                 {
+                    if (i.Precise && !_warnedPrecise)
+                    {
+                        // WGSL 15.7.1: an implementation may fuse a multiply and an add, and the language has no way to forbid it.
+                        _warnedPrecise = true;
+                        _d.Warning(WgslCodes.PreciseNotHonoured, "'precise' arithmetic is compiled, but WGSL cannot forbid a multiply-add being fused or a sum being reordered, so the result may differ in the last bits from the other targets. Use 'fma' where the exact rounding matters, or leave WGSL out of the targets for this shader.", i.Span);
+                    }
+
                     foreach (var op in i.Operands)
                     {
                         if (op is GlobalVariable g)
@@ -314,7 +334,7 @@ internal sealed partial class WgslEmitter
 
     private void RegisterNames()
     {
-        _fnNames[_ep.Function] = WgslNames.Unique(_moduleNames, WgslNames.Sanitize(_ep.Function.Name, "main"));
+        _fnNames[_ep.Function] = WgslNames.Unique(_moduleNames, WgslBackend.EntryFunctionName(_ep.Function.Name));
         foreach (var g in _m.Globals)
         {
             if (_reachableGlobals.Contains(g))
