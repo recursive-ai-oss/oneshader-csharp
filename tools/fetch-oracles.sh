@@ -142,8 +142,11 @@ exe=""; [ "$platform" = Windows-x86_64 ] && exe=.exe
 if [ ! -f "$dir/bin/naga$exe" ] || [ "$("$dir/bin/naga$exe" --version 2>/dev/null | tr -d '\r' || true)" != "$NAGA_VERSION" ]; then
   if command -v cargo >/dev/null 2>&1; then
     echo "fetch-oracles: naga $NAGA_VERSION (cargo install)"
-    cargo install naga-cli --version "$NAGA_VERSION" --locked --root "$dir/naga" >/dev/null 2>&1 \
-      && cp -f "$dir/naga/bin/naga$exe" "$dir/bin/naga$exe" || echo "fetch-oracles: naga install failed; WGSL validation tests will skip" >&2
+    log="$dir/naga-install.log"
+    { cargo install naga-cli --version "$NAGA_VERSION" --locked --root "$dir/naga" >"$log" 2>&1 \
+      && cp -f "$dir/naga/bin/naga$exe" "$dir/bin/naga$exe"; } \
+      || { tail -15 "$log" >&2; echo "fetch-oracles: naga install failed; WGSL validation tests will skip" >&2; }
+    rm -f "$log"
   else
     echo "fetch-oracles: cargo not found; WGSL validation tests will skip" >&2
   fi
