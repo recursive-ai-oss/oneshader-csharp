@@ -55,6 +55,11 @@ deterministic.
     `VertexAttribute` (location, `VertexFormat`, offset).
   - Compute entry points add `ThreadGroupSizeX`, `ThreadGroupSizeY` and `ThreadGroupSizeZ`.
   - Metal and WebGPU outputs will be added as sibling members (`Msl`, `Wgsl`).
+- **Reflection**: the file's class has `static ShaderReflection Reflection`, the reflection the rest of the class
+  was generated from (resources with slots and layouts, entry points, vertex inputs, thread-group sizes). It is stored
+  as text in the assembly (`ReadOnlySpan<byte> ReflectionData`, about 1 to 4 KB per shader) and parsed on the first
+  read, so a program that never reads it carries no parser after trimming. Hot reload compares it with a fresh
+  compile; see "Hot reload" in the `RecursiveAI.OneShader` package README.
 - All counts, sizes, strides, offsets, locations and thread-group sizes are `uint`, matching
   the Vulkan API.
 
@@ -105,6 +110,9 @@ public static class Hits
 
 A resource without a counter has no `CounterBinding` constant. Arrays of append or consume buffers are an error.
 `RWStructuredBuffer.IncrementCounter` and `DecrementCounter` are not supported yet.
+
+The names `Reflection` and `ReflectionData` are taken in the file's class, so a constant buffer, struct or entry point
+with one of those names is a name-clash error.
 
 Member types in generated structs:
 

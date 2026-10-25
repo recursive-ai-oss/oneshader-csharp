@@ -44,6 +44,21 @@ internal static class Frontend
         }
     }
 
+    /// <summary>Remembers which files the wrapped resolver found, so the caller can tell a file watcher what the compile read.</summary>
+    private sealed class RecordingResolver(IIncludeResolver inner, ICollection<string> found) : IIncludeResolver
+    {
+        public SourceFile? Resolve(string name, bool isAngled, SourceFile includer, IList<string> searched)
+        {
+            var file = inner.Resolve(name, isAngled, includer, searched);
+            if (file is not null)
+            {
+                found.Add(file.Identity);
+            }
+
+            return file;
+        }
+    }
+
     private static bool ListHas(IReadOnlyList<CompileTarget> list, CompileTarget t)
     {
         foreach (var x in list)
@@ -57,12 +72,16 @@ internal static class Frontend
         return false;
     }
 
-    public static FrontendResult Run(string source, string path, CompileOptions options, CancellationToken cancellationToken = default)
+    public static FrontendResult Run(string source, string path, CompileOptions options, CancellationToken cancellationToken = default) =>
+        Run(source, path, options, null, cancellationToken);
+
+    /// <summary>As above; every included file the resolver finds is added to <paramref name="includesRead"/> (by its identity).</summary>
+    public static FrontendResult Run(string source, string path, CompileOptions options, ICollection<string>? includesRead, CancellationToken cancellationToken)
     {
         var bag = new DiagnosticBag();
         try
         {
-            return RunCore(source, path, options, bag, cancellationToken);
+            return RunCore(source, path, options, bag, includesRead, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -75,7 +94,7 @@ internal static class Frontend
         }
     }
 
-    private static FrontendResult RunCore(string source, string path, CompileOptions options, DiagnosticBag bag, CancellationToken ct)
+    private static FrontendResult RunCore(string source, string path, CompileOptions options, DiagnosticBag bag, ICollection<string>? includesRead, CancellationToken ct)
     {
         var pp = new PreprocessorOptions();
         if (options.IncludeResolver is { } hook)
@@ -85,6 +104,11 @@ internal static class Frontend
         else
         {
             pp.IncludeResolver = new FileSystemIncludeResolver(options.IncludeDirectories);
+        }
+
+        if (includesRead is not null)
+        {
+            pp.IncludeResolver = new RecordingResolver(pp.IncludeResolver, includesRead);
         }
 
         foreach (var d in options.Defines)

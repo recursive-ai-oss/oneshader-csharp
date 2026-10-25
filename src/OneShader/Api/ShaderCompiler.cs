@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text;
 using System.Threading;
 using OneShader.Diagnostics;
@@ -149,6 +150,14 @@ public sealed class CompileResult
     /// <summary>Reflection for the file; null when compilation failed.</summary>
     public ShaderReflection? Reflection { get; }
 
+    /// <summary>
+    /// The files this compile read, so a file watcher knows what to observe: the main file first (the path passed to
+    /// <see cref="ShaderCompiler.Compile"/>), then every file an <c>#include</c> found, each once, in ordinal order.
+    /// Included files are listed by the path their resolver reported (the full path for file-system includes). The list is
+    /// filled on failure too, with whatever was read before the error, so fixing an included file can trigger a retry.
+    /// </summary>
+    public IReadOnlyList<string> Files { get; internal set; } = [];
+
     /// <summary>Finds the blob for an entry point and target, or null.</summary>
     public ShaderBlob? Find(string entryPoint, CompileTarget target)
     {
@@ -176,6 +185,9 @@ public static class ApiDiagnosticCodes
     /// <summary>The optimizer hit an internal problem; the shader was compiled without optimization (a warning).</summary>
     public const string OptimizerFallback = "OSH6001";
 
+    /// <summary>The shader file passed to <see cref="ShaderCompiler.CompileFile"/> could not be read.</summary>
+    public const string FileNotReadable = "OSH0003";
+
     /// <summary>An unexpected exception escaped a compiler stage; reported as an error on line 1 of the file (a compiler bug).</summary>
     public const string InternalError = "OSH7000";
 }
@@ -202,6 +214,41 @@ public static class ShaderCompiler
     }
 
     /// <summary>
+    /// Reads a shader file and compiles it, for tools and hot reload. Behaves like <see cref="Compile"/> with the file's text and
+    /// <paramref name="path"/> as the name in diagnostics, and includes are found on disk (relative to the including file, then
+    /// <see cref="CompileOptions.IncludeDirectories"/>) unless <see cref="CompileOptions.IncludeResolver"/> is set.
+    /// A file that is missing or cannot be read is error <see cref="ApiDiagnosticCodes.FileNotReadable"/> in the result, not an exception.
+    /// <see cref="CompileResult.Files"/> lists full paths, the shader first, so it can be watched even when the compile fails.
+    /// Throws <see cref="ArgumentNullException"/> for a null path and <see cref="OperationCanceledException"/> when cancelled.
+    /// </summary>
+    /// <param name="path">The file to compile; relative paths are relative to the current directory.</param>
+    /// <param name="options">Settings; defaults apply when null.</param>
+    /// <param name="cancellationToken">Cancels a long compile.</param>
+    public static CompileResult CompileFile(string path, CompileOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        cancellationToken.ThrowIfCancellationRequested();
+        string full;
+        string text;
+        try
+        {
+            full = Path.GetFullPath(path);
+            text = File.ReadAllText(full);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException or System.Security.SecurityException)
+        {
+            var failure = new DiagnosticBag();
+            failure.Error(ApiDiagnosticCodes.FileNotReadable, "Cannot read the shader file: " + ex.Message + " Check the path and permissions.", new SourceSpan(path, 1, 1));
+            return new CompileResult(failure.Items, [], null) { Files = [path] };
+        }
+
+        var result = Compile(text, path, options, cancellationToken);
+        var files = new List<string>(result.Files) { [0] = full };
+        result.Files = files;
+        return result;
+    }
+
+    /// <summary>
     /// Runs the pipeline and turns any unexpected exception into error OSH7000 on line 1 of the file, so a compiler
     /// bug never takes down the host (the build node or a tool). <paramref name="probe"/> runs after lowering; tests use it to force a failure.
     /// </summary>
@@ -210,9 +257,12 @@ public static class ShaderCompiler
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(path);
         cancellationToken.ThrowIfCancellationRequested();
+        var includes = new HashSet<string>(StringComparer.Ordinal);
         try
         {
-            return CompileCore(source, path, options ?? new CompileOptions(), probe, cancellationToken);
+            var result = CompileCore(source, path, options ?? new CompileOptions(), probe, includes, cancellationToken);
+            result.Files = ListFiles(path, includes);
+            return result;
         }
         catch (OperationCanceledException)
         {
@@ -222,13 +272,29 @@ public static class ShaderCompiler
         {
             var failure = new DiagnosticBag();
             failure.Error(ApiDiagnosticCodes.InternalError, "Internal compiler error (" + ex.GetType().Name + ": " + ex.Message + "). This is a bug in the compiler, not in the shader; please report it with the shader. Setting Optimize to false may avoid it.", new SourceSpan(path, 1, 1));
-            return new CompileResult(failure.Items, [], null);
+            return new CompileResult(failure.Items, [], null) { Files = ListFiles(path, includes) };
         }
     }
 
-    private static CompileResult CompileCore(string source, string path, CompileOptions options, Action<IR.IrModule>? probe, CancellationToken cancellationToken)
+    private static string[] ListFiles(string path, HashSet<string> includes)
     {
-        var result = Semantics.Frontend.Run(source, path, options, cancellationToken);
+        var sorted = new List<string>(includes.Count);
+        foreach (string f in includes)
+        {
+            if (!string.Equals(f, path, StringComparison.Ordinal))
+            {
+                sorted.Add(f);
+            }
+        }
+
+        sorted.Sort(StringComparer.Ordinal);
+        sorted.Insert(0, path);
+        return [.. sorted];
+    }
+
+    private static CompileResult CompileCore(string source, string path, CompileOptions options, Action<IR.IrModule>? probe, ICollection<string> includesRead, CancellationToken cancellationToken)
+    {
+        var result = Semantics.Frontend.Run(source, path, options, includesRead, cancellationToken);
         var diagnostics = result.Diagnostics;
         var blobs = new List<ShaderBlob>();
         if (diagnostics.HasErrors || result.Module is not { } module)

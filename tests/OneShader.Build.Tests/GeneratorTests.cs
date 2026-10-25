@@ -115,6 +115,28 @@ public class GeneratorTests
     }
 
     [Fact]
+    public void EmbeddedReflectionIsWhatTheCodeWasGeneratedFrom()
+    {
+        var asm = CompileAll(out var ctx);
+        try
+        {
+            foreach (string name in GoldenModels.Names)
+            {
+                var type = asm.GetType("PrebuiltSample.Shaders." + name)!;
+                var embedded = (ShaderReflection)type.GetProperty("Reflection")!.GetValue(null)!;
+                var expected = GoldenModels.Build(name).Reflection;
+                Assert.True(ReflectionFormat.AreEqual(expected, embedded), name + ": embedded reflection differs from the model the code was generated from");
+                Assert.True(InterfaceCompatibility.Compare(embedded, expected).IsCompatible);
+                Assert.Same(embedded, type.GetProperty("Reflection")!.GetValue(null));
+            }
+        }
+        finally
+        {
+            ctx.Unload();
+        }
+    }
+
+    [Fact]
     public void SpriteExposesTheDocumentedShape()
     {
         var asm = CompileAll(out var ctx);
