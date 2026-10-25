@@ -37,4 +37,20 @@ for f in fuzz/regressions/*.hlsl; do dotnet <dir>/OneShader.Fuzz.dll --file $f a
 
 ## Campaign results
 
-Results are appended below by the campaign runs.
+Final run, one batched job on a 32-core AMD Ryzen 9 7950X3D (.NET SDK 10.0.402, load 0.07 before), all five targets in parallel, 600 s each, instrumented `OneShader.dll`, seeded from `corpus/` (push-constant shaders included), lock held:
+
+| Target | Seed | Inputs run | Execs/s | Coverage features | Findings |
+|---|---|---|---|---|---|
+| `pp` | 301 | 2 911 533 | 4 852 | 2 502 | 0 |
+| `frontend` | 302 | 2 042 591 | 3 404 | 15 617 | 0 |
+| `optimizer` | 303 | 1 472 279 | 2 454 | 18 415 | 0 |
+| `backends` | 304 | 1 199 438 | 1 999 | 23 922 | 0 |
+| `validity` | 305 | 1 156 570 | 1 928 | 23 795 | 0 (7 859 SPIR-V through `spirv-val`, 7 859 WGSL through `naga`) |
+
+`features` counts distinct coverage-map slots reached, not source lines. The run before it (seed 201, previous commit) found three more defects, now fixed and in `fuzz/regressions/`; each earlier local round (up to 25 minutes per target) ended clean after its fixes.
+
+MSL: 300 accepted `validity` mutants compiled with `metal -c` and packed with `metallib` under `tools/validate-msl.sh` (layout checks on): 300 passed, 0 failed.
+
+Execution parity (`tools/run-parity.sh`, validation layer on) after the fixes: 375 tests, 320 passed, 55 skipped (Metal-only and known-gap cases), 0 failed, 0 validation messages, on an NVIDIA RTX 4070 and on RADV.
+
+What the fuzzer cannot see: it checks that output is valid and deterministic, not that it computes the right values; the parity suite covers that for the corpus only. Mutations are mostly token-level edits of corpus shaders, so deep semantic features reached only by a chain of several correct edits are covered less well. The `--libfuzzer` entry point has not been run.
