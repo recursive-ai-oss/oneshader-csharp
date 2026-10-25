@@ -46,12 +46,12 @@ if [ "$platform" = Windows-x86_64 ]; then
     mkdir -p "$dir/bin"
     cp -f "$work"/dxc/bin/x64/dxc.exe "$work"/dxc/bin/x64/dxcompiler.dll "$work"/dxc/bin/x64/dxil.dll "$dir/bin/"
     echo "fetch-oracles: SPIRV-Tools from Vulkan SDK $VULKAN_SDK_VERSION for Windows (large download)"
-    get "$VULKAN_SDK_WINDOWS_URL" "$VULKAN_SDK_WINDOWS_SHA256" sdk.exe
+    get "$VULKAN_SDK_WINDOWS_URL" "$VULKAN_SDK_WINDOWS_SHA256" installer.exe
     # The installer is a GUI-subsystem program, so wait for it explicitly; it writes only under --root.
-    powershell -NoProfile -Command "\$p = Start-Process -FilePath '$(winpath "$work/sdk.exe")' -ArgumentList '--root','$(winpath "$work/sdk")','--accept-licenses','--default-answer','--confirm-command','install','copy_only=1' -Wait -PassThru; Write-Host ('installer exit code ' + \$p.ExitCode); exit \$p.ExitCode" \
-      || { echo "fetch-oracles: SDK installer failed" >&2; ls -la "$work" "$work/sdk" >&2 || true; exit 1; }
+    powershell -NoProfile -Command "\$p = Start-Process -FilePath '$(winpath "$work/installer.exe")' -ArgumentList '--root','$(winpath "$work/sdkroot")','--accept-licenses','--default-answer','--confirm-command','install','copy_only=1' -Wait -PassThru; Write-Host ('installer exit code ' + \$p.ExitCode); exit \$p.ExitCode" \
+      || { echo "fetch-oracles: SDK installer failed" >&2; ls -la "$work" "$work/sdkroot" >&2 || true; exit 1; }
     for t in spirv-val spirv-dis spirv-as spirv-opt; do
-      cp -f "$work/sdk/Bin/$t.exe" "$dir/bin/$t.exe"
+      cp -f "$work/sdkroot/Bin/$t.exe" "$dir/bin/$t.exe"
     done
     echo "$want" > "$stamp"
     echo "fetch-oracles: installed into $dir/bin"
