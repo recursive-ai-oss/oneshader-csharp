@@ -5,7 +5,8 @@
 # DIR/vklayers/ (Khronos validation layer; point VK_ADD_LAYER_PATH at it), and DIR/bin/naga when cargo is on PATH.
 # The system Vulkan loader and GPU driver are used as they are; nothing here replaces them.
 # Idempotent (a stamp file records the pinned versions), verifies SHA-256, needs no sudo and
-# installs nothing outside DIR. Linux x64 only.
+# installs nothing outside DIR. Linux x64, macOS arm64 and Windows x64 (run from Git Bash); other platforms
+# get no binaries and their oracle-based tests skip.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -17,14 +18,45 @@ mkdir -p "$dir"
 dir="$(cd "$dir" && pwd)"
 
 platform="$(uname -s)-$(uname -m)"
+case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) platform=Windows-x86_64 ;; esac
 case "$platform" in
-  Linux-x86_64|Darwin-arm64) ;;
+  Linux-x86_64|Darwin-arm64|Windows-x86_64) ;;
   *) echo "fetch-oracles: no binaries are pinned for $platform; skipping" >&2; exit 0 ;;
 esac
 
 sha256_of() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
 
-if [ "$platform" = Darwin-arm64 ]; then
+if [ "$platform" = Windows-x86_64 ]; then
+  # DXC from its Windows release zip; SPIRV-Tools from the Windows Vulkan SDK installer run headless.
+  stamp="$dir/.stamp"
+  want="dxc=$DXC_WINDOWS_SHA256 sdk=$VULKAN_SDK_WINDOWS_SHA256"
+  if [ -f "$stamp" ] && [ "$(cat "$stamp")" = "$want" ] && [ -f "$dir/bin/dxc.exe" ] && [ -f "$dir/bin/spirv-val.exe" ]; then
+    echo "fetch-oracles: up to date in $dir (dxc $DXC_VERSION, SPIRV-Tools from Vulkan SDK $VULKAN_SDK_VERSION)"
+  else
+    work="$(mktemp -d "$dir/.work.XXXXXX")"
+    trap 'rm -rf "$work"' EXIT
+    winpath() { cygpath -w "$1"; }
+    get() { # url sha256 file
+      if [ -n "${ONESHADER_FETCH_CACHE:-}" ] && [ -f "$ONESHADER_FETCH_CACHE/$3" ]; then cp "$ONESHADER_FETCH_CACHE/$3" "$work/$3"; else curl --fail --silent --show-error --location --retry 3 --output "$work/$3" "$1"; fi
+      [ "$(sha256_of "$work/$3")" = "$2" ] || { echo "fetch-oracles: checksum mismatch for $1" >&2; exit 1; }
+    }
+    echo "fetch-oracles: dxc $DXC_VERSION for Windows"
+    get "$DXC_WINDOWS_URL" "$DXC_WINDOWS_SHA256" dxc.zip
+    powershell -NoProfile -Command "Expand-Archive -LiteralPath '$(winpath "$work/dxc.zip")' -DestinationPath '$(winpath "$work/dxc")'"
+    mkdir -p "$dir/bin"
+    cp -f "$work"/dxc/bin/x64/dxc.exe "$work"/dxc/bin/x64/dxcompiler.dll "$work"/dxc/bin/x64/dxil.dll "$dir/bin/"
+    echo "fetch-oracles: SPIRV-Tools from Vulkan SDK $VULKAN_SDK_VERSION for Windows (large download)"
+    get "$VULKAN_SDK_WINDOWS_URL" "$VULKAN_SDK_WINDOWS_SHA256" sdk.exe
+    # The installer is a GUI-subsystem program, so wait for it explicitly; it writes only under --root.
+    powershell -NoProfile -Command "\$p = Start-Process -FilePath '$(winpath "$work/sdk.exe")' -ArgumentList '--root','$(winpath "$work/sdk")','--accept-licenses','--default-answer','--confirm-command','install','copy_only=1' -Wait -PassThru; exit \$p.ExitCode" \
+      || { echo "fetch-oracles: SDK installer failed" >&2; exit 1; }
+    for t in spirv-val spirv-dis spirv-as spirv-opt; do
+      cp -f "$work/sdk/Bin/$t.exe" "$dir/bin/$t.exe"
+    done
+    echo "$want" > "$stamp"
+    echo "fetch-oracles: installed into $dir/bin"
+  fi
+elif [ "$platform" = Darwin-arm64 ]; then
   # SPIRV-Tools from the macOS Vulkan SDK; DXC has no macOS release, so it is not installed.
   stamp="$dir/.stamp"
   want="macos-sdk=$VULKAN_SDK_MACOS_SHA256"
@@ -106,11 +138,12 @@ fi
 fi
 
 # naga (WGSL validator): installed with cargo when available; skipped with a note otherwise.
-if [ ! -x "$dir/bin/naga" ] || [ "$("$dir/bin/naga" --version 2>/dev/null || true)" != "$NAGA_VERSION" ]; then
+exe=""; [ "$platform" = Windows-x86_64 ] && exe=.exe
+if [ ! -f "$dir/bin/naga$exe" ] || [ "$("$dir/bin/naga$exe" --version 2>/dev/null | tr -d '\r' || true)" != "$NAGA_VERSION" ]; then
   if command -v cargo >/dev/null 2>&1; then
     echo "fetch-oracles: naga $NAGA_VERSION (cargo install)"
     cargo install naga-cli --version "$NAGA_VERSION" --locked --root "$dir/naga" >/dev/null 2>&1 \
-      && cp -f "$dir/naga/bin/naga" "$dir/bin/naga" || echo "fetch-oracles: naga install failed; WGSL validation tests will skip" >&2
+      && cp -f "$dir/naga/bin/naga$exe" "$dir/bin/naga$exe" || echo "fetch-oracles: naga install failed; WGSL validation tests will skip" >&2
   else
     echo "fetch-oracles: cargo not found; WGSL validation tests will skip" >&2
   fi

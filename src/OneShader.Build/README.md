@@ -7,13 +7,12 @@ with no dependency beyond .NET itself. Shader errors are build errors on the HLS
 constant buffers, vertex inputs and resource bindings become C# types and constants laid out to
 match the compiled shader, so a CPU/GPU mismatch fails the build instead of the frame.
 
-**Preview.** Vulkan (SPIR-V) is the default target; Metal (MSL) and WebGPU (WGSL) are opt-in with `OneShaderTargets`. The API and the generated code may still
-change before 1.0.
+Vulkan (SPIR-V) is the default target; Metal (MSL) and WebGPU (WGSL) are opt-in with `OneShaderTargets`.
 
 ## Install
 
 ```sh
-dotnet add package RecursiveAI.OneShader.Build --prerelease
+dotnet add package RecursiveAI.OneShader.Build
 ```
 
 Target framework `net10.0`. Build with the .NET SDK (`dotnet build`); Visual Studio's .NET
@@ -125,7 +124,7 @@ Properties: `EnableDefaultOneShaderItems`, `OneShaderNamespace`, `OneShaderTarge
 `OneShaderDefines`, `OneShaderIncludeDirectories`. Shaders are recompiled only when they, a file they include, or the
 options change; the output is deterministic.
 
-## What works in 0.4
+## What works
 
 - Vertex, pixel and compute shaders in modern HLSL (Shader Model 6 style, HLSL 2021): structs,
   functions, templates, member functions, inheritance and operator overloads, constant buffers,

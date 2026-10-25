@@ -7,6 +7,8 @@ reflection. An MSBuild task and a source generator compile your `*.hlsl` files
 during `dotnet build`, report errors on the HLSL line, and generate C# structs
 and binding code that match the compiled shader.
 
+[![NuGet](https://img.shields.io/nuget/v/RecursiveAI.OneShader)](https://www.nuget.org/packages/RecursiveAI.OneShader)
+[![CI](https://github.com/recursive-ai-oss/oneshader-csharp/actions/workflows/ci.yml/badge.svg)](https://github.com/recursive-ai-oss/oneshader-csharp/actions/workflows/ci.yml)
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4)](#install)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
 
@@ -62,13 +64,13 @@ OneShader, a bar to the left is a loss:
 For building shaders into your project:
 
 ```sh
-dotnet add package RecursiveAI.OneShader.Build --prerelease
+dotnet add package RecursiveAI.OneShader.Build
 ```
 
 For the compiler itself, for hot reload and tools:
 
 ```sh
-dotnet add package RecursiveAI.OneShader --prerelease
+dotnet add package RecursiveAI.OneShader
 ```
 
 Target framework `net10.0`. Build with the .NET SDK (`dotnet build`); Visual
@@ -124,15 +126,15 @@ byte[] spirv = result.Find("PSMain", CompileTarget.SpirV)!.ToArray();
 
 ## Status
 
-**Preview, version 0.4.** Vertex, pixel and compute shaders compile to
+**Version 1.0.** Vertex, pixel and compute shaders compile to
 optimized SPIR-V, Metal Shading Language and WGSL with reflection; the build
 package embeds each selected target next to generated C# bindings (the
 `OneShaderTargets` switch), and the runtime API supports hot reload with a
 layout-compatibility check. Not supported: geometry, tessellation, mesh and
 ray-tracing stages, unbounded resource arrays and wave intrinsics, and some
-features on some targets (the backend pages list them). The API may change
-before 1.0. The MSL and WGSL targets and `OneShaderTargets` are new in the 0.3 line; the
-[changelog](CHANGELOG.md) says which preview first contains each feature.
+features on some targets (the backend pages list them). The public API and the
+generated code follow [Semantic Versioning](https://semver.org/); the
+[changelog](CHANGELOG.md) lists what each release changes.
 
 ## Where to go
 

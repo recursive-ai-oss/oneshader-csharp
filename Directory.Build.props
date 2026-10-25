@@ -1,7 +1,7 @@
 <Project>
   <!-- Package identity and version: the only place they are defined. -->
   <PropertyGroup>
-    <OneShaderVersion>0.5.0-dev</OneShaderVersion>
+    <OneShaderVersion>1.0.0</OneShaderVersion>
     <OneShaderLibraryPackageId>RecursiveAI.OneShader</OneShaderLibraryPackageId>
     <OneShaderBuildPackageId>RecursiveAI.OneShader.Build</OneShaderBuildPackageId>
     <RootNamespace>OneShader</RootNamespace>
@@ -11,6 +11,14 @@
     <Copyright>Copyright © Recursive AI, LLC</Copyright>
     <PackageLicenseExpression>MIT OR Apache-2.0</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/recursive-ai-oss/oneshader-csharp</RepositoryUrl>
+    <PackageProjectUrl>$(RepositoryUrl)</PackageProjectUrl>
+    <PackageReleaseNotes>See CHANGELOG.md in the repository.</PackageReleaseNotes>
+    <!-- Source Link for GitHub comes with the SDK; these make the repository URL, the commit and any
+         untracked sources part of the symbols so debugging works without a package reference. -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
   </PropertyGroup>
 
   <!--

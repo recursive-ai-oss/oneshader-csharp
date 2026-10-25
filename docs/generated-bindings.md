@@ -1,7 +1,6 @@
 # Generated bindings
 
-Status: draft. The shape below is what the build package generates; names may still be adjusted
-until the first prerelease package, after which changes are listed in the changelog.
+The shape below is what the build package generates. Changes to it are listed in the changelog.
 
 ## Adding shaders to a project
 

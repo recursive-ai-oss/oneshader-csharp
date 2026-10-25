@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'ci-check/**']
   pull_request:
 
 permissions:
@@ -20,19 +20,42 @@ jobs:
           - { os: ubuntu-latest, rid: linux-x64 }
           - { os: ubuntu-24.04-arm, rid: linux-arm64 }
           - { os: macos-latest, rid: osx-arm64 }
+    defaults:
+      run:
+        shell: bash
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: 1
       DOTNET_NOLOGO: 1
       MSBUILDDISABLENODEREUSE: 1
     steps:
       - uses: actions/checkout@v4
+      # Build output and the reference tools live outside the checkout, as they do locally.
+      - name: Artifacts and tools directories
+        run: |
+          echo "ONESHADER_ARTIFACTS=$RUNNER_TEMP/artifacts" >> "$GITHUB_ENV"
+          echo "ONESHADER_TOOLS=$RUNNER_TEMP/oracles" >> "$GITHUB_ENV"
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
 
+      # Reference tools are released binaries used only as test oracles: DXC, spirv-val and the
+      # validation layer where they are released for the platform, naga built with cargo from
+      # the pinned crate. A tool without a binary for this platform makes its tests skip.
+      - name: Cache reference tools
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/oracles
+          key: oracles-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/oracles.env', 'tools/fetch-oracles.sh') }}
+
+      - name: Fetch reference tools
+        run: |
+          tools/fetch-oracles.sh "$ONESHADER_TOOLS"
+          ls "$ONESHADER_TOOLS/bin"
+
       - name: Build
         run: dotnet build OneShader.slnx -c Release
 
+      # Oracle-based tests skip with a message when a tool is missing; the summary line counts them.
       - name: Test
         run: dotnet test --solution OneShader.slnx -c Release --no-build
 
@@ -40,26 +63,8 @@ jobs:
         run: dotnet pack OneShader.slnx -c Release --no-build
 
       - name: Publish AOT smoke app (warnings are errors)
-        run: dotnet publish tests/AotSmoke -c Release -r ${{ matrix.rid }}
+        run: dotnet publish tests/AotSmoke -c Release -r ${{ matrix.rid }} -o "$RUNNER_TEMP/smoke" -warnaserror
 
-      - name: Cache reference tools
-        if: matrix.rid == 'linux-x64'
-        uses: actions/cache@v4
-        with:
-          path: ${{ runner.temp }}/oracles
-          key: oracles-${{ hashFiles('tools/oracles.env', 'tools/fetch-oracles.sh') }}
-
-      - name: Fetch reference tools (dxc, spirv-val)
-        if: matrix.rid == 'linux-x64'
-        shell: bash
+      - name: Run AOT smoke app
         run: |
-          tools/fetch-oracles.sh "$RUNNER_TEMP/oracles"
-          "$RUNNER_TEMP/oracles/bin/spirv-val" --version
-          "$RUNNER_TEMP/oracles/bin/dxc" --version
-          echo "$RUNNER_TEMP/oracles/bin" >> "$GITHUB_PATH"
-
-      - name: Parity tests (compile and validate the corpus; GPU cases skip without a Vulkan device)
-        if: matrix.rid == 'linux-x64'
-        env:
-          ONESHADER_TOOLS: ${{ runner.temp }}/oracles
-        run: dotnet test --project tests/OneShader.ParityTests -c Release --no-build
+          if [ "$RUNNER_OS" = Windows ]; then "$RUNNER_TEMP/smoke/AotSmoke.exe"; else "$RUNNER_TEMP/smoke/AotSmoke"; fi

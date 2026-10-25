@@ -431,7 +431,7 @@ public sealed partial class DxcPreprocessParityTests
     public void MatchesDxcTokens(string name)
     {
         string? tools = Environment.GetEnvironmentVariable("ONESHADER_TOOLS");
-        string dxc = Path.Combine(tools ?? string.Empty, "bin", "dxc");
+        string dxc = Path.Combine(tools ?? string.Empty, "bin", "dxc" + (OperatingSystem.IsWindows() ? ".exe" : ""));
         if (string.IsNullOrEmpty(tools) || !File.Exists(dxc))
         {
             Assert.Skip("dxc not found under $ONESHADER_TOOLS/bin");

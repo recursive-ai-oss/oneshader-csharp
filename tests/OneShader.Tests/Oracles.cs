@@ -10,6 +10,8 @@ internal static class Oracles
 {
     public static string? Find(string name)
     {
+        // Tool binaries carry the .exe suffix on Windows.
+        name += (OperatingSystem.IsWindows() ? ".exe" : "");
         var tools = Environment.GetEnvironmentVariable("ONESHADER_TOOLS");
         if (!string.IsNullOrEmpty(tools))
         {

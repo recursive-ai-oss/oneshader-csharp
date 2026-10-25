@@ -203,6 +203,8 @@ public sealed class PushConstantBuildTests : IDisposable
 
     private static string? Tool(string name)
     {
+        // Tool binaries carry the .exe suffix on Windows.
+        name += (OperatingSystem.IsWindows() ? ".exe" : "");
         string? tools = Environment.GetEnvironmentVariable("ONESHADER_TOOLS");
         if (!string.IsNullOrEmpty(tools) && File.Exists(Path.Combine(tools, "bin", name)))
         {

@@ -35,6 +35,8 @@ public static class Tools
 
     private static string? Find(string tool)
     {
+        // Tool binaries carry the .exe suffix on Windows.
+        tool += (OperatingSystem.IsWindows() ? ".exe" : "");
         if (ToolsDir is not null)
         {
             string p = Path.Combine(ToolsDir, "bin", tool);

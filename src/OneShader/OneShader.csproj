@@ -7,6 +7,9 @@
     <PackageTags>hlsl;shader;shaders;spirv;vulkan;compiler;gpu;reflection</PackageTags>
     <PackageLicenseExpression>MIT OR Apache-2.0</PackageLicenseExpression>
     <IsPackable>true</IsPackable>
+    <!-- Symbols ship as a separate .snupkg. -->
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="/" />

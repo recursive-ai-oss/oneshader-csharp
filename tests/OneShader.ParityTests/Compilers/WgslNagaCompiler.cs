@@ -31,8 +31,8 @@ public static class WgslNagaCompiler
 
     private static byte[] Compile(ShaderRequest request)
     {
-        string naga = Tools.ToolsDir is not null && File.Exists(Path.Combine(Tools.ToolsDir, "bin", "naga"))
-            ? Path.Combine(Tools.ToolsDir, "bin", "naga")
+        string naga = Tools.ToolsDir is not null && File.Exists(Path.Combine(Tools.ToolsDir, "bin", "naga" + (OperatingSystem.IsWindows() ? ".exe" : "")))
+            ? Path.Combine(Tools.ToolsDir, "bin", "naga" + (OperatingSystem.IsWindows() ? ".exe" : ""))
             : throw new InvalidOperationException("naga not found: run tools/fetch-oracles.sh and set ONESHADER_TOOLS");
         var stage = request.Stage switch
         {
@@ -88,8 +88,8 @@ public static class WgslNagaCompiler
     /// </summary>
     private static void StripWorkgroupArrayStrides(string spv, string dir)
     {
-        string? dis = Tools.ToolsDir is not null ? Path.Combine(Tools.ToolsDir, "bin", "spirv-dis") : null;
-        string? asm = Tools.ToolsDir is not null ? Path.Combine(Tools.ToolsDir, "bin", "spirv-as") : null;
+        string? dis = Tools.ToolsDir is not null ? Path.Combine(Tools.ToolsDir, "bin", "spirv-dis" + (OperatingSystem.IsWindows() ? ".exe" : "")) : null;
+        string? asm = Tools.ToolsDir is not null ? Path.Combine(Tools.ToolsDir, "bin", "spirv-as" + (OperatingSystem.IsWindows() ? ".exe" : "")) : null;
         if (dis is null || asm is null || !File.Exists(dis) || !File.Exists(asm))
         {
             return;

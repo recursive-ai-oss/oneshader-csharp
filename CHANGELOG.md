@@ -1,9 +1,17 @@
 # Changelog
 
 All notable changes to the packages `RecursiveAI.OneShader` and `RecursiveAI.OneShader.Build`.
-Versions follow [Semantic Versioning](https://semver.org/); before 1.0 the API may change between previews.
+Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+
+## [1.0.0]
+
+First stable release. The public API (`ShaderCompiler`, `CompileOptions`, `CompileResult`, reflection, `InterfaceCompatibility`) and the generated C# shape are now covered by Semantic Versioning.
+
+- Vertex, pixel and compute shaders in modern HLSL (HLSL 2021 templates included) compile to optimized SPIR-V for Vulkan 1.2, Metal Shading Language and WGSL, each with reflection; the build package compiles `*.hlsl` during `dotnet build`, reports errors on the HLSL line, embeds the selected targets (`OneShaderTargets`) and generates C# structs and binding code.
+- Since 0.4: the packages are built with deterministic paths, embedded untracked sources and a symbol package (`.snupkg`); package metadata links to the public repository; the four-platform CI (Windows x64, Linux x64 and arm64, macOS arm64) runs the compiler tests, the build-package tests and the NativeAOT smoke app, and runs the reference-tool tests (DXC, `spirv-val`, naga) wherever those tools are released.
+- Tested: the five fuzz targets (preprocessor, front end, IR and optimizer, every backend) ran clean for 600 s each, and the corpus is checked with `spirv-val`, by running it on GPUs against DXC's output, with naga, with Apple's `metal` compiler and on WebGPU.
 
 ## [0.4.0-preview.1]
 
@@ -47,3 +55,9 @@ First preview.
 - SPIR-V output for Vulkan 1.2, with reflection; buffer layouts and descriptor bindings follow DXC's Vulkan conventions.
 - MSBuild integration: `*.hlsl` compiled during `dotnet build`, errors on the HLSL line, embedded SPIR-V and generated C# structs, vertex inputs and binding constants.
 - Known limits: SPIR-V only; single resources only (no resource arrays); no templates, member functions, operator overloads or wave intrinsics yet; `dotnet build` only.
+
+[1.0.0]: https://github.com/recursive-ai-oss/oneshader-csharp/releases/tag/v1.0.0
+[0.4.0-preview.1]: https://github.com/recursive-ai-oss/oneshader-csharp/releases/tag/v0.4.0-preview.1
+[0.3.0-preview.1]: https://github.com/recursive-ai-oss/oneshader-csharp/releases/tag/v0.3.0-preview.1
+[0.2.0-preview.1]: https://github.com/recursive-ai-oss/oneshader-csharp/releases/tag/v0.2.0-preview.1
+[0.1.0-preview.1]: https://github.com/recursive-ai-oss/oneshader-csharp/releases/tag/v0.1.0-preview.1
