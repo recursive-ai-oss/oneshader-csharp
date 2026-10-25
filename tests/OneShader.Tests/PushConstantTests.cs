@@ -321,6 +321,48 @@ public sealed partial class PushConstantTests
     }
 
     [Fact]
+    public void WholeBlockCopiesAndHelpersWorkOnEveryTarget()
+    {
+        const string source = """
+            struct PerDraw { float4x4 Model; float3 Offset; float Scale; uint Mode; };
+            [[vk::push_constant]] ConstantBuffer<PerDraw> Draw;
+            float3 Shift(PerDraw d, float3 p) { return p * d.Scale + d.Offset; }
+            float Pick() { return Draw.Mode == 1u ? Draw.Scale : 0.5; }
+            [shader("vertex")] float4 VSMain(float4 p : POSITION) : SV_Position
+            {
+                PerDraw copy = Draw;
+                return mul(copy.Model, float4(Shift(copy, p.xyz), Pick()));
+            }
+            [shader("compute")][numthreads(1,1,1)] void CSMain(uint3 id : SV_DispatchThreadID) { }
+            """;
+        var r = Compile(source, "copy.hlsl");
+        Assert.True(r.Success, Describe(r));
+        string? val = Oracles.Find("spirv-val");
+        string? naga = Oracles.Find("naga");
+        if (val is not null)
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "osh-push-copy-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            try
+            {
+                string spv = Path.Combine(dir, "vs.spv");
+                File.WriteAllBytes(spv, r.Find("VSMain", CompileTarget.SpirV)!.ToArray());
+                var (code, output) = Oracles.Run(val, ["--target-env", "vulkan1.2", spv], dir);
+                Assert.True(code == 0, output);
+            }
+            finally
+            {
+                Directory.Delete(dir, true);
+            }
+        }
+
+        if (naga is not null)
+        {
+            WgslBackendTests.ValidateWithNaga(naga, Compile(source, "copy.hlsl", CompileTarget.Wgsl));
+        }
+    }
+
+    [Fact]
     public void OutputIsDeterministic()
     {
         var a = CompileCorpus("3d/push_lit.hlsl");
