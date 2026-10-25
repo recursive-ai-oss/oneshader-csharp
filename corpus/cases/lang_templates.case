@@ -1,0 +1,5 @@
+# Function and struct templates: one thread writes four rows.
+case lang_templates
+shader lang/templates.hlsl
+dispatch CSMain 1 1 1
+storage 0 0 out size=64

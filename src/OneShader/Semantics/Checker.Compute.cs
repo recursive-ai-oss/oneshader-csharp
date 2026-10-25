@@ -53,6 +53,12 @@ internal sealed partial class Checker
         };
         if (flags != BarrierFlags.None)
         {
+            if ((flags & BarrierFlags.GroupSync) != 0 && _fn is not null && _fn.GroupSyncSpan is null)
+            {
+                _fn.GroupSyncSpan = c.Span;
+                _fn.GroupSyncName = name;
+            }
+
             if (ArityOk(c, name, 0))
             {
                 info.Builtin = new BuiltinCall { Kind = BuiltinKind.Barrier, Name = name, Extra = (int)flags, Result = HlslType.Void };

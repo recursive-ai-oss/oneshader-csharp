@@ -62,6 +62,13 @@ public static class Parser
         ArgumentNullException.ThrowIfNull(fileName);
         return new ParserImpl(tokens, diagnostics, fileName, cancellationToken).ParseUnit();
     }
+
+    /// <summary>Parses the declaration of a template again, for one instantiation. The result has no template header, so it reads as an ordinary declaration.</summary>
+    internal static Declaration? ReparseTemplate(TemplateSource source, DiagnosticBag diagnostics, string fileName, CancellationToken cancellationToken)
+    {
+        var impl = new ParserImpl(source.Tokens, diagnostics, fileName, cancellationToken, source.UserTypes, source.TemplateNames);
+        return impl.ParseSingleDeclaration();
+    }
 }
 
 internal sealed partial class ParserImpl
@@ -70,6 +77,7 @@ internal sealed partial class ParserImpl
     private readonly DiagnosticBag _diag;
     private readonly string _file;
     private readonly CancellationToken _ct;
+    private readonly IReadOnlyList<Token> _origTokens;
     private readonly HashSet<string> _userTypes = new(StringComparer.Ordinal);
     private readonly HashSet<string> _templateNames = new(StringComparer.Ordinal);
     private int _pos;
@@ -80,9 +88,21 @@ internal sealed partial class ParserImpl
     private int _noAngle;
     private bool _tooDeepReported;
     private IReadOnlyList<TemplateParameter> _pendingTemplate = [];
+    private int _pendingTemplateStart;
 
-    public ParserImpl(IReadOnlyList<Token> tokens, DiagnosticBag diag, string file, CancellationToken ct)
+    public ParserImpl(IReadOnlyList<Token> tokens, DiagnosticBag diag, string file, CancellationToken ct, HashSet<string>? userTypes = null, HashSet<string>? templateNames = null)
     {
+        _origTokens = tokens;
+        if (userTypes is not null)
+        {
+            _userTypes = new HashSet<string>(userTypes, StringComparer.Ordinal);
+        }
+
+        if (templateNames is not null)
+        {
+            _templateNames = new HashSet<string>(templateNames, StringComparer.Ordinal);
+        }
+
         var arr = new Token[tokens.Count + 1];
         for (int i = 0; i < tokens.Count; i++)
         {
@@ -289,6 +309,8 @@ internal sealed partial class ParserImpl
 
     // ------------------------------------------------------------ unit and declaration lists
 
+    public Declaration? ParseSingleDeclaration() => ParseDeclaration(true);
+
     public CompilationUnit ParseUnit()
     {
         var start = SpanOf(Cur);
@@ -379,13 +401,46 @@ internal sealed partial class ParserImpl
             return null;
         }
 
+        var pending = _pendingTemplate;
+        int startPos = pending.Count > 0 ? _pendingTemplateStart : _pos;
         try
         {
-            return ParseDeclarationCore(global);
+            var d = ParseDeclarationCore(global);
+            if (pending.Count > 0)
+            {
+                RememberTemplate(d, startPos);
+            }
+
+            return d;
         }
         finally
         {
             Leave();
+        }
+    }
+
+    /// <summary>Keeps the tokens of a template declaration for instantiation.</summary>
+    private void RememberTemplate(Declaration? d, int startPos)
+    {
+        if (d is not (FunctionDeclaration { TemplateParameters.Count: > 0 } or StructDeclaration { TemplateParameters.Count: > 0 }))
+        {
+            return;
+        }
+
+        var slice = new List<Token>(_pos - startPos + 1);
+        for (int i = startPos; i < _pos && i < _origTokens.Count; i++)
+        {
+            slice.Add(_origTokens[i]);
+        }
+
+        var src = new TemplateSource(slice, _userTypes, _templateNames);
+        if (d is FunctionDeclaration f)
+        {
+            f.Source = src;
+        }
+        else if (d is StructDeclaration sd)
+        {
+            sd.Source = src;
         }
     }
 
@@ -408,6 +463,7 @@ internal sealed partial class ParserImpl
             {
                 case "template":
                 {
+                    _pendingTemplateStart = _pos;
                     Advance();
                     var tp = ParseTemplateParameters();
                     foreach (var _ in tp)

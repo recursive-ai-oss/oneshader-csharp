@@ -36,14 +36,28 @@ internal sealed partial class Lowerer
     public IrModule Lower()
     {
         DeclareGlobals();
+        // A function that takes resources has no run-time form: each call site with different resources gets
+        // its own copy of the function with those resources bound (see Specialize).
         foreach (var f in _ck.Functions)
         {
-            Declare(f);
+            if (!f.HasResourceParams)
+            {
+                Declare(f);
+            }
         }
 
         foreach (var f in _ck.Functions)
         {
-            LowerFunction(f);
+            if (!f.HasResourceParams)
+            {
+                LowerFunction(f, _fns[f], null);
+            }
+        }
+
+        for (int i = 0; i < _specQueue.Count; i++)
+        {
+            var (sym, fn, bound) = _specQueue[i];
+            LowerFunction(sym, fn, bound);
         }
 
         foreach (var e in _ck.Entries)
@@ -97,11 +111,13 @@ internal sealed partial class Lowerer
 
         foreach (var v in _ck.PrivateGlobals)
         {
-            var g = new GlobalVariable(v.Name, GlobalKind.Private, AddressSpace.Private, v.Type) { Span = v.Span };
+            var g = new GlobalVariable(v.IrName ?? v.Name, GlobalKind.Private, AddressSpace.Private, v.Type) { Span = v.Span };
             v.Ir = g;
             _mod.Globals.Add(g);
             if (v.Initializer is null)
             {
+                // HLSL static variables start at zero.
+                g.Initializer = Constant.Zero(v.Type);
                 continue;
             }
 
@@ -117,6 +133,7 @@ internal sealed partial class Lowerer
     }
 
     private readonly List<VariableSymbol> _pendingInit = [];
+    private bool _inStaticInit;
 
     /// <summary>The function that runs non-constant static initializers; null when there are none.</summary>
     private IrFunction? EnsureInit()
@@ -135,12 +152,15 @@ internal sealed partial class Lowerer
         _mod.Functions.Add(f);
         _initFn = f;
         BeginFunction(f);
+        _inStaticInit = true;
         foreach (var v in _pendingInit)
         {
             _span = v.Span;
             var val = LowerInitializer(v.Initializer!, v.Type);
             _b.Store((IrValue)v.Ir!, val);
         }
+
+        _inStaticInit = false;
 
         _b.Return();
         return f;
@@ -172,18 +192,21 @@ internal sealed partial class Lowerer
         return AddressSpace.UniformConstant;
     }
 
-    private void Declare(FunctionSymbol sym)
+    private void Declare(FunctionSymbol sym) => Declare(sym, null);
+
+    private IrFunction Declare(FunctionSymbol sym, IrValue?[]? bound)
     {
         string name = sym.Name;
-        var f = new IrFunction(UniqueFunctionName(name), sym.ReturnType) { Span = sym.Span };
-        if (sym.HasResourceParams)
+        var f = new IrFunction(UniqueFunctionName(sym.IrName ?? name), sym.ReturnType) { Span = sym.Span };
+        for (int i = 0; i < sym.Params.Count; i++)
         {
-            f.Inline = InlineHint.Always;
-        }
-
-        foreach (var p in sym.Params)
-        {
+            var p = sym.Params[i];
             HlslType t;
+            if (bound is not null && bound[i] is not null)
+            {
+                continue;
+            }
+
             if (p.Type is ResourceType or SamplerType or ArrayType { Element: ResourceType or SamplerType })
             {
                 t = new PointerType(SpaceOfResource(p.Type), p.Type);
@@ -200,8 +223,102 @@ internal sealed partial class Lowerer
             f.AddParameter(t, p.Name);
         }
 
-        _fns[sym] = f;
+        if (bound is null)
+        {
+            _fns[sym] = f;
+        }
+
         _mod.Functions.Add(f);
+        return f;
+    }
+
+    // ------------------------------------------------------------ specialization on resource arguments
+
+    private readonly Dictionary<(FunctionSymbol, string), IrFunction> _specs = [];
+    private readonly List<(FunctionSymbol Sym, IrFunction Fn, IrValue?[] Bound)> _specQueue = [];
+
+    /// <summary>A resource pointer in a form that survives into another function: the global itself or a chain of constant indices into it.</summary>
+    private static bool Describe(IrValue ptr, out string key)
+    {
+        key = "";
+        switch (ptr)
+        {
+            case GlobalVariable g:
+                key = g.Name + "#" + g.Binding + "/" + g.Set;
+                return true;
+            case Instruction { Op: Opcode.AccessChain } chain when chain.Operands.Count >= 2 && chain.Operands[0] is GlobalVariable root:
+            {
+                var sb = new System.Text.StringBuilder();
+                Describe(root, out string rootKey);
+                sb.Append(rootKey);
+                for (int i = 1; i < chain.Operands.Count; i++)
+                {
+                    if (chain.Operands[i] is not Constant { ConstantKind: ConstantKind.Scalar } c)
+                    {
+                        return false;
+                    }
+
+                    sb.Append('[').Append(c.Bits.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(']');
+                }
+
+                key = sb.ToString();
+                return true;
+            }
+
+            default:
+                return false;
+        }
+    }
+
+    private IrValue RebuildResource(IrValue ptr)
+    {
+        if (ptr is Instruction { Op: Opcode.AccessChain } chain)
+        {
+            var idx = new IrValue[chain.Operands.Count - 1];
+            for (int i = 0; i < idx.Length; i++)
+            {
+                idx[i] = chain.Operands[i + 1];
+            }
+
+            return _b.AccessChain(chain.Operands[0], ((PointerType)chain.Type).Pointee, idx);
+        }
+
+        return ptr;
+    }
+
+    /// <summary>The copy of a function that takes resources, for these particular resource arguments; null (after reporting) when an argument is not a resource known at compile time.</summary>
+    private IrFunction? Specialize(FunctionSymbol target, List<Expression> all, SourceSpan span)
+    {
+        var bound = new IrValue?[target.Params.Count];
+        var key = new System.Text.StringBuilder();
+        for (int i = 0; i < target.Params.Count; i++)
+        {
+            var p = target.Params[i];
+            if (p.Type is not (ResourceType or SamplerType or ArrayType { Element: ResourceType or SamplerType }))
+            {
+                continue;
+            }
+
+            var ptr = i < all.Count ? ResourcePointer(all[i]) : null;
+            if (ptr is null || !Describe(ptr, out string k))
+            {
+                _diag.Error(SemanticCodes.BadResource, "Argument " + (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture) + " of '" + target.Name + "' must be a resource that is known at compile time: a global resource, a resource parameter or a resource variable assigned from one. A resource chosen by a run-time index or condition cannot be passed.", i < all.Count ? all[i].Span : span);
+                return null;
+            }
+
+            bound[i] = ptr;
+            key.Append(k).Append(';');
+        }
+
+        if (_specs.TryGetValue((target, key.ToString()), out var existing))
+        {
+            return existing;
+        }
+
+        var fn = Declare(target, bound);
+        _specs[(target, key.ToString())] = fn;
+        _specQueue.Add((target, fn, bound));
+        return fn;
     }
 
     private IrFunction FunctionFor(FunctionSymbol sym) => _fns[sym.Definition ?? sym];
@@ -215,20 +332,33 @@ internal sealed partial class Lowerer
         _terminated = false;
         _reached = [entry];
         _jumps.Clear();
+        _resLocals.Clear();
+        _resSpan.Clear();
     }
 
-    private void LowerFunction(FunctionSymbol sym)
+    private void LowerFunction(FunctionSymbol sym, IrFunction f, IrValue?[]? bound)
     {
-        var f = _fns[sym];
         EnsureInit();
         BeginFunction(f);
         _span = sym.Span;
         _b.Span = _span;
+        int next = 0;
         for (int i = 0; i < sym.Params.Count; i++)
         {
             var p = sym.Params[i];
-            var arg = f.Parameters[i];
             var vs = p.Symbol;
+            if (bound is not null && bound[i] is { } resource)
+            {
+                // A specialization: the parameter names this resource directly.
+                if (vs is not null)
+                {
+                    vs.Ir = RebuildResource(resource);
+                }
+
+                continue;
+            }
+
+            var arg = f.Parameters[next++];
             if (vs is null)
             {
                 continue;

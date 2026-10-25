@@ -89,6 +89,9 @@ public static class SemanticCodes
     /// <summary>A resource or interface limit that the back ends cannot express.</summary>
     public const string Limit = "OSH0353";
 
+    /// <summary>The note naming the template instantiation that an error was found in.</summary>
+    public const string Instantiation = "OSH0354";
+
     /// <summary>An internal problem was caught; the shader may be fine.</summary>
     public const string Internal = "OSH0399";
 }
@@ -154,6 +157,9 @@ internal sealed class VariableSymbol : Symbol
     public IrValue? Ir { get; set; }
 
     public bool IsIndirect { get; set; }
+
+    /// <summary>The name of the IR global for a static local, which differs from the source name.</summary>
+    public string? IrName { get; set; }
 }
 
 /// <summary>A resource as declared: everything binding assignment and reflection need.</summary>
@@ -267,6 +273,56 @@ internal sealed class FunctionSymbol : Symbol
     public bool Called { get; set; }
 
     public ShaderStage? EntryStage { get; set; }
+
+    /// <summary>The struct a member function belongs to; null for free functions.</summary>
+    public StructType? Owner { get; set; }
+
+    public bool IsStatic { get; set; }
+
+    /// <summary>Declared <c>const</c> after the parameter list: <c>this</c> is read-only.</summary>
+    public bool IsConstMember { get; set; }
+
+    /// <summary>True for a non-static member function, whose first parameter is the hidden <c>this</c>.</summary>
+    public bool HasThis => Owner is not null && !IsStatic;
+
+    public VariableSymbol? ThisSymbol { get; set; }
+
+    /// <summary>The name in the IR and in the output, when it differs from <see cref="Symbol.Name"/>.</summary>
+    public string? IrName { get; set; }
+
+    /// <summary>Where the function calls a barrier that waits for the thread group, for the stage check.</summary>
+    public SourceSpan? GroupSyncSpan { get; set; }
+
+    public string GroupSyncName { get; set; } = "";
+}
+
+/// <summary>A function template: instantiated by the call that names it.</summary>
+internal sealed class FunctionTemplate
+{
+    public required FunctionDeclaration Decl { get; init; }
+
+    public required Scope Scope { get; init; }
+
+    public StructType? Owner { get; init; }
+
+    public Dictionary<string, FunctionSymbol> Instances { get; } = new(StringComparer.Ordinal);
+}
+
+/// <summary>A struct template: instantiated wherever it is named with arguments.</summary>
+internal sealed class StructTemplateSymbol : Symbol
+{
+    public StructTemplateSymbol(string name, SourceSpan span, StructDeclaration decl, Scope scope)
+        : base(name, span)
+    {
+        Decl = decl;
+        Scope = scope;
+    }
+
+    public StructDeclaration Decl { get; }
+
+    public Scope Scope { get; }
+
+    public Dictionary<string, StructType> Instances { get; } = new(StringComparer.Ordinal);
 }
 
 internal sealed class FunctionGroup : Symbol
@@ -277,6 +333,8 @@ internal sealed class FunctionGroup : Symbol
     }
 
     public List<FunctionSymbol> Overloads { get; } = [];
+
+    public List<FunctionTemplate> Templates { get; } = [];
 }
 
 internal sealed class TypeSymbol : Symbol
@@ -331,6 +389,25 @@ internal sealed class Scope
 
     public Symbol? LookupLocal(string name) => _map.TryGetValue(name, out var s) ? s : null;
 
+    /// <summary>Looks the name up from this scope outwards, stopping after <paramref name="last"/>.</summary>
+    public Symbol? LookupUpTo(string name, Scope last)
+    {
+        for (var s = this; s is not null; s = s.Parent)
+        {
+            if (s._map.TryGetValue(name, out var sym))
+            {
+                return sym;
+            }
+
+            if (ReferenceEquals(s, last))
+            {
+                break;
+            }
+        }
+
+        return null;
+    }
+
     public Symbol? Lookup(string name)
     {
         for (var s = this; s is not null; s = s.Parent)
@@ -383,4 +460,13 @@ internal sealed class ExprInfo
 
     /// <summary>For constructors and casts: the target type.</summary>
     public HlslType? TargetType { get; set; }
+
+    /// <summary>The expression this one stands for (an inherited member reached through the base, or a member named without <c>this.</c>); lowering uses it instead.</summary>
+    public Expression? Rewritten { get; set; }
+
+    /// <summary>For a call of a member function or an overloaded operator: the object it is called on.</summary>
+    public Expression? ThisArg { get; set; }
+
+    /// <summary>For an operator or subscript that calls a user function: the arguments after the object.</summary>
+    public IReadOnlyList<Expression>? Args { get; set; }
 }

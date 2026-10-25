@@ -1,0 +1,6 @@
+# Member functions on locals and on read-write buffer elements, four threads.
+case lang_members
+shader lang/members.hlsl
+dispatch CSMain 1 1 1
+storage 0 0 out size=64
+storage 0 1 out size=64

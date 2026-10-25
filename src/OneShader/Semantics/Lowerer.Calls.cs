@@ -29,7 +29,7 @@ internal sealed partial class Lowerer
         var info = c.Info!;
         if (info.Function is not null)
         {
-            return CallUser(c, info.Function);
+            return CallUser(c.Span, info.Function, info.ThisArg, info.Args ?? c.Arguments);
         }
 
         if (info.Builtin is not null)
@@ -46,10 +46,24 @@ internal sealed partial class Lowerer
         return Constant.Zero(c.Type ?? HlslType.Void);
     }
 
-    private IrValue CallUser(CallExpression c, FunctionSymbol sym)
+    /// <summary>Calls a user function or member function; <paramref name="thisArg"/> is the object of a member call.</summary>
+    private IrValue CallUser(SourceSpan span, FunctionSymbol sym, Expression? thisArg, IReadOnlyList<Expression> callArgs)
     {
         var target = sym.Definition ?? sym;
-        var irf = _fns[target];
+        var all = new List<Expression>(callArgs.Count + 1);
+        if (sym.HasThis && thisArg is not null)
+        {
+            all.Add(thisArg);
+        }
+
+        all.AddRange(callArgs);
+        bool specialize = target.HasResourceParams;
+        var irf = specialize ? Specialize(target, all, span) : _fns[target];
+        if (irf is null)
+        {
+            return Constant.Zero(sym.ReturnType.IsVoid ? ScalarType.Int : sym.ReturnType);
+        }
+
         var args = new List<IrValue>();
         var copyOut = new List<(IrValue Temp, Expression Arg)>();
         for (int i = 0; i < sym.Params.Count; i++)
@@ -57,24 +71,17 @@ internal sealed partial class Lowerer
             var p = sym.Params[i];
             if (p.Type is ResourceType or SamplerType or ArrayType { Element: ResourceType or SamplerType })
             {
-                var rp = i < c.Arguments.Count ? ResourcePointer(c.Arguments[i]) : null;
-                if (rp is null)
-                {
-                    Fail("Resource arguments must be resource variables.", c.Span);
-                    rp = Constant.Zero(ScalarType.Int);
-                }
-
-                args.Add(rp);
+                // Resources are bound into the specialized copy, not passed.
                 continue;
             }
 
-            if (i >= c.Arguments.Count)
+            if (i >= all.Count)
             {
                 args.Add(Coerce(Rv(p.Default!), p.Type));
                 continue;
             }
 
-            var arg = c.Arguments[i];
+            var arg = all[i];
             if (!p.IsOut)
             {
                 args.Add(Coerce(Rv(arg), p.Type));
@@ -82,7 +89,9 @@ internal sealed partial class Lowerer
             }
 
             var addr = Address(arg);
-            if (addr is not null && addr.Type is PointerType { Space: AddressSpace.Function } && arg.Type!.Equals(p.Type))
+            // Only a whole variable or parameter can be passed by pointer: Vulkan rejects pointers into a variable as call arguments.
+            if (addr is not null && addr.Type is PointerType { Space: AddressSpace.Function } && arg.Type!.Equals(p.Type)
+                && (addr is Argument || addr is Instruction { Op: Opcode.Alloca }))
             {
                 args.Add(addr);
                 continue;
@@ -95,7 +104,12 @@ internal sealed partial class Lowerer
             }
 
             args.Add(tmp);
-            copyOut.Add((tmp, arg));
+            // The object of a member call is copied back only where it can be written; a temporary or a constant buffer value just gets a copy.
+            bool writable = i != 0 || !sym.HasThis || (addr is not null && addr.Type is PointerType { Space: AddressSpace.Function or AddressSpace.StorageBuffer or AddressSpace.Workgroup or AddressSpace.Private });
+            if (writable)
+            {
+                copyOut.Add((tmp, arg));
+            }
         }
 
         var call = _b.Call(irf, [.. args]);
@@ -519,7 +533,25 @@ internal sealed partial class Lowerer
                         continue;
                     }
 
+                    if (sym.Kind == VarKind.Global)
+                    {
+                        // A static local: its storage is the private global created for it.
+                        continue;
+                    }
+
                     _b.Span = d.Span;
+                    if (sym.Type is ResourceType or SamplerType)
+                    {
+                        _resLocals.Add(sym);
+                        sym.Ir = null;
+                        if (d.Initializer is not null)
+                        {
+                            BindResourceLocal(sym, d.Initializer, d.Span);
+                        }
+
+                        continue;
+                    }
+
                     var slot = _b.Alloca(sym.Type, sym.Name);
                     sym.Ir = slot;
                     if (d.Initializer is not null)
@@ -590,25 +622,32 @@ internal sealed partial class Lowerer
         var merge = _f.AddBlock("if.end");
         CondBr(cond, then, els ?? merge);
         IrBuilder.MarkSelection(hdr, merge, LoopHint(i.Attributes));
+        int resCount = _resLocals.Count;
+        var resBefore = SnapRes();
         _b.Block = then;
         _terminated = false;
         LowerStatement(i.Then);
+        var thenEnd = _terminated ? null : SnapRes();
         if (!_terminated)
         {
             Br(merge);
         }
 
+        ResSnap? elseEnd = resBefore;
         if (els is not null)
         {
+            RestoreRes(resBefore);
             _b.Block = els;
             _terminated = false;
             LowerStatement(i.Else!);
+            elseEnd = _terminated ? null : SnapRes();
             if (!_terminated)
             {
                 Br(merge);
             }
         }
 
+        MergeRes([thenEnd, elseEnd], resCount);
         Continue(merge);
     }
 
@@ -627,6 +666,8 @@ internal sealed partial class Lowerer
     private void LowerLoop(Expression? cond, Expression? step, Statement body, IReadOnlyList<AttributeSyntax> attrs, bool unused)
     {
         _ = unused;
+        int resCount = _resLocals.Count;
+        var resBefore = SnapRes();
         var header = _f.AddBlock("loop.header");
         var condBlock = cond is null ? null : _f.AddBlock("loop.cond");
         var bodyBlock = _f.AddBlock("loop.body");
@@ -670,11 +711,14 @@ internal sealed partial class Lowerer
             Br(header);
         }
 
+        CheckLoopRes(resBefore, resCount);
         Continue(exit);
     }
 
     private void LowerDoWhile(DoWhileStatement d)
     {
+        int resCount = _resLocals.Count;
+        var resBefore = SnapRes();
         var header = _f.AddBlock("do.header");
         var bodyBlock = _f.AddBlock("do.body");
         var cont = _f.AddBlock("do.continue");
@@ -705,6 +749,7 @@ internal sealed partial class Lowerer
             Br(header);
         }
 
+        CheckLoopRes(resBefore, resCount);
         Continue(exit);
     }
 
@@ -747,11 +792,21 @@ internal sealed partial class Lowerer
 
         IrBuilder.MarkSelection(hdr, merge, ControlHint.None);
         _jumps.Add((merge, null));
+        int resCount = _resLocals.Count;
+        var resBefore = SnapRes();
+        var resEnds = new List<ResSnap?>();
+        if (def is null)
+        {
+            resEnds.Add(resBefore);
+        }
+
         for (int i = 0; i < sw.Sections.Count; i++)
         {
             _b.Block = blocks[i];
             _terminated = false;
+            RestoreRes(resBefore);
             LowerBlockBody(sw.Sections[i].Statements);
+            resEnds.Add(SnapRes());
             if (!_terminated)
             {
                 Br(i + 1 < blocks.Count ? blocks[i + 1] : merge);
@@ -759,6 +814,7 @@ internal sealed partial class Lowerer
         }
 
         _jumps.RemoveAt(_jumps.Count - 1);
+        MergeRes(resEnds, resCount);
         // Section blocks nothing jumps to (no label reaches them) still need a valid end.
         foreach (var bb in blocks)
         {
