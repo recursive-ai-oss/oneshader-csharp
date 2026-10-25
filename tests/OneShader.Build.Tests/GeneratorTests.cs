@@ -518,7 +518,7 @@ public class GeneratorTests
         string text = SnakeCase(GoldenModels.FileText(model)).Replace("source name=\"Shaders/" + model + ".hlsl\"", "source name=\"Shaders/" + file + ".hlsl\"", StringComparison.Ordinal);
         var (sources, errors) = GenerateFrom(text, file);
         Assert.Empty(errors);
-        Harness.AssertGolden(file + ".g.cs", Assert.Single(sources).Text);
+        Harness.AssertGolden("snake_" + file + ".g.cs", Assert.Single(sources).Text);
         var asm = Harness.Compile(sources.Select(s => s.Text), out var ctx);
         try
         {

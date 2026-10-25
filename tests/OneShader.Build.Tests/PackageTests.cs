@@ -17,7 +17,7 @@ public sealed class PackageFixture : IDisposable
 {
     public PackageFixture()
     {
-        Root = Path.Combine(Path.GetTempPath(), "osh-pkg-" + Guid.NewGuid().ToString("N"));
+        Root = Path.Combine(Harness.RealPath(Path.GetTempPath()), "osh-pkg-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Root);
         Feed = Path.Combine(Root, "feed");
         var (code, output) = Run("bash", [Path.Combine(Harness.RepoRoot, "tools", "pack-local.sh"), Feed], Harness.RepoRoot, Path.Combine(Root, "pack-artifacts"));
