@@ -48,7 +48,7 @@ deterministic.
   offsets in the compiled shader. Float vectors and matrices use `System.Numerics` types.
 - **Bindings**: a nested `Bindings` class with, per resource, `const uint Set`, `Binding`,
   `Count` and `const ResourceKind Kind`, plus `All`, a span of `ResourceBinding` that also says
-  which stages use each resource.
+  which stages use each resource. See Resource arrays and Append and consume buffers below.
 - **Entry points**: one nested class per entry point, named after the function, with
   `Stage`, `EntryPoint`, and `SpirV` (a `ReadOnlySpan<byte>` over data embedded in the assembly).
   - Vertex entry points add a blittable `Vertex` struct, `uint Stride`, and `Inputs`, a span of
@@ -57,6 +57,54 @@ deterministic.
   - Metal and WebGPU outputs will be added as sibling members (`Msl`, `Wgsl`).
 - All counts, sizes, strides, offsets, locations and thread-group sizes are `uint`, matching
   the Vulkan API.
+
+### Resource arrays
+
+`Texture2D<float4> Tex[4]`, `SamplerState Smp[2]`, arrays of structured buffers and `ConstantBuffer<T> Cb[2]` are
+bounded arrays of resources. An array is **one** descriptor binding with a descriptor count, as in DXC's
+SPIR-V (the next unnumbered resource gets the next binding number, not `Binding + Count`).
+
+```csharp
+public static class Tex { public const uint Set = 0, Binding = 0, Count = 4; public const ResourceKind Kind = ResourceKind.SampledTexture; }
+// All contains: new ResourceBinding("Tex", 0, 0, 4, ResourceKind.SampledTexture, ShaderStages.Compute)
+```
+
+`Count` is 1 for a single resource. The shader may index an array with a constant or a run-time value (pass the
+elements to helper functions too); `NonUniformResourceIndex(i)` marks an index that differs between invocations.
+Run-time indices need the Vulkan device features `shaderSampledImageArrayDynamicIndexing`,
+`shaderStorageBufferArrayDynamicIndexing`, `shaderUniformBufferArrayDynamicIndexing` and
+`shaderStorageImageArrayDynamicIndexing` (the compiled shader declares the matching capability for the kinds it
+indexes), and `shaderSampledImageArrayNonUniformIndexing` / `shaderStorageBufferArrayNonUniformIndexing` for
+non-uniform indices. Unbounded arrays (`Tex[]`) are an error (`OSH0350`); multi-dimensional resource arrays are
+an error too.
+
+### Append and consume buffers
+
+`AppendStructuredBuffer<T>` and `ConsumeStructuredBuffer<T>` take two descriptors: the element buffer and a hidden
+4-byte counter buffer in the **same set**. The counter holds the number of elements: `Append` adds one and stores at
+the old value, `Consume` subtracts one and reads the element below the old value. `GetDimensions` reports the
+element buffer's capacity and stride, not the counter. The application owns both buffers: bind a 4-byte (or
+larger) storage buffer at the counter binding, zero it to start an append list empty, and write the element count
+into it to start a consume list full.
+
+The counter binding is `[[vk::counter_binding(n)]]` if given; otherwise it is the next free binding of the buffer's
+set after the resources declared so far (the same numbering DXC uses), so `AppendStructuredBuffer<T> A : register(u0)`
+next to `B : register(u1)` puts `A`'s counter at 2 and `B`'s at 3 if those are free.
+
+```csharp
+public static class Hits
+{
+    public const uint Set = 0, Binding = 2, Count = 1;
+    public const ResourceKind Kind = ResourceKind.StorageBuffer;
+    public const uint CounterBinding = 3;   // same Set
+}
+// All contains the buffer and, right after it, its counter:
+//   new ResourceBinding("Hits", 0, 2, 1, ResourceKind.StorageBuffer, ShaderStages.Compute)
+//   new ResourceBinding("Hits.counter", 0, 3, 1, ResourceKind.StorageBuffer, ShaderStages.Compute)
+```
+
+A resource without a counter has no `CounterBinding` constant. Arrays of append or consume buffers are an error.
+`RWStructuredBuffer.IncrementCounter` and `DecrementCounter` are not supported yet.
 
 Member types in generated structs:
 

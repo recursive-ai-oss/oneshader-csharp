@@ -17,7 +17,7 @@ internal sealed partial class Checker
         string name = d.Name.Last.Text;
         if (d.Name.Parts.Count > 1)
         {
-            Err(SemanticCodes.Unsupported, "Defining a function outside its struct or namespace is not supported yet.", d.Name.Span);
+            DeclareOutOfLineMember(d, scope);
             return;
         }
 
@@ -70,8 +70,87 @@ internal sealed partial class Checker
         }
     }
 
+    /// <summary>Defines a member function outside its struct (<c>uint Acc::Get() { ... }</c>); the struct must declare it first.</summary>
+    private void DeclareOutOfLineMember(FunctionDeclaration d, Scope scope)
+    {
+        string name = d.Name.Last.Text;
+        var ownerParts = new List<Identifier>();
+        for (int i = 0; i < d.Name.Parts.Count - 1; i++)
+        {
+            ownerParts.Add(d.Name.Parts[i]);
+        }
+
+        var ownerName = new QualifiedName(d.Name.Span, ownerParts) { IsGlobal = d.Name.IsGlobal };
+        var saved = _scope;
+        _scope = scope;
+        Symbol? ownerSym;
+        try
+        {
+            ownerSym = LookupQualified(ownerName, out _);
+        }
+        finally
+        {
+            _scope = saved;
+        }
+
+        if (ownerSym is not TypeSymbol { Type: StructType st } || !_structInfos.TryGetValue(st, out var info))
+        {
+            string why = ownerSym is StructTemplateSymbol
+                ? "Define the members of the struct template '" + ownerName + "' inside the struct."
+                : "'" + ownerName + "' is not a struct, so '" + d.Name + "' has nothing to belong to. Define the function inside a struct or give it a plain name.";
+            Err(ownerSym is StructTemplateSymbol ? SemanticCodes.Unsupported : SemanticCodes.Undeclared, why, d.Name.Span);
+            return;
+        }
+
+        if (d.TemplateParameters.Count > 0)
+        {
+            Err(SemanticCodes.Unsupported, "A member function template must be defined inside its struct.", d.Name.Span);
+            return;
+        }
+
+        if (!info.Methods.TryGetValue(name, out var group))
+        {
+            Err(SemanticCodes.BadMember, "The struct '" + st.Name + "' declares no member function '" + name + "'. Declare it inside the struct first, then define it here.", d.Name.Span);
+            return;
+        }
+
+        // 'static' and 'const' are written on the declaration inside the struct, not on the definition.
+        var inherited = Modifiers.None;
+        foreach (var o in group.Overloads)
+        {
+            if (!o.HasBody && o.Decl.Parameters.Count == d.Parameters.Count)
+            {
+                inherited = o.Decl.Modifiers & (Modifiers.Static | Modifiers.ConstMember);
+                break;
+            }
+        }
+
+        var sym = BuildFunctionSymbol(d, scope, st, null, inherited);
+        bool declared = false;
+        foreach (var o in group.Overloads)
+        {
+            declared |= SameSignature(o, sym);
+        }
+
+        if (!declared)
+        {
+            Err(SemanticCodes.BadMember, "No member function of '" + st.Name + "' is declared as '" + Signature(sym) + "'. Make the definition match the declaration inside the struct (parameter types and count).", d.Name.Span);
+            return;
+        }
+
+        if (AddToGroup(group, sym, d))
+        {
+            _allFns.Add(sym);
+            if (sym.HasBody)
+            {
+                Functions.Add(sym);
+                CheckFunctionBody(sym, scope);
+            }
+        }
+    }
+
     /// <summary>Resolves the signature of a function or member function. Reports problems; the result is always usable.</summary>
-    private FunctionSymbol BuildFunctionSymbol(FunctionDeclaration d, Scope scope, StructType? owner, string? nameOverride)
+    private FunctionSymbol BuildFunctionSymbol(FunctionDeclaration d, Scope scope, StructType? owner, string? nameOverride, Modifiers inherited = Modifiers.None)
     {
         string name = nameOverride ?? d.Name.Last.Text;
         CheckAttributes(d.Attributes, "shader", "numthreads", "earlydepthstencil");
@@ -79,8 +158,8 @@ internal sealed partial class Checker
         if (owner is not null)
         {
             sym.Owner = owner;
-            sym.IsStatic = (d.Modifiers & Modifiers.Static) != 0;
-            sym.IsConstMember = (d.Modifiers & Modifiers.ConstMember) != 0;
+            sym.IsStatic = ((d.Modifiers | inherited) & Modifiers.Static) != 0;
+            sym.IsConstMember = ((d.Modifiers | inherited) & Modifiers.ConstMember) != 0;
             sym.IrName = owner.Name + "." + name;
             if (sym.HasThis)
             {

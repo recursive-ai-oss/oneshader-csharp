@@ -2,6 +2,3 @@
 # NAME is a case name (corpus/cases) or a probe file name (corpus/probes). A listed entry that fails is
 # reported as skipped with its reason; a listed entry that passes fails the run until the line is deleted,
 # so the list can only shrink. Unlisted failures fail as usual.
-pbr_forward: a cbuffer and one of its members share a name (cbuffer Lights { Light Lights[8]; }); OSH0301 and OSH0309 instead of compiling
-cbuffer_member_name.hlsl: a cbuffer and one of its members share a name; OSH0301 and OSH0309 instead of compiling
-append_consume.hlsl: AppendStructuredBuffer.Append and ConsumeStructuredBuffer.Consume are not supported (OSH0350)

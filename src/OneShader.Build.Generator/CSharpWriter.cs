@@ -653,6 +653,12 @@ internal sealed class CSharpWriter
             _indent++;
             Line("public const uint Set = " + Num(r.Set) + ", Binding = " + Num(r.Binding) + ", Count = " + Num(r.Count) + ";");
             Line("public const global::OneShader.ResourceKind Kind = global::OneShader.ResourceKind." + r.Kind + ";");
+            if (r.HasCounter)
+            {
+                Line("/// <summary>Binding of the hidden element counter, in the same set. Bind a 4-byte storage buffer there; zero it to start empty.</summary>");
+                Line("public const uint CounterBinding = " + Num(r.CounterBinding) + ";");
+            }
+
             _indent--;
             Line("}");
         }
@@ -669,6 +675,11 @@ internal sealed class CSharpWriter
         {
             Line("new global::OneShader.ResourceBinding(" + Str(r.Name) + ", " + Num(r.Set) + ", " + Num(r.Binding) + ", " + Num(r.Count)
                 + ", global::OneShader.ResourceKind." + r.Kind + ", " + StagesExpr(r.Stages) + "),");
+            if (r.HasCounter)
+            {
+                Line("new global::OneShader.ResourceBinding(" + Str(r.Name + ".counter") + ", " + Num(r.Set) + ", " + Num(r.CounterBinding) + ", 1u"
+                    + ", global::OneShader.ResourceKind.StorageBuffer, " + StagesExpr(r.Stages) + "),");
+            }
         }
 
         _indent--;

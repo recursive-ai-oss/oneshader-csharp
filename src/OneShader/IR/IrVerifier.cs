@@ -266,7 +266,9 @@ public static class IrVerifier
 
                 break;
             case Opcode.AccessChain:
-                if (n < 2 || i.Operands[0].Type is not PointerType || i.Type is not PointerType)
+                // The one chain without an index views a constant buffer's contents as its struct.
+                bool contents = n == 1 && i.Operands[0].Type is PointerType { Pointee: ResourceType { ResourceKind: ResourceTypeKind.ConstantBuffer } };
+                if ((n < 2 && !contents) || i.Operands[0].Type is not PointerType || i.Type is not PointerType)
                 {
                     errors.Add(w + ": access needs a base pointer, at least one index and a pointer result");
                 }

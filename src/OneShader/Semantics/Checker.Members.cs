@@ -128,9 +128,24 @@ internal sealed partial class Checker
         }
 
         string name = n.Name.Last.Text;
-        if (_scope.LookupUpTo(name, _fnScope) is not null || !FindField(owner, name, out _, out _))
+        if (_scope.LookupUpTo(name, _fnScope) is not null)
         {
             return false;
+        }
+
+        if (!FindField(owner, name, out _, out _))
+        {
+            // A static member of the struct (or a base) needs no object.
+            if (FindStatic(owner, name) is not { } staticMember)
+            {
+                return false;
+            }
+
+            info.Symbol = staticMember;
+            info.IsLValue = true;
+            info.Const = staticMember.Const;
+            type = staticMember.Type;
+            return true;
         }
 
         if (_fn.ThisSymbol is null)

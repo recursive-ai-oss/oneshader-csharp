@@ -82,7 +82,7 @@ internal sealed partial class Checker
             else if (sym is TypeSymbol { Type: StructType owner } && _structInfos.TryGetValue(owner, out var oinfo))
             {
                 // Static member functions: Type::function.
-                sym = oinfo.Methods.TryGetValue(part, out var mg) ? mg : null;
+                sym = oinfo.Methods.TryGetValue(part, out var mg) ? mg : FindStatic(owner, part);
             }
             else if (sym is TypeSymbol { Type: EnumType et })
             {

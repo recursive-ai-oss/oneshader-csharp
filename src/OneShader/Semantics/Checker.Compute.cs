@@ -76,6 +76,24 @@ internal sealed partial class Checker
 
         switch (name)
         {
+            case "NonUniformResourceIndex":
+            {
+                if (!ArityOk(c, name, 1) || AnyError(at))
+                {
+                    return true;
+                }
+
+                if (at[0] is not ScalarType { IsInteger: true } index || TypeOps.BitWidth(index) != 32)
+                {
+                    Err(SemanticCodes.TypeMismatch, "'NonUniformResourceIndex' takes a 32-bit integer index (int or uint), not '" + at[0] + "'.", c.Arguments[0].Span);
+                    return true;
+                }
+
+                info.Builtin = new BuiltinCall { Kind = BuiltinKind.Intrinsic, Ir = Intrinsic.NonUniformIndex, Name = name, ParamTypes = [index], Result = index };
+                result = index;
+                return true;
+            }
+
             case "countbits" or "firstbithigh" or "firstbitlow" or "reversebits":
             {
                 if (!ArityOk(c, name, 1) || AnyError(at))

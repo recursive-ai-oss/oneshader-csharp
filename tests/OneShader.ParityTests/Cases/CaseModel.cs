@@ -65,6 +65,9 @@ public sealed class ResourceDecl
     public int Set { get; init; }
     public int Binding { get; init; }
 
+    /// <summary>Position inside a descriptor array: every resource declared at one (set, binding) forms an array, indexed by this.</summary>
+    public int Element { get; init; }
+
     /// <summary>Data expression for buffers (see <see cref="DataGen"/>); null means zeros.</summary>
     public string? Data { get; init; }
 
@@ -101,7 +104,7 @@ public sealed class ResourceDecl
 
     /// <summary>Key identifying this resource in run outputs.</summary>
     public string OutputKey =>
-        (Kind is ResourceKind.StorageImage ? "image:" : "buffer:") + Set + "." + Binding;
+        (Kind is ResourceKind.StorageImage ? "image:" : "buffer:") + Set + "." + Binding + (Element > 0 ? "[" + Element + "]" : "");
 }
 
 /// <summary>One vertex attribute.</summary>

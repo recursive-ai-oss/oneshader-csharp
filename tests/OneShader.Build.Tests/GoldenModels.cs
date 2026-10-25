@@ -11,13 +11,14 @@ internal static class GoldenModels
 {
     public const string Namespace = "PrebuiltSample.Shaders";
 
-    public static readonly string[] Names = ["Sprite", "Particles", "Matrices"];
+    public static readonly string[] Names = ["Sprite", "Particles", "Matrices", "Pool"];
 
     public static (ShaderReflection Reflection, List<ShaderBlob> Blobs) Build(string name) => name switch
     {
         "Sprite" => Sprite(),
         "Particles" => Particles(),
         "Matrices" => Matrices(),
+        "Pool" => Pool(),
         _ => throw new ArgumentException("unknown model " + name, nameof(name)),
     };
 
@@ -180,6 +181,76 @@ internal static class GoldenModels
                     Stage = ShaderStage.Compute,
                     WorkgroupSize = (8, 8, 1),
                     UsedResources = ["Params", "Particles", "LightList"],
+                },
+            ],
+        };
+        return (reflection, [Blob("CSMain", ShaderStage.Compute)]);
+    }
+
+    /// <summary>Resource arrays and append/consume buffers with their hidden counters, as the compiler reports them for a bounded-array compute shader.</summary>
+    private static (ShaderReflection, List<ShaderBlob>) Pool()
+    {
+        var hit = new StructType("Hit", [
+            new StructField("Position", HlslType.Vector(ScalarType.Float, 3)),
+            new StructField("Id", ScalarType.UInt),
+        ]);
+        var reflection = new ShaderReflection
+        {
+            SourceName = "Shaders/Pool.hlsl",
+            Targets = [CompileTarget.SpirV],
+            Resources =
+            [
+                new ResourceInfo
+                {
+                    Name = "Textures",
+                    Kind = ResourceKind.SampledTexture,
+                    Count = 4,
+                    Stages = ShaderStages.Compute,
+                    HlslType = "Texture2D<float4>",
+                    ResourceType = ResourceTypeKind.Texture2D,
+                    Slots = [new TargetSlot(CompileTarget.SpirV, 0, 0)],
+                },
+                new ResourceInfo
+                {
+                    Name = "Samplers",
+                    Kind = ResourceKind.Sampler,
+                    Count = 2,
+                    Stages = ShaderStages.Compute,
+                    HlslType = "SamplerState",
+                    ResourceType = ResourceTypeKind.Texture2D,
+                    Slots = [new TargetSlot(CompileTarget.SpirV, 0, 1)],
+                },
+                new ResourceInfo
+                {
+                    Name = "Hits",
+                    Kind = ResourceKind.StorageBuffer,
+                    Stages = ShaderStages.Compute,
+                    HlslType = "AppendStructuredBuffer<Hit>",
+                    ResourceType = ResourceTypeKind.AppendStructuredBuffer,
+                    Slots = [new TargetSlot(CompileTarget.SpirV, 0, 2)],
+                    CounterSlots = [new TargetSlot(CompileTarget.SpirV, 0, 3)],
+                    Layout = Layout(hit, BufferLayoutRules.StorageBuffer),
+                },
+                new ResourceInfo
+                {
+                    Name = "Work",
+                    Kind = ResourceKind.StorageBuffer,
+                    Stages = ShaderStages.Compute,
+                    HlslType = "ConsumeStructuredBuffer<uint>",
+                    ResourceType = ResourceTypeKind.ConsumeStructuredBuffer,
+                    Slots = [new TargetSlot(CompileTarget.SpirV, 0, 4)],
+                    CounterSlots = [new TargetSlot(CompileTarget.SpirV, 0, 5)],
+                    Layout = Layout(ScalarType.UInt, BufferLayoutRules.StorageBuffer),
+                },
+            ],
+            EntryPoints =
+            [
+                new EntryPointInfo
+                {
+                    Name = "CSMain",
+                    Stage = ShaderStage.Compute,
+                    WorkgroupSize = (8, 1, 1),
+                    UsedResources = ["Textures", "Samplers", "Hits", "Work"],
                 },
             ],
         };

@@ -45,6 +45,8 @@ internal sealed class ResourceNode
     public bool HasSpirVSlot;
     public uint Set;
     public uint Binding;
+    public bool HasCounter;
+    public uint CounterBinding;
     public TypeNode? Layout;
 }
 
@@ -193,6 +195,12 @@ internal sealed class ShaderFile
                 res.HasSpirVSlot = true;
                 res.Set = U(c, "set");
                 res.Binding = U(c, "binding");
+                pos++;
+            }
+            else if (c.Depth == 1 && c.Keyword == "counter" && Str(c, "target") == "SpirV")
+            {
+                res.HasCounter = true;
+                res.CounterBinding = U(c, "binding");
                 pos++;
             }
             else if (c.Depth == 1 && c.Keyword == "layout")

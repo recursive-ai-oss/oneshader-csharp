@@ -770,7 +770,9 @@ internal sealed partial class SpirvEmitter
 
     private void DeclareResource(GlobalVariable g)
     {
-        if (g.ValueType is not ResourceType and not SamplerType)
+        // A resource array is a global of ArrayType whose element is the resource; ResourceCount carries the size.
+        var valueType = g.ValueType is ArrayType resourceArray ? resourceArray.Element : g.ValueType;
+        if (valueType is not ResourceType and not SamplerType)
         {
             Fail(SpirvCodes.MalformedIr, "The resource '" + g.Name + "' is not a texture, sampler or buffer.", g.Span);
             return;
@@ -785,14 +787,14 @@ internal sealed partial class SpirvEmitter
         uint sc;
         uint pointee;
         bool readOnlyBuffer = false;
-        if (g.ValueType is SamplerType sampler)
+        if (valueType is SamplerType sampler)
         {
             sc = Sc.UniformConstant;
             pointee = TypeId(sampler);
         }
         else
         {
-            var rt = (ResourceType)g.ValueType;
+            var rt = (ResourceType)valueType;
             _resourceOf[g] = rt;
             if (rt.ResourceKind == ResourceTypeKind.ConstantBuffer)
             {

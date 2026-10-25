@@ -14,10 +14,10 @@ public class CaseTests
     {
         string[] expected =
         [
-            "blit", "bloom_down", "bloom_down_first", "bloom_up", "blur_h", "blur_v", "cluster_build",
+            "append_consume", "blit", "bloom_down", "bloom_down_first", "bloom_up", "blur_h", "blur_v", "cluster_build",
             "clustered_lights", "color_grade", "cull_instances", "depth_bounds", "histogram", "ibl_gold",
             "ibl_plastic", "ibl_prefilter", "ibl_sky", "image_filter", "lang_inheritance", "lang_members",
-            "lang_operators", "lang_resource_locals", "lang_sizeof_static", "lang_templates", "light_cull", "msdf_text", "particles",
+            "lang_operators", "lang_resource_arrays", "lang_resource_locals", "lang_sizeof_static", "lang_statics_and_literals", "lang_templates", "light_cull", "msdf_text", "particles",
             "pbr_forward", "prefix_sum", "quad_blur", "quad_grade", "quad_sprite", "sdf_text",
             "shadow_cascades", "shadow_cascades_poisson", "shadow_depth", "skinned", "sprite", "ssao", "stage_io", "stage_layouts", "stage_layouts_off",
             "tile_flat", "tile_ids", "tilemap", "tonemap_aces", "tonemap_reinhard", "ui", "ui_rect",

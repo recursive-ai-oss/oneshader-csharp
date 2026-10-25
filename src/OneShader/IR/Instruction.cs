@@ -350,7 +350,8 @@ public enum Intrinsic
     QuadReadAcrossX, /// <summary>QuadReadAcrossY.</summary>
     QuadReadAcrossY, /// <summary>QuadReadAcrossDiagonal.</summary>
     QuadReadAcrossDiagonal, /// <summary>QuadReadLaneAt.</summary>
-    QuadReadLaneAt,
+    QuadReadLaneAt, /// <summary>NonUniformResourceIndex(i): the index may differ between invocations of a wave; yields its operand.</summary>
+    NonUniformIndex,
 }
 
 /// <summary>The role of a block in structured control flow.</summary>

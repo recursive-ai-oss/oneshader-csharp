@@ -22,6 +22,9 @@ Check("Atlas is set 0, binding 1", Sprite.Bindings.Atlas.Set == 0 && Sprite.Bind
 Check("three resources listed", Sprite.Bindings.All.Length == 3);
 Check("SPIR-V starts with the magic number", Sprite.VSMain.SpirV.Length > 4 && Sprite.VSMain.SpirV[0] == 0x03 && Sprite.VSMain.SpirV[3] == 0x07);
 Check("compute group size is 8x8x1", Particles.CSMain.ThreadGroupSizeX == 8 && Particles.CSMain.ThreadGroupSizeY == 8 && Particles.CSMain.ThreadGroupSizeZ == 1);
+Check("Textures is an array of 4 in one binding", Pool.Bindings.Textures.Count == 4 && Pool.Bindings.Textures.Binding == 0 && Pool.Bindings.Samplers.Count == 2);
+Check("append buffer counter is binding 3 of the same set", Pool.Bindings.Hits.CounterBinding == 3 && Pool.Bindings.Hits.Set == 0 && Pool.Bindings.Work.CounterBinding == 5);
+Check("counters are listed after their buffers", Pool.Bindings.All.Length == 6 && Pool.Bindings.All[3].Name == "Hits.counter" && Pool.Bindings.All[3].Binding == 3);
 
 // HLSL's M[0][3] (translation in a column-vector convention) is M14 in C# whatever the packing.
 var frame = new Sprite.Frame { ViewProjection = Matrix4x4.Identity };

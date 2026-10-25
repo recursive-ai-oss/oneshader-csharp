@@ -99,7 +99,8 @@ public partial class ReflectionVsDxcTests
                     Assert.Equal((s, b), (slot.Set, slot.Binding));
                     if (res.Layout is { Kind: ReflectedTypeKind.Struct } lay)
                     {
-                        string typeName = res.Kind == ResourceKind.ConstantBuffer ? "type_" + lay.Name : lay.Name;
+                        // DXC names a cbuffer block type.<name> and a ConstantBuffer<T> block type.ConstantBuffer.<T>.
+                        string typeName = res.Kind != ResourceKind.ConstantBuffer ? lay.Name : res.HlslType.StartsWith("ConstantBuffer<", System.StringComparison.Ordinal) ? "type_ConstantBuffer_" + lay.Name : "type_" + lay.Name;
                         foreach (var mem in lay.Members)
                         {
                             if (mem.Name.StartsWith("__base_", System.StringComparison.Ordinal))
