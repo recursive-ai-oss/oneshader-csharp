@@ -89,3 +89,27 @@ The 3D cases build their inputs from generators described in the harness (`MeshG
 and planes with normals and tangents, camera, light and joint matrices in either memory layout, record patterns,
 procedural material maps, cube-map skies and analytic depth and normal buffers. Float colour targets are written
 as `RGBA16F`, `RGBA32F` or `R32F` and compared with the case's relative tolerance.
+
+## Probes
+
+`probes/*.hlsl` are single-construct shaders, each a construct DXC compiles that real shaders use. They have no
+parity case; the probe tests require DXC to compile each and pass spirv-val, then the same of the candidate (or,
+for `expect-error` probes, a diagnostic). Each carries the same SPDX header and was written for this repository.
+
+| Probe | Construct |
+|---|---|
+| `probes/append_consume.hlsl` | AppendStructuredBuffer and ConsumeStructuredBuffer methods are not supported. |
+| `probes/array_interpolant.hlsl` | An array of float4 as a vertex output (per-cascade shadow coordinates); DXC assigns consecutive locations. |
+| `probes/cbuffer_bool.hlsl` | A bool member of a constant buffer: DXC stores it as a 32-bit integer; the candidate emits OpTypeBool in uniform storage. |
+| `probes/cbuffer_member_name.hlsl` | A constant buffer and one of its members share a name; DXC accepts it. |
+| `probes/clip_distance.hlsl` | SV_ClipDistance outputs: the compiler throws instead of compiling or diagnosing. |
+| `probes/clip_distance_array.hlsl` | SV_ClipDistance as an array member; arrays are rejected as stage outputs. |
+| `probes/cull_distance.hlsl` | SV_CullDistance output: the compiler throws instead of compiling or diagnosing. |
+| `probes/faceforward.hlsl` | The faceforward intrinsic is not declared. |
+| `probes/gather_cmp.hlsl` | Texture2D.GatherCmp is not supported. |
+| `probes/half_float_conversions.hlsl` | f16tof32 and f32tof16 (packed vertex attributes). |
+| `probes/lod_query.hlsl` | Texture2D.CalculateLevelOfDetail: the candidate emits an OpLoad through a non-logical pointer. |
+| `probes/matrix_interpolant.hlsl` | A float3x3 tangent frame as a pixel input; DXC assigns one location per row. |
+| `probes/packoffset_overlap.hlsl` | Two members packed at the same offset: DXC reports an error; the candidate accepts it and emits invalid SPIR-V. |
+| `probes/resource_parameters.hlsl` | A texture and a sampler passed to a helper function; the candidate asks for [forceinline]. |
+| `probes/structured_float3.hlsl` | StructuredBuffer<float3>: DXC uses a 16-byte element stride; the candidate emits 12, which spirv-val rejects. |

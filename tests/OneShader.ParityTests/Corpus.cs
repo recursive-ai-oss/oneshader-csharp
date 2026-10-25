@@ -17,11 +17,28 @@ public static class Corpus
         .Order(StringComparer.Ordinal)
         .ToArray();
 
-    /// <summary>Every shader (.hlsl) path relative to the corpus directory, with forward slashes.</summary>
+    /// <summary>Every shader (.hlsl) path relative to the corpus directory, with forward slashes; the single-construct probes are listed separately.</summary>
     public static IReadOnlyList<string> ShaderPaths { get; } = Directory.GetFiles(Tools.CorpusDir, "*.hlsl", SearchOption.AllDirectories)
         .Select(p => Path.GetRelativePath(Tools.CorpusDir, p).Replace('\\', '/'))
+        .Where(p => !p.StartsWith("probes/", StringComparison.Ordinal))
         .Order(StringComparer.Ordinal)
         .ToArray();
+
+    /// <summary>Absolute paths of the single-construct probe shaders in <c>probes/</c>.</summary>
+    public static IReadOnlyList<string> ProbePaths { get; } = Directory.GetFiles(Path.Combine(Tools.CorpusDir, "probes"), "*.hlsl")
+        .Order(StringComparer.Ordinal)
+        .ToArray();
+
+    /// <summary>Probe file names as xunit theory data.</summary>
+    public static TheoryData<string> Probes()
+    {
+        var d = new TheoryData<string>();
+        foreach (string p in ProbePaths)
+        {
+            d.Add(Path.GetFileName(p));
+        }
+        return d;
+    }
 
     public static CaseModel Load(string name) => CaseFile.Load(Path.Combine(CasesDir, name + ".case"));
 
