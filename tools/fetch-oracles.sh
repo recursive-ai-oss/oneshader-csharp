@@ -142,6 +142,7 @@ exe=""; [ "$platform" = Windows-x86_64 ] && exe=.exe
 if [ ! -f "$dir/bin/naga$exe" ] || [ "$("$dir/bin/naga$exe" --version 2>/dev/null | tr -d '\r' || true)" != "$NAGA_VERSION" ]; then
   if command -v cargo >/dev/null 2>&1; then
     echo "fetch-oracles: naga $NAGA_VERSION (cargo install)"
+    mkdir -p "$dir/bin"
     log="$dir/naga-install.log"
     { cargo install naga-cli --version "$NAGA_VERSION" --locked --root "$dir/naga" >"$log" 2>&1 \
       && cp -f "$dir/naga/bin/naga$exe" "$dir/bin/naga$exe"; } \
