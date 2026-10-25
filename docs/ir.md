@@ -60,6 +60,7 @@ Texture operands, in order:
 | `TextureSampleGrad` | texture, sampler, coordinate, ddx, ddy | offset |
 | `TextureSampleCompare` / `CompareLevelZero` | texture, comparison sampler, coordinate, reference | offset |
 | `TextureGather` | texture, sampler, coordinate | component, then offset |
+| `TextureGatherCompare` | texture, comparison sampler, coordinate, reference | offset |
 | `TextureLoad` | texture, integer coordinate, optional level (or sample index when multisampled) | offset |
 | `TextureStore` | texture, integer coordinate, value | |
 | `TextureQuerySize` | texture, optional level | |

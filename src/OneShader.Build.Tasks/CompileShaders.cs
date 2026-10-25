@@ -74,7 +74,20 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
                 return false;
             }
 
-            string? output = CompileOne(item, projectDir, outDir);
+            string? output;
+            try
+            {
+                output = CompileOne(item, projectDir, outDir);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Anything unexpected outside the compiler call (rendering the output, hashing, file access) still must not
+                // surface as an MSBuild task crash with a stack trace.
+                string file = Path.GetFullPath(item.GetMetadata("FullPath").Length > 0 ? item.GetMetadata("FullPath") : item.ItemSpec, projectDir);
+                Log.LogError(null, InternalErrorCode, null, file, 1, 1, 0, 0, "Internal error while building this shader (" + ex.GetType().Name + ": " + ex.Message.Replace('\r', ' ').Replace('\n', ' ') + "). This is a bug in OneShader; please report it with this shader.");
+                output = null;
+            }
+
             if (output is not null)
             {
                 outputs.Add(new TaskItem(output));
@@ -160,7 +173,7 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
         catch (Exception ex)
         {
             // A compiler bug must not take the build down with a stack trace nobody can read.
-            Log.LogError(null, InternalErrorCode, null, full, 0, 0, 0, 0, "Internal compiler error (" + ex.GetType().Name + ": " + ex.Message + "). This is a bug in OneShader; please report it with this shader.");
+            Log.LogError(null, InternalErrorCode, null, full, 1, 1, 0, 0, "Internal compiler error (" + ex.GetType().Name + ": " + ex.Message + "). This is a bug in OneShader; please report it with this shader.");
             return null;
         }
 
@@ -180,7 +193,7 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
             TryDelete(outputPath);
             if (result.Success)
             {
-                Log.LogError(null, InternalErrorCode, null, full, 0, 0, 0, 0, "Internal compiler error: the compile succeeded but produced no reflection. This is a bug in OneShader; please report it with this shader.");
+                Log.LogError(null, InternalErrorCode, null, full, 1, 1, 0, 0, "Internal compiler error: the compile succeeded but produced no reflection. This is a bug in OneShader; please report it with this shader.");
             }
 
             return null;

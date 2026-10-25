@@ -102,7 +102,7 @@ internal sealed partial class Checker
         F1("acos", Intrinsic.Acos); F1("asin", Intrinsic.Asin); F1("atan", Intrinsic.Atan); F1("ceil", Intrinsic.Ceil);
         F1("cos", Intrinsic.Cos); F1("cosh", Intrinsic.Cosh); F1("degrees", Intrinsic.Degrees); F1("exp", Intrinsic.Exp);
         F1("exp2", Intrinsic.Exp2); F1("floor", Intrinsic.Floor); F1("frac", Intrinsic.Frac); F1("log", Intrinsic.Log);
-        F1("log2", Intrinsic.Log2); F1("radians", Intrinsic.Radians); F1("round", Intrinsic.Round); F1("rsqrt", Intrinsic.Rsqrt);
+        F1("log2", Intrinsic.Log2); F1("log10", Intrinsic.Log10); F1("radians", Intrinsic.Radians); F1("round", Intrinsic.Round); F1("rsqrt", Intrinsic.Rsqrt);
         F1("saturate", Intrinsic.Saturate); F1("sin", Intrinsic.Sin); F1("sinh", Intrinsic.Sinh); F1("sqrt", Intrinsic.Sqrt);
         F1("tan", Intrinsic.Tan); F1("tanh", Intrinsic.Tanh); F1("trunc", Intrinsic.Trunc); F1("rcp", Intrinsic.Rcp);
         F1("ddx", Intrinsic.Ddx); F1("ddy", Intrinsic.Ddy); F1("ddx_coarse", Intrinsic.DdxCoarse); F1("ddy_coarse", Intrinsic.DdyCoarse);
@@ -719,8 +719,53 @@ internal sealed partial class Checker
                 return true;
             }
 
-            case "f16tof32" or "f32tof16"
-                or "noise" or "lit" or "dst" or "msad4" or "D3DCOLORtoUBYTE4" or "abort" or "errorf" or "printf":
+            case "faceforward":
+            {
+                if (!ArityOk(c, name, 3) || AnyError(at))
+                {
+                    return true;
+                }
+
+                var u = Unify(c, name, at, true);
+                if (u is null)
+                {
+                    return true;
+                }
+
+                if (u is MatrixType)
+                {
+                    Err(SemanticCodes.TypeMismatch, "'faceforward' needs scalars or vectors, not matrices.", c.Span);
+                    return true;
+                }
+
+                info.Builtin = new BuiltinCall { Kind = BuiltinKind.Intrinsic, Ir = Intrinsic.FaceForward, Name = name, ParamTypes = Fill(u, 3), Result = u };
+                result = u;
+                return true;
+            }
+
+            case "f32tof16" or "f16tof32":
+            {
+                if (!ArityOk(c, name, 1) || AnyError(at))
+                {
+                    return true;
+                }
+
+                if (at[0] is not (ScalarType or VectorType))
+                {
+                    Err(SemanticCodes.TypeMismatch, "'" + name + "' needs a scalar or vector, not '" + at[0] + "'.", c.Arguments[0].Span);
+                    return true;
+                }
+
+                // f32tof16 returns the half's bits in the low 16 bits of a uint; f16tof32 reads them back.
+                bool pack = name == "f32tof16";
+                var from = TypeOps.Reshape(at[0], pack ? ScalarType.Float : ScalarType.UInt);
+                var to = TypeOps.Reshape(at[0], pack ? ScalarType.UInt : ScalarType.Float);
+                info.Builtin = new BuiltinCall { Kind = BuiltinKind.Intrinsic, Ir = pack ? Intrinsic.PackHalf : Intrinsic.UnpackHalf, Name = name, ParamTypes = [from], Result = to };
+                result = to;
+                return true;
+            }
+
+            case "noise" or "lit" or "dst" or "msad4" or "D3DCOLORtoUBYTE4" or "abort" or "errorf" or "printf":
                 Err(SemanticCodes.Unsupported, "The intrinsic '" + name + "' is not supported yet.", c.Span);
                 return true;
             default:

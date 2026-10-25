@@ -165,6 +165,9 @@ public enum Opcode
     /// <summary>Gather of one component from four texels: texture, sampler, coordinate; Immediates[0] is the component.</summary>
     TextureGather,
 
+    /// <summary>Comparison gather: four texels' depth comparisons as a float4: texture, comparison sampler, coordinate, reference; Immediates are the constant texel offset.</summary>
+    TextureGatherCompare,
+
     /// <summary>Fetch of one texel: texture, integer coordinate, optional level or sample index.</summary>
     TextureLoad,
 
@@ -291,7 +294,8 @@ public enum Intrinsic
     Length, /// <summary>lerp (mix).</summary>
     Lerp, /// <summary>log.</summary>
     Log, /// <summary>log2.</summary>
-    Log2, /// <summary>max.</summary>
+    Log2, /// <summary>log10.</summary>
+    Log10, /// <summary>max.</summary>
     Max, /// <summary>min.</summary>
     Min, /// <summary>modf(x, out ip): operands x, pointer to ip.</summary>
     Modf, /// <summary>normalize.</summary>

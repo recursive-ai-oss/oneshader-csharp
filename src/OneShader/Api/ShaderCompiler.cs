@@ -175,6 +175,9 @@ public static class ApiDiagnosticCodes
 
     /// <summary>The optimizer hit an internal problem; the shader was compiled without optimization (a warning).</summary>
     public const string OptimizerFallback = "OSH6001";
+
+    /// <summary>An unexpected exception escaped a compiler stage; reported as an error on line 1 of the file (a compiler bug).</summary>
+    public const string InternalError = "OSH7000";
 }
 
 /// <summary>The compiler's entry point.</summary>
@@ -182,7 +185,7 @@ public static class ShaderCompiler
 {
     /// <summary>
     /// Compiles one HLSL source text. Never throws for problems in the shader or its includes: they
-    /// are returned as diagnostics with file, line and column. Throws <see cref="ArgumentNullException"/>
+    /// are returned as diagnostics with file, line and column; an unexpected internal exception is returned as error OSH7000. Throws <see cref="ArgumentNullException"/>
     /// for null arguments and <see cref="OperationCanceledException"/> when cancelled.
     /// </summary>
     /// <param name="source">The HLSL text.</param>
@@ -195,10 +198,36 @@ public static class ShaderCompiler
     /// </returns>
     public static CompileResult Compile(string source, string path, CompileOptions? options = null, CancellationToken cancellationToken = default)
     {
+        return CompileGuarded(source, path, options, null, cancellationToken);
+    }
+
+    /// <summary>
+    /// Runs the pipeline and turns any unexpected exception into error OSH7000 on line 1 of the file, so a compiler
+    /// bug never takes down the host (the build node or a tool). <paramref name="probe"/> runs after lowering; tests use it to force a failure.
+    /// </summary>
+    internal static CompileResult CompileGuarded(string source, string path, CompileOptions? options, Action<IR.IrModule>? probe, CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(path);
         cancellationToken.ThrowIfCancellationRequested();
-        options ??= new CompileOptions();
+        try
+        {
+            return CompileCore(source, path, options ?? new CompileOptions(), probe, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            var failure = new DiagnosticBag();
+            failure.Error(ApiDiagnosticCodes.InternalError, "Internal compiler error (" + ex.GetType().Name + ": " + ex.Message + "). This is a bug in the compiler, not in the shader; please report it with the shader. Setting Optimize to false may avoid it.", new SourceSpan(path, 1, 1));
+            return new CompileResult(failure.Items, [], null);
+        }
+    }
+
+    private static CompileResult CompileCore(string source, string path, CompileOptions options, Action<IR.IrModule>? probe, CancellationToken cancellationToken)
+    {
         var result = Semantics.Frontend.Run(source, path, options, cancellationToken);
         var diagnostics = result.Diagnostics;
         var blobs = new List<ShaderBlob>();
@@ -207,6 +236,7 @@ public static class ShaderCompiler
             return new CompileResult(diagnostics.Items, blobs, null);
         }
 
+        probe?.Invoke(module);
         if (options.Optimize)
         {
             var failure = Optimization.Optimizer.Run(module, cancellationToken);

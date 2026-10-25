@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text;
 using OneShader.Diagnostics;
 using OneShader.IR;
+using OneShader.Semantics;
 using OneShader.Reflection;
 using OneShader.Types;
 
@@ -515,13 +516,27 @@ internal sealed partial class SpirvEmitter
                 }
 
                 default:
-                    return TypeId(l.Type);
+                    return StoredTypeId(l.Type);
             }
         }
         finally
         {
             _depth--;
         }
+    }
+
+    /// <summary>
+    /// The type a scalar or vector has in a buffer. OpTypeBool has no defined size and is not allowed in uniform or
+    /// storage memory, so bool is stored as a 32-bit unsigned integer (0 or 1), converted on load and store as DXC does.
+    /// </summary>
+    private uint StoredTypeId(HlslType t)
+    {
+        if (t.ScalarElement is { ScalarKind: ScalarKind.Bool } && t is ScalarType or VectorType)
+        {
+            return TypeId(TypeOps.Reshape(t, ScalarType.UInt));
+        }
+
+        return TypeId(t);
     }
 
     private static string MatrixSignature(TypeLayout l)
@@ -667,6 +682,14 @@ internal sealed partial class SpirvEmitter
                 case BuiltIn.ViewportIndex:
                     builtIn = Bi.ViewportIndex;
                     _s.Capabilities.Add(Cap.ShaderViewportIndex);
+                    break;
+                case BuiltIn.ClipDistance:
+                    builtIn = Bi.ClipDistance;
+                    _s.Capabilities.Add(Cap.ClipDistance);
+                    break;
+                case BuiltIn.CullDistance:
+                    builtIn = Bi.CullDistance;
+                    _s.Capabilities.Add(Cap.CullDistance);
                     break;
                 case BuiltIn.GlobalInvocationId:
                     builtIn = Bi.GlobalInvocationId;
@@ -871,7 +894,9 @@ internal sealed partial class SpirvEmitter
             }
 
             element = LayoutType(elementLayout, false, null);
-            stride = (uint)elementLayout.Size;
+            // The array stride is the element size rounded up to its alignment (16 for a bare float3).
+            uint align = (uint)System.Math.Max(1, elementLayout.Alignment);
+            stride = ((uint)elementLayout.Size + align - 1) / align * align;
             name = (rt.IsReadWrite ? "type.RWStructuredBuffer." : "type.StructuredBuffer.") + rt.Element;
         }
 

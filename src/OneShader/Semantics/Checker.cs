@@ -738,7 +738,76 @@ internal sealed partial class Checker
             return;
         }
 
+        // An element of a structured buffer is strided by its size rounded up to its alignment, so a bare float3
+        // takes 16 bytes (a struct already carries that padding). Buffer<float3> texels are not padded.
+        if (rules == BufferLayoutRules.StorageBuffer && layout!.Alignment > 1 && layout.Size % layout.Alignment != 0)
+        {
+            layout = layout.WithSize((layout.Size + layout.Alignment - 1) / layout.Alignment * layout.Alignment);
+        }
+
         res.Layout = layout;
+        CheckMemberOverlap(res, layout!, where);
+    }
+
+    /// <summary>Reports members whose explicit offsets (packoffset or [[vk::offset]]) make them share bytes; automatic placement cannot overlap.</summary>
+    private void CheckMemberOverlap(ResourceDecl res, TypeLayout layout, SourceSpan where)
+    {
+        if (layout.Type is not StructType || layout.Members.Count < 2)
+        {
+            return;
+        }
+
+        bool explicitOffsets = false;
+        foreach (var m in layout.Members)
+        {
+            explicitOffsets |= m.Field.ExplicitOffset is not null;
+        }
+
+        if (!explicitOffsets)
+        {
+            return;
+        }
+
+        // Sweep the members in offset order, remembering the one that reaches furthest; a member that starts before
+        // that point overlaps it. The later-declared of the two is the one reported, as DXC does. Sizes include the
+        // padding after arrays and matrices (an array of float takes whole registers), which is what the module's
+        // ArrayStride and MatrixStride decorations make of it and what DXC counts.
+        var order = new List<int>(layout.Members.Count);
+        for (int i = 0; i < layout.Members.Count; i++)
+        {
+            int at = order.Count;
+            while (at > 0 && layout.Members[order[at - 1]].Offset > layout.Members[i].Offset)
+            {
+                at--;
+            }
+
+            order.Insert(at, i);
+        }
+
+        int reach = -1;
+        int reachOwner = -1;
+        foreach (int i in order)
+        {
+            var m = layout.Members[i];
+            int used = m.Layout.Size;
+            if (reachOwner >= 0 && m.Offset < reach && used > 0)
+            {
+                int a = Math.Max(i, reachOwner);
+                int b = Math.Min(i, reachOwner);
+                var later = layout.Members[a];
+                var earlier = layout.Members[b];
+                var span = _fieldSpans.TryGetValue(later.Field, out var fs) ? fs : where;
+                Err(SemanticCodes.BadLayout, "packoffset overlap between '" + later.Name + "', '" + earlier.Name + "': '" + later.Name + "' occupies bytes "
+                    + Num(later.Offset) + " to " + Num(later.Offset + later.Layout.Size - 1) + " of '" + res.Name + "', which '" + earlier.Name + "' already uses (bytes "
+                    + Num(earlier.Offset) + " to " + Num(earlier.Offset + earlier.Layout.Size - 1) + "). Move '" + later.Name + "' to a register or component that '" + earlier.Name + "' does not use.", span);
+            }
+
+            if (m.Offset + used > reach)
+            {
+                reach = m.Offset + used;
+                reachOwner = i;
+            }
+        }
     }
 
     private void ApplyBindingAnnotations(ResourceDecl res, IReadOnlyList<AttributeSyntax> attrs, IReadOnlyList<Annotation> annotations, char expectedClass)
