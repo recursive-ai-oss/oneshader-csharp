@@ -1,0 +1,22 @@
+# A rough gold sphere lit only by the environment: irradiance cube, prefiltered specular cube with five
+# mip levels (one roughness each) and the BRDF table.
+case ibl_gold
+shader 3d/ibl.hlsl
+target 128 128 format=rgba16f background=solid(0.0,0.0,0.0,1.0)
+ftolerance 0.001
+texture 0 1 16x16x6 rgba16f sky(1.0) cube
+texture 0 2 64x64x6 rgba16f sky(-1) mips=5 cube
+texture 0 3 32x32 rgba16f brdf_lut
+sampler 0 4 linear clamp mips
+graphics vs=VSMain ps=PSMain
+depth
+vertexbuffer 0 48 : @sphere(32,24,1.0)
+attr 0 float3 0
+attr 1 float3 12
+index u32 : @sphereindex(32,24)
+draw indexed=4608
+uniform 0 0 :
+  @viewproj(0,0.3,3.2,0,0,0,60,1,0.1,50,row)
+  @invviewproj(0,0.3,3.2,0,0,0,60,1,0.1,50,row)
+  0.0 0.3 3.2 1.0
+  1.0 0.77 0.34 1.0  0.35 4.0 1.0 1.0

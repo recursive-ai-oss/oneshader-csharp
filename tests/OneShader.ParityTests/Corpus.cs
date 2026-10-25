@@ -36,11 +36,11 @@ public static class Corpus
         return d;
     }
 
-    /// <summary>Compute case names as xunit theory data.</summary>
+    /// <summary>Names of the compute cases that have a CPU reference, as xunit theory data.</summary>
     public static TheoryData<string> ComputeCases()
     {
         var d = new TheoryData<string>();
-        foreach (string n in CaseNames.Where(n => Load(n).IsCompute))
+        foreach (string n in CaseNames.Where(n => Load(n) is { IsCompute: true, Expects.Count: > 0 }))
         {
             d.Add(n);
         }

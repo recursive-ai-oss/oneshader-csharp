@@ -1,0 +1,16 @@
+# Ambient occlusion of two spheres on a floor from analytic linear depth and view-space normals.
+case ssao
+shader 3d/ssao.hlsl
+graphics vs=VSMain ps=PSMain
+target 128 128 format=r32f background=solid(1.0,0.0,0.0,0.0)
+ftolerance 0.0001
+draw vertices=3
+uniform 0 0 :
+  @perspective(60,1,0.1,50,col)
+  0.57735 0.57735  32.0 32.0  0.5 0.025 1.5 0.0
+  @hemisphere(5,16)
+texture 0 1 128x128 r32f scene_depth(60)
+texture 0 2 128x128 rgba16f scene_normal(60)
+texture 0 3 4x4 rgba8 noise(3)
+sampler 0 4 nearest clamp
+sampler 0 5 nearest repeat

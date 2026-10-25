@@ -44,7 +44,17 @@ public class GpuParityTests
     {
         ToolGate.RequireDxc();
         var ctx = Gpu.RequireOrSkip();
-        var report = Parity.Compare(ctx, Corpus.Load(name), ParityCompilers.Reference, ParityCompilers.Candidate);
+        ParityReport report;
+        try
+        {
+            report = Parity.Compare(ctx, Corpus.Load(name), ParityCompilers.Reference, ParityCompilers.Candidate);
+        }
+        catch (System.Exception ex)
+        {
+            ParityTable.Record(name, "vs-dxc", ex);
+            throw;
+        }
+        ParityTable.Record(name, "vs-dxc", report);
         Assert.True(report.Failures.Count == 0, report.ToString());
     }
 
@@ -56,7 +66,55 @@ public class GpuParityTests
         var ctx = Gpu.RequireOrSkip();
         var model = Corpus.Load(name);
         Assert.NotEmpty(model.Expects);
-        var report = Parity.CheckExpected(ctx, model, ParityCompilers.Candidate);
+        ParityReport report;
+        try
+        {
+            report = Parity.CheckExpected(ctx, model, ParityCompilers.Candidate);
+        }
+        catch (System.Exception ex)
+        {
+            ParityTable.Record(name, "vs-cpu", ex);
+            throw;
+        }
+        ParityTable.Record(name, "vs-cpu", report);
+        Assert.True(report.Failures.Count == 0, report.ToString());
+    }
+}
+
+/// <summary>Checks on the reference (DXC) side alone, so a bad case is caught before it can blame a compiler.</summary>
+public class ReferenceSanityTests
+{
+    /// <summary>The reference run raises no validation message and every output holds more than one distinct value.</summary>
+    [Theory]
+    [MemberData(nameof(Corpus.Cases), MemberType = typeof(Corpus))]
+    public void ReferenceRunIsCleanAndNonTrivial(string name)
+    {
+        ToolGate.RequireDxc();
+        var ctx = Gpu.RequireOrSkip();
+        var model = Corpus.Load(name);
+        var data = CaseData.Build(model);
+        var run = Parity.Run(ctx, model, data, ParityCompilers.Reference);
+        Parity.DumpImages(model, run, "dxc");
+        Assert.True(run.ValidationMessages.Count == 0, "validation layer (dxc): " + string.Join("\n", run.ValidationMessages));
+        foreach (var o in run.Outputs)
+        {
+            if (o.Key == "target" && model.Graphics is { PixelEntry.Length: 0 })
+            {
+                continue; // a depth-only draw leaves the colour target alone
+            }
+            Assert.True(o.Bytes.Distinct().Count() > 1, $"{name} {o.Key}: the reference output is a single repeated byte, so the case proves nothing");
+        }
+    }
+
+    /// <summary>The CPU reference of every compute case agrees with DXC's binary, so the CPU code itself is checked.</summary>
+    [Theory]
+    [MemberData(nameof(Corpus.ComputeCases), MemberType = typeof(Corpus))]
+    public void ReferenceMatchesCpuResult(string name)
+    {
+        ToolGate.RequireDxc();
+        var ctx = Gpu.RequireOrSkip();
+        var report = Parity.CheckExpected(ctx, Corpus.Load(name), ParityCompilers.Reference);
+        ParityTable.Record(name, "dxc-vs-cpu", report);
         Assert.True(report.Failures.Count == 0, report.ToString());
     }
 }

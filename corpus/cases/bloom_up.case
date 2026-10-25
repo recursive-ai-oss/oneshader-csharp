@@ -1,0 +1,11 @@
+# Bloom upsample: tent filter over the 32x32 level added into the 64x64 level.
+case bloom_up
+shader 3d/bloom_upsample.hlsl
+graphics vs=VSMain ps=PSMain
+target 64 64 format=rgba16f
+ftolerance 0.001
+draw vertices=3
+uniform 0 0 : 0.03125 0.03125 1.0 0.7
+texture 0 1 32x32 rgba16f hdr_blobs
+texture 0 2 64x64 rgba16f hdr_blobs
+sampler 0 3 linear clamp
