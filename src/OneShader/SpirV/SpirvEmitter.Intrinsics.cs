@@ -65,6 +65,13 @@ internal sealed partial class SpirvEmitter
             case Intrinsic.Length: ExtDirect(i, Glsl.Length, Arg(i, 0)); break;
             case Intrinsic.Log: ExtDirect(i, Glsl.Log, Arg(i, 0)); break;
             case Intrinsic.Log2: ExtDirect(i, Glsl.Log2, Arg(i, 0)); break;
+            case Intrinsic.Log10:
+            {
+                // No log10 in GLSL.std.450: log2(x) * log10(2), as DXC emits it.
+                uint l2 = Ext(rt, Glsl.Log2, Arg(i, 0));
+                Direct(i, Op.FMul, rt, l2, SplatConst(scalar, 0.30102999566398114, rc));
+                break;
+            }
             case Intrinsic.Normalize: ExtDirect(i, Glsl.Normalize, Arg(i, 0)); break;
             case Intrinsic.Pow: ExtDirect(i, Glsl.Pow, Arg(i, 0), Fit(i, 1)); break;
             case Intrinsic.Radians: ExtDirect(i, Glsl.Radians, Arg(i, 0)); break;
@@ -489,6 +496,23 @@ internal sealed partial class SpirvEmitter
 
                 uint v4 = Emit(Op.ImageGather, TypeId(Shape(sampled, 4)), all.ToArray());
                 Finish(i, FitTexel(v4, sampled, i.Type));
+                break;
+            }
+
+            case Opcode.TextureGatherCompare:
+            {
+                uint si = SampledImageOf(ops[0], ops[1], out _);
+                uint mask = 0;
+                var ids = new List<uint>();
+                AddOffset(i, 0, ref mask, ids);
+                var all = new List<uint> { si, Id(ops[2]), Id(ops[3]) };
+                if (mask != 0)
+                {
+                    all.Add(mask);
+                    all.AddRange(ids);
+                }
+
+                Direct(i, Op.ImageDrefGather, TypeId(i.Type), all.ToArray());
                 break;
             }
 

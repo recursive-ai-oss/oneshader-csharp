@@ -73,6 +73,17 @@ public sealed class TypeLayout
     /// <summary>For structs: member layouts in declaration order; otherwise empty.</summary>
     public IReadOnlyList<MemberLayout> Members { get; internal set; } = [];
 
+    /// <summary>The same layout with a different total size (used to pad a structured-buffer element to its alignment).</summary>
+    internal TypeLayout WithSize(int size) => new(Type, size, Alignment)
+    {
+        ArrayStride = ArrayStride,
+        ArrayLength = ArrayLength,
+        Element = Element,
+        MatrixStride = MatrixStride,
+        MatrixPacking = MatrixPacking,
+        Members = Members,
+    };
+
     /// <summary>True for an unsized (runtime) array.</summary>
     public bool IsUnsized => ArrayLength == 0 && Type.Kind == TypeKind.Array;
 }

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Written for this repository.
 // Static struct members, member functions defined after their struct, template deduction through a struct template,
-// a constant buffer sharing its name with a member, and integer literals evaluated in wide arithmetic.
+// a constant buffer sharing its name with a member, a whole ConstantBuffer<T> copied into a local, and integer literals
+// evaluated in wide arithmetic.
 
 struct Grid
 {
@@ -70,6 +71,15 @@ struct Light
     Light Lights[3];
 };
 
+struct Frame
+{
+    float4 tint;
+    uint k;
+    float2 pair[2];
+};
+
+[[vk::binding(2, 0)]] ConstantBuffer<Frame> FrameData : register(b1);
+
 [[vk::binding(1, 0)]] RWStructuredBuffer<uint4> Results : register(u0);
 
 [shader("compute")]
@@ -97,5 +107,7 @@ void CSMain(uint3 id : SV_DispatchThreadID)
     Results[0] = uint4(a, b, cells[7], Grid::Mask);
     Results[1] = uint4(asuint(Unbox(f)), Unbox(u), Last(p), total);
     Results[2] = uint4((1 << 31) >> 3, (3000000000 * 2) >> 1, 0xFFFFFFFF + 1, 100000 * 100000);
-    Results[3] = asuint(Lights[1].color);
+    // A whole ConstantBuffer<T> copied into a local struct.
+    Frame frame = FrameData;
+    Results[3] = asuint(Lights[1].color) + uint4(frame.k, asuint(frame.tint.y), asuint(frame.pair[1].x), asuint(frame.pair[0].y));
 }

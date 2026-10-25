@@ -15,7 +15,7 @@ internal static class Op
         MemberDecorate = 72, VectorExtractDynamic = 77, VectorInsertDynamic = 78, VectorShuffle = 79,
         CompositeConstruct = 80, CompositeExtract = 81, CompositeInsert = 82, Transpose = 84, SampledImage = 86,
         ImageSampleImplicitLod = 87, ImageSampleExplicitLod = 88, ImageSampleDrefImplicitLod = 89,
-        ImageSampleDrefExplicitLod = 90, ImageFetch = 95, ImageGather = 96, ImageRead = 98, ImageWrite = 99,
+        ImageSampleDrefExplicitLod = 90, ImageFetch = 95, ImageGather = 96, ImageDrefGather = 97, ImageRead = 98, ImageWrite = 99,
         Image = 100, ImageQuerySizeLod = 103, ImageQuerySize = 104, ImageQueryLod = 105, ImageQueryLevels = 106,
         ImageQuerySamples = 107, ConvertFToU = 109, ConvertFToS = 110, ConvertSToF = 111, ConvertUToF = 112,
         UConvert = 113, SConvert = 114, FConvert = 115, Bitcast = 124, SNegate = 126, FNegate = 127, IAdd = 128,
@@ -50,7 +50,7 @@ internal static class Glsl
 /// <summary>Capabilities.</summary>
 internal static class Cap
 {
-    public const uint Matrix = 0, Shader = 1, Geometry = 2, Float16 = 9, Float64 = 10, Int64 = 11, Int16 = 22,
+    public const uint Matrix = 0, Shader = 1, Geometry = 2, Float16 = 9, Float64 = 10, Int64 = 11, Int16 = 22, ClipDistance = 32, CullDistance = 33,
         ImageCubeArray = 34, SampleRateShading = 35, Sampled1D = 43, Image1D = 44, SampledCubeArray = 45,
         SampledBuffer = 46, ImageBuffer = 47, ImageMSArray = 48, StorageImageExtendedFormat = 49, ImageQuery = 50, DerivativeControl = 51,
         StorageImageReadWithoutFormat = 55, StorageImageWriteWithoutFormat = 56, ShaderLayer = 69, ShaderViewportIndex = 70;

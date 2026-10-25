@@ -1,0 +1,18 @@
+# Array and matrix stage variables, clip distances, comparison gather and level-of-detail query (see the shader).
+case stage_io
+shader 3d/stage_io.hlsl
+graphics vs=VSMain ps=PSMain
+target 64 64 background=solid(0.0,0.0,0.0,1.0)
+tolerance 1
+vertexbuffer 0 24 :
+  -1.0 -1.0  1.0 0.2  -0.2 1.0
+   3.0 -1.0  1.0 0.2  -0.2 1.0
+  -1.0  3.0  1.0 0.2  -0.2 1.0
+attr 0 float2 0
+attr 1 float2 8
+attr 2 float2 16
+draw vertices=3
+texture 0 0 64x64x4 d32f shadowmap
+sampler 0 1 linear clamp compare
+texture 0 2 32x32 rgba8 photo
+sampler 0 3 linear clamp

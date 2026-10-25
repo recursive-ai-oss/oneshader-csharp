@@ -29,6 +29,7 @@ with `dxc -spirv -fspv-target-env=vulkan1.2`, and give every resource an explici
 | `3d/clustered_lights.hlsl` | Clustered forward shading: per-cluster light ranges and index lists in structured buffers, exponential depth slices | written for this repository | MIT OR Apache-2.0 |
 | `3d/shadow_depth.hlsl` | Depth-only instanced pass (no pixel stage) with a structured buffer of world matrices | written for this repository | MIT OR Apache-2.0 |
 | `3d/shadow_cascades.hlsl` | Four-cascade shadow lookup: cascade selection by view depth, 3x3 PCF with `SampleCmpLevelZero` on a depth texture array | written for this repository | MIT OR Apache-2.0 |
+| `3d/stage_io.hlsl` | Array and matrix stage variables (a float2x2 vertex input, float4[2] and float2x2 interpolants), `SV_ClipDistance`, `GatherCmp` on a depth array and `CalculateLevelOfDetail` | written for this repository | MIT OR Apache-2.0 |
 | `3d/ssao.hlsl` | Hemisphere-kernel ambient occlusion from linear depth and view-space normals with a tiled noise rotation | written for this repository | MIT OR Apache-2.0 |
 | `3d/bloom_downsample.hlsl` | 13-tap bloom downsample with optional brightness-weighted first level and threshold | written for this repository | MIT OR Apache-2.0 |
 | `3d/bloom_upsample.hlsl` | Tent-filter bloom upsample blended into the larger level | written for this repository | MIT OR Apache-2.0 |
@@ -41,6 +42,7 @@ with `dxc -spirv -fspv-target-env=vulkan1.2`, and give every resource an explici
 | `compute/light_cull.hlsl` | Assigns point lights to clusters (sphere against box) into fixed-size per-cluster lists | written for this repository | MIT OR Apache-2.0 |
 | `compute/depth_bounds.hlsl` | Per-tile minimum and maximum depth with group-shared integer atomics on the float bits and `Texture2D.Load` | written for this repository | MIT OR Apache-2.0 |
 | `compute/prefix_sum.hlsl` | Block-wise exclusive scan in group-shared memory with barriers | written for this repository | MIT OR Apache-2.0 |
+| `compute/stage_layouts.hlsl` | Constant-buffer `bool` members, `StructuredBuffer<float3>` elements, `f32tof16`/`f16tof32`, `faceforward` and `log10` in one kernel (run with the flags on and off) | written for this repository | MIT OR Apache-2.0 |
 | `compute/histogram.hlsl` | Luminance histogram with group-shared atomics into a read-write buffer | written for this repository | MIT OR Apache-2.0 |
 | `compute/image_filter.hlsl` | Tiled 3x3 sharpen on a `RWTexture2D` through group-shared memory | written for this repository | MIT OR Apache-2.0 |
 | `compute/particles.hlsl` | Per-particle integration over a `RWStructuredBuffer` of structs | written for this repository | MIT OR Apache-2.0 |
@@ -50,7 +52,7 @@ with `dxc -spirv -fspv-target-env=vulkan1.2`, and give every resource an explici
 | `lang/operators.hlsl` | Member operator overloads: arithmetic, bitwise, comparison, subscript, call | written for this repository | MIT OR Apache-2.0 |
 | `lang/sizeof_static.hlsl` | sizeof constants and non-const static locals | written for this repository | MIT OR Apache-2.0 |
 | `lang/resource_arrays.hlsl` | Bounded resource arrays: textures and samplers chosen at run time, elements passed to functions, non-uniform index, arrays of read-only buffers and constant buffers | written for this repository | MIT OR Apache-2.0 |
-| `lang/statics_and_literals.hlsl` | Static struct members, member functions defined after the struct, template deduction through `Box<T>`, a cbuffer named like its member, wide literal arithmetic | written for this repository | MIT OR Apache-2.0 |
+| `lang/statics_and_literals.hlsl` | Static struct members, member functions defined after the struct, template deduction through `Box<T>`, a cbuffer named like its member, `S s = cb;`, wide literal arithmetic | written for this repository | MIT OR Apache-2.0 |
 | `compute/append_consume.hlsl` | Work list drained with `ConsumeStructuredBuffer` into an `AppendStructuredBuffer`, explicit counter bindings | written for this repository | MIT OR Apache-2.0 |
 | `lang/resource_locals.hlsl` | Resource-typed locals and parameters resolved at compile time | written for this repository | MIT OR Apache-2.0 |
 
@@ -111,20 +113,20 @@ for `expect-error` probes, a diagnostic). Each carries the same SPDX header and 
 | Probe | Construct |
 |---|---|
 | `probes/append_consume.hlsl` | AppendStructuredBuffer.Append and ConsumeStructuredBuffer.Consume with their hidden counters. |
-| `probes/array_interpolant.hlsl` | An array of float4 as a vertex output (per-cascade shadow coordinates); DXC assigns consecutive locations. |
-| `probes/cbuffer_bool.hlsl` | A bool member of a constant buffer: DXC stores it as a 32-bit integer; the candidate emits OpTypeBool in uniform storage. |
+| `probes/array_interpolant.hlsl` | An array of float4 as a vertex output (per-cascade shadow coordinates); one location per element. |
+| `probes/cbuffer_bool.hlsl` | A bool member of a constant buffer, stored as a 32-bit integer. |
 | `probes/cbuffer_member_name.hlsl` | A constant buffer and one of its members share a name. |
-| `probes/clip_distance.hlsl` | SV_ClipDistance outputs: the compiler throws instead of compiling or diagnosing. |
-| `probes/clip_distance_array.hlsl` | SV_ClipDistance as an array member; arrays are rejected as stage outputs. |
-| `probes/cull_distance.hlsl` | SV_CullDistance output: the compiler throws instead of compiling or diagnosing. |
-| `probes/faceforward.hlsl` | The faceforward intrinsic is not declared. |
-| `probes/gather_cmp.hlsl` | Texture2D.GatherCmp is not supported. |
+| `probes/clip_distance.hlsl` | SV_ClipDistance outputs with two semantic indices. |
+| `probes/clip_distance_array.hlsl` | SV_ClipDistance as an array member. |
+| `probes/cull_distance.hlsl` | An SV_CullDistance output. |
+| `probes/faceforward.hlsl` | The faceforward intrinsic. |
+| `probes/gather_cmp.hlsl` | Texture2D.GatherCmp on a depth texture. |
 | `probes/half_float_conversions.hlsl` | f16tof32 and f32tof16 (packed vertex attributes). |
-| `probes/lod_query.hlsl` | Texture2D.CalculateLevelOfDetail: the candidate emits an OpLoad through a non-logical pointer. |
-| `probes/matrix_interpolant.hlsl` | A float3x3 tangent frame as a pixel input; DXC assigns one location per row. |
-| `probes/packoffset_overlap.hlsl` | Two members packed at the same offset: DXC reports an error; the candidate accepts it and emits invalid SPIR-V. |
+| `probes/lod_query.hlsl` | Texture2D.CalculateLevelOfDetail. |
+| `probes/matrix_interpolant.hlsl` | A float3x3 tangent frame as a pixel input; one location per row. |
+| `probes/packoffset_overlap.hlsl` | Two members packed at the same offset: DXC reports an error, so a diagnostic is expected. |
 | `probes/resource_parameters.hlsl` | A texture and a sampler passed to a helper function; the candidate asks for [forceinline]. |
-| `probes/structured_float3.hlsl` | StructuredBuffer<float3>: DXC uses a 16-byte element stride; the candidate emits 12, which spirv-val rejects. |
+| `probes/structured_float3.hlsl` | StructuredBuffer<float3>: a 16-byte element stride. |
 
 ## Known gaps
 

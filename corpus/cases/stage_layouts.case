@@ -1,0 +1,9 @@
+# Constant-buffer bools, float3 structured-buffer elements, half conversions, faceforward and log10 (flags on).
+case stage_layouts
+shader compute/stage_layouts.hlsl
+dispatch CSMain 4 1 1
+uniform 0 0 : 1.0 0.5 0.25 0.0  1u 2.0 1u 1u
+storage 0 1 : @fpm1(11,256)
+storage 0 2 out size=1024
+storage 0 3 out size=1024
+storage 0 4 out size=1024

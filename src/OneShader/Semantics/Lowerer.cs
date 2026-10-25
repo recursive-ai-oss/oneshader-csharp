@@ -460,16 +460,23 @@ internal sealed partial class Lowerer
         _span = bodySym.Span;
         _b.Span = _span;
 
+        var distanceSlots = new Dictionary<InterfaceVar, int>();
         foreach (var v in e.Inputs)
         {
-            v.Global = MakeInterfaceGlobal(e, v, GlobalKind.Input, AddressSpace.Input);
-            ep.Inputs.Add(v.Global);
+            v.Global = IsDistance(v) ? DistanceGlobal(e, e.Inputs, v, GlobalKind.Input, AddressSpace.Input, ep.Inputs, distanceSlots) : MakeInterfaceGlobal(e, v, GlobalKind.Input, AddressSpace.Input);
+            if (!ep.Inputs.Contains(v.Global))
+            {
+                ep.Inputs.Add(v.Global);
+            }
         }
 
         foreach (var v in e.Outputs)
         {
-            v.Global = MakeInterfaceGlobal(e, v, GlobalKind.Output, AddressSpace.Output);
-            ep.Outputs.Add(v.Global);
+            v.Global = IsDistance(v) ? DistanceGlobal(e, e.Outputs, v, GlobalKind.Output, AddressSpace.Output, ep.Outputs, distanceSlots) : MakeInterfaceGlobal(e, v, GlobalKind.Output, AddressSpace.Output);
+            if (!ep.Outputs.Contains(v.Global))
+            {
+                ep.Outputs.Add(v.Global);
+            }
         }
 
         if (EnsureInit() is { } init)
@@ -504,7 +511,7 @@ internal sealed partial class Lowerer
                         continue;
                     }
 
-                    var val = _b.Load(v.Global!);
+                    var val = IsDistance(v) ? LoadDistance(v, distanceSlots[v]) : _b.Load(v.Global!);
                     StoreAtPath(slot, p.Type, v.Path, val);
                 }
             }
@@ -535,45 +542,112 @@ internal sealed partial class Lowerer
                 t = bodySym.Params[v.ParamIndex].Type;
             }
 
-            _b.Store(v.Global!, LoadAtPath(slot, t, v.Path));
+            var value = LoadAtPath(slot, t, v.Path);
+            if (IsDistance(v))
+            {
+                StoreDistance(v, distanceSlots[v], value);
+            }
+            else
+            {
+                _b.Store(v.Global!, value);
+            }
         }
 
         _b.Return();
         _mod.EntryPoints.Add(ep);
     }
 
-    private void StoreAtPath(IrValue root, HlslType rootType, List<int> path, IrValue value)
-    {
-        if (path.Count == 0)
-        {
-            _b.Store(root, value);
-            return;
-        }
+    private void StoreAtPath(IrValue root, HlslType rootType, List<int> path, IrValue value) =>
+        _b.Store(PointerAtPath(root, rootType, path), value);
 
+    private IrValue LoadAtPath(IrValue root, HlslType rootType, List<int> path) =>
+        _b.Load(PointerAtPath(root, rootType, path));
+
+    /// <summary>The address inside a parameter or result for a flattened stage variable: struct member, array element or matrix row.</summary>
+    private IrValue PointerAtPath(IrValue root, HlslType rootType, List<int> path)
+    {
         var ptr = root;
         var t = rootType;
         foreach (int idx in path)
         {
-            var field = ((StructType)t).Fields[idx].Type;
-            ptr = _b.AccessChain(ptr, field, Constant.Int(idx));
-            t = field;
+            var next = t is StructType st ? st.Fields[idx].Type : TypeOps.IndexedElement(t)!;
+            ptr = _b.AccessChain(ptr, next, Constant.Int(idx));
+            t = next;
         }
 
-        _b.Store(ptr, value);
+        return ptr;
     }
 
-    private IrValue LoadAtPath(IrValue root, HlslType rootType, List<int> path)
+    private static bool IsDistance(InterfaceVar v) => v.BuiltIn is BuiltIn.ClipDistance or BuiltIn.CullDistance;
+
+    /// <summary>
+    /// Clip and cull distances are one built-in array each in SPIR-V; every variable with that semantic owns a slice of it,
+    /// ordered by semantic index as DXC does. Returns the shared array variable and records the variable's first slot.
+    /// </summary>
+    private GlobalVariable DistanceGlobal(EntryInfo e, List<InterfaceVar> all, InterfaceVar first, GlobalKind kind, AddressSpace space, List<GlobalVariable> already, Dictionary<InterfaceVar, int> slots)
     {
-        var ptr = root;
-        var t = rootType;
-        foreach (int idx in path)
+        foreach (var g in already)
         {
-            var field = ((StructType)t).Fields[idx].Type;
-            ptr = _b.AccessChain(ptr, field, Constant.Int(idx));
-            t = field;
+            if (g.BuiltIn == first.BuiltIn)
+            {
+                return g;
+            }
         }
 
-        return _b.Load(ptr);
+        var members = new List<InterfaceVar>();
+        foreach (var v in all)
+        {
+            if (v.BuiltIn != first.BuiltIn)
+            {
+                continue;
+            }
+
+            int at = members.Count;
+            while (at > 0 && members[at - 1].SemanticIndex > v.SemanticIndex)
+            {
+                at--;
+            }
+
+            members.Insert(at, v);
+        }
+
+        int total = 0;
+        foreach (var v in members)
+        {
+            slots[v] = total;
+            total += TypeOps.Count(v.Type);
+        }
+
+        var array = new GlobalVariable(e.Function.Name + "." + (first.BuiltIn == BuiltIn.ClipDistance ? "ClipDistance" : "CullDistance"), kind, space, HlslType.Array(ScalarType.Float, total))
+        {
+            BuiltIn = first.BuiltIn,
+            Semantic = first.Semantic,
+            Span = first.Span,
+        };
+        _mod.Globals.Add(array);
+        return array;
+    }
+
+    private void StoreDistance(InterfaceVar v, int slot, IrValue value)
+    {
+        int n = TypeOps.Count(v.Type);
+        for (int j = 0; j < n; j++)
+        {
+            var ptr = _b.AccessChain(v.Global!, ScalarType.Float, Constant.Int(slot + j));
+            _b.Store(ptr, n == 1 ? value : Extract(value, ScalarType.Float, j));
+        }
+    }
+
+    private IrValue LoadDistance(InterfaceVar v, int slot)
+    {
+        int n = TypeOps.Count(v.Type);
+        var parts = new IrValue[n];
+        for (int j = 0; j < n; j++)
+        {
+            parts[j] = _b.Load(_b.AccessChain(v.Global!, ScalarType.Float, Constant.Int(slot + j)));
+        }
+
+        return n == 1 ? parts[0] : _b.Construct(v.Type, parts);
     }
 
     private GlobalVariable MakeInterfaceGlobal(EntryInfo e, InterfaceVar v, GlobalKind kind, AddressSpace space)

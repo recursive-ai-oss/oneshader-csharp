@@ -474,6 +474,13 @@ internal sealed partial class Lowerer
                         return Constant.Zero(e.Type!);
                     }
 
+                    if (v.Type is ResourceType { ResourceKind: ResourceTypeKind.ConstantBuffer, Element: StructType contents })
+                    {
+                        // Naming a ConstantBuffer<S> as a value copies the whole struct (S s = cb;). A chain with no index
+                        // addresses the buffer's contents, which is how member accesses start.
+                        return _b.Load(_b.AccessChain(ptr, contents));
+                    }
+
                     return _b.Load(ptr);
                 }
 

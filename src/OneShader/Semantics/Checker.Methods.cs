@@ -317,6 +317,32 @@ internal sealed partial class Checker
                 return res;
             }
 
+            case "GatherCmp" or "GatherCmpRed":
+            {
+                // Only the first channel can be compared: SPIR-V, Metal and WGSL gather the depth value, so the Green,
+                // Blue and Alpha forms have no portable meaning and are not offered.
+                if (rk is not (ResourceTypeKind.Texture2D or ResourceTypeKind.Texture2DArray or ResourceTypeKind.TextureCube or ResourceTypeKind.TextureCubeArray))
+                {
+                    Err(SemanticCodes.BadMember, "The method '" + name + "' needs a Texture2D, Texture2DArray, TextureCube or TextureCubeArray, not '" + rt + "'.", ma.Member.Span);
+                    return HlslType.Error;
+                }
+
+                if (!ArgRange(3, 4) || (n == 4 && offsetType is null))
+                {
+                    return HlslType.Error;
+                }
+
+                var pts = n == 4 ? new HlslType[] { SamplerType.Comparison, coord, ScalarType.Float, offsetType! } : [SamplerType.Comparison, coord, ScalarType.Float];
+                Convertibles(pts);
+                var res = HlslType.Vector(ScalarType.Float, 4);
+                info.Builtin = Make(Opcode.TextureGatherCompare, res, pts, n == 4);
+                return res;
+            }
+
+            case "GatherCmpGreen" or "GatherCmpBlue" or "GatherCmpAlpha":
+                Err(SemanticCodes.Unsupported, "The method '" + name + "' is not supported: a comparison gather reads the depth channel only. Use GatherCmp.", ma.Member.Span);
+                return HlslType.Error;
+
             case "Load":
             {
                 if (!ArgRange(1, 2) || (n == 2 && offsetType is null))

@@ -205,9 +205,10 @@ internal sealed partial class SpirvEmitter
         var after = new List<uint>();
         foreach (var g in declared)
         {
-            if (_globalIds.TryGetValue(g, out uint gid))
+            // A global that could not be declared has already been reported.
+            if (_globalIds.TryGetValue(g, out uint id))
             {
-                after.Add(gid);
+                after.Add(id);
             }
         }
 

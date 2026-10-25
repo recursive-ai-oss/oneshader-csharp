@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using OneShader.Diagnostics;
 using OneShader.IR;
+using OneShader.Semantics;
 using OneShader.Types;
 
 namespace OneShader.SpirV;
@@ -643,12 +644,30 @@ internal sealed partial class SpirvEmitter
 
     private const int MaxCopiedElements = 1024;
 
+    private static Constant OnesOf(HlslType t)
+    {
+        if (t is VectorType v)
+        {
+            var elems = new Constant[v.Count];
+            System.Array.Fill(elems, Constant.UInt(1));
+            return Constant.Composite(t, elems);
+        }
+
+        return Constant.UInt(1);
+    }
+
     /// <summary>Rebuilds a value read from a buffer (offset-decorated structs, strided arrays) as the plain type used in registers.</summary>
     private uint LayoutToPlain(uint v, uint srcType, HlslType dst)
     {
         if (TypeId(dst) == srcType)
         {
             return v;
+        }
+
+        if (dst.ScalarElement is { ScalarKind: ScalarKind.Bool } && dst is ScalarType or VectorType)
+        {
+            // Stored as 0 or 1 in a 32-bit unsigned integer.
+            return Emit(Op.INotEqual, TypeId(dst), v, Zero(TypeOps.Reshape(dst, ScalarType.UInt)));
         }
 
         var info = _s.Info(srcType);
@@ -704,6 +723,12 @@ internal sealed partial class SpirvEmitter
         if (TypeId(src) == dstType)
         {
             return v;
+        }
+
+        if (src.ScalarElement is { ScalarKind: ScalarKind.Bool } && src is ScalarType or VectorType)
+        {
+            var stored = TypeOps.Reshape(src, ScalarType.UInt);
+            return Emit(Op.Select, TypeId(stored), v, ConstId(OnesOf(stored)), Zero(stored));
         }
 
         var info = _s.Info(dstType);
