@@ -7,7 +7,7 @@ namespace OneShader.Tests;
 
 public class IrTests
 {
-    private static (IrModule Module, IrFunction Function) BuildLoopWithIf()
+    internal static (IrModule Module, IrFunction Function) BuildLoopWithIf()
     {
         // int f(int n) { int sum = 0; for (int i = 0; i < n; i++) { if ((i & 1) != 0) sum += i; } return sum; }
         var module = new IrModule { Name = "loop.hlsl" };
