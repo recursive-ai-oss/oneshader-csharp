@@ -114,7 +114,7 @@ public sealed class PackageTests : IClassFixture<PackageFixture>
         var second = Build("Prebuilt", b);
         Assert.True(second.Code == 0, second.Output);
         var generated = Directory.EnumerateFiles(a, "OneShader.*.g.cs", SearchOption.AllDirectories).Select(Path.GetFileName).OrderBy(n => n, StringComparer.Ordinal).ToList();
-        Assert.Equal(3, generated.Count);
+        Assert.Equal(GoldenModels.Names.Length, generated.Count);
         foreach (string? name in generated)
         {
             Assert.Equal(File.ReadAllBytes(Find(a, name!)), File.ReadAllBytes(Find(b, name!)));
