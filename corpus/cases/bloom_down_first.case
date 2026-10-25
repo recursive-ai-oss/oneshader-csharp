@@ -1,0 +1,10 @@
+# First bloom level: 128x128 HDR blobs to 64x64 with the weighted 13-tap filter and a brightness threshold.
+case bloom_down_first
+shader 3d/bloom_downsample.hlsl
+graphics vs=VSMain ps=PSMain
+target 64 64 format=rgba16f
+ftolerance 0.001
+draw vertices=3
+uniform 0 0 : 0.0078125 0.0078125 1.0 1u
+texture 0 1 128x128 rgba16f hdr_blobs
+sampler 0 2 linear clamp

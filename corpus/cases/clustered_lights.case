@@ -1,0 +1,23 @@
+# Sphere over a floor shaded from per-cluster light lists: 8x8 screen tiles of 16 pixels, 6 depth slices,
+# up to 8 lights per cluster taken from 24 lights. The lists are generated, not derived from the lights.
+case clustered_lights
+shader 3d/clustered_lights.hlsl
+graphics vs=VSMain ps=PSMain
+target 128 128 format=rgba16f background=solid(0.01,0.01,0.015,1.0)
+depth
+ftolerance 0.001
+vertexbuffer 0 48 : @sphere(32,24,1.0) @plane(4.0,-1.0)
+attr 0 float3 0
+attr 1 float3 12
+index u32 : @sphereindex(32,24) @planeindex(825)
+draw indexed=4614
+uniform 0 0 :
+  @viewproj(0,1.2,4.0,0,-0.2,0,60,1,0.1,50,row)
+  @view(0,1.2,4.0,0,-0.2,0,row)
+  0.0 1.2 4.0 1.0
+  8u 8u 6u 16u
+  0.66921 2.2230 0.4 0.0
+  0.8 0.8 0.8 0.05
+storage 0 1 : @pattern(7,24,-2.5~2.5,-0.8~2.0,-2.5~2.5,1.5~3.5,0.2~1.0,0.2~1.0,0.2~1.0,3.0~10.0)
+storage 0 2 : @pattern(9,384,s8,u9)
+storage 0 3 : @u32(5,3072,24)

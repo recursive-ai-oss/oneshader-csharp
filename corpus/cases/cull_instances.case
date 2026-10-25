@@ -1,0 +1,11 @@
+# Frustum culling of 1000 bounding spheres into a compacted index list and an indirect draw argument
+# buffer. The list order depends on atomics, so it is compared as a sorted set.
+case cull_instances
+shader compute/cull_instances.hlsl
+dispatch CSMain 16 1 1
+uniform 0 0 : @frustumplanes(0,2,8,0,0,-10,50,1.6,0.5,60) 1000u 36u
+storage 0 1 : @pattern(21,1000,-30~30,-12~12,-45~10,0.2~2.0)
+storage 0 2 out sorted size=4096
+storage 0 3 out size=4096
+storage 0 4 out size=32
+expect cull_instances

@@ -17,7 +17,7 @@ public sealed class CaseData
 
     public byte[]? Indices { get; private set; }
 
-    /// <summary>Encoded RGBA8 initial target contents (graphics cases).</summary>
+    /// <summary>Encoded initial target contents in the target format (graphics cases).</summary>
     public byte[]? Background { get; private set; }
 
     /// <summary>Builds the data for <paramref name="model"/>.</summary>
@@ -42,8 +42,18 @@ public sealed class CaseData
                     }
                 case ResourceKind.Texture:
                 case ResourceKind.StorageImage:
-                    d.Images[i] = ImageGen.Encode(ImageGen.Generate(r.Generator, r.Width, r.Height, r.Layers), r.Format);
-                    break;
+                    {
+                        // Mip levels are stored one after another, each generated at its own size.
+                        var all = new List<byte>();
+                        for (int level = 0; level < r.MipLevels; level++)
+                        {
+                            int w = Math.Max(r.Width >> level, 1);
+                            int h = Math.Max(r.Height >> level, 1);
+                            all.AddRange(ImageGen.Encode(ImageGen.Generate(r.Generator, w, h, r.Layers, level, r.MipLevels), r.Format));
+                        }
+                        d.Images[i] = all.ToArray();
+                        break;
+                    }
             }
         }
         var g = model.Graphics;
@@ -59,7 +69,7 @@ public sealed class CaseData
             }
             d.Background = ImageGen.Encode(
                 ImageGen.Generate(g.Background.Length == 0 ? "solid(0,0,0,0)" : g.Background, g.Width, g.Height, 0),
-                PixelFormat.Rgba8);
+                g.TargetFormat);
         }
         return d;
     }

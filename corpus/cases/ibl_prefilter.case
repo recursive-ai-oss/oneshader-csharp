@@ -1,0 +1,10 @@
+# Importance-sampled GGX prefilter of a 32x32 cube map (six mips) into a 16x16 RGBA16F cube written as a
+# layered storage image, one face per dispatch z.
+case ibl_prefilter
+shader compute/ibl_prefilter.hlsl
+dispatch CSMain 2 2 6
+ftolerance 0.001
+uniform 0 0 : 0.5 64u 32.0 16u
+texture 0 1 32x32x6 rgba16f sky(-1) mips=6 cube
+sampler 0 2 linear clamp mips
+image 0 3 16x16x6 rgba16f solid(0.0,0.0,0.0,0.0) out

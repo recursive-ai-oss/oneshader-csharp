@@ -1,0 +1,10 @@
+# 40 point lights assigned to the 512 unit-cube clusters of an 8x8x8 grid, at most 16 lights per cluster.
+case light_cull
+shader compute/light_cull.hlsl
+dispatch CSMain 8 1 1
+uniform 0 0 : 512u 40u 16u 0u
+storage 0 1 : @gridboxes(8,8,8,1.0,-4.0,-4.0,-4.0)
+storage 0 2 : @pattern(31,40,-5.0~5.0,-5.0~5.0,-5.0~5.0,0.8~2.5,0.2~1.0,0.2~1.0,0.2~1.0,2.0~8.0)
+storage 0 3 out size=4096
+storage 0 4 out size=32768
+expect light_cull
