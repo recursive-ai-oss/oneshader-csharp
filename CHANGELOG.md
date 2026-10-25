@@ -5,6 +5,10 @@ Versions follow [Semantic Versioning](https://semver.org/); before 1.0 the API m
 
 ## [Unreleased]
 
+## [0.2.0-preview.1]
+
+- Optimizer, on by default (`CompileOptions.Optimize`): inlining, SSA promotion, constant folding, common-subexpression and dead-code elimination, control-flow simplification. SPIR-V is about 38% smaller than before and close to DXC's size.
+- HLSL 2021 language features: function and struct templates, member functions and `this`, single inheritance, operator overloads, `sizeof`, static locals, resource-typed locals and parameters.
 - Bounded resource arrays end to end (`Texture2D T[4]`, `SamplerState S[2]`, arrays of structured buffers and constant buffers): constant and run-time indexing, `NonUniformResourceIndex`, elements passed to functions, reflection and generated `Count`. Unbounded arrays are a clear error.
 - `AppendStructuredBuffer` and `ConsumeStructuredBuffer` (`Append`, `Consume`, `GetDimensions`) with the hidden counter exposed in reflection (`counter` records) and in the generated bindings (`CounterBinding`, a `<name>.counter` entry in `All`).
 - A constant buffer may share its name with one of its members, and a whole `ConstantBuffer<S>` can be copied into a struct local (`S s = cb;`).

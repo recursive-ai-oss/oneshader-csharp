@@ -5,7 +5,7 @@
 with reflection: inputs and outputs, resource bindings, buffer layouts and thread-group sizes.
 NativeAOT and trimming are supported.
 
-**Preview.** Version 0.1 targets Vulkan (SPIR-V). The API may still change before 1.0.
+**Preview.** Version 0.2 targets Vulkan (SPIR-V). The API may still change before 1.0.
 
 Most projects want [RecursiveAI.OneShader.Build](https://www.nuget.org/packages/RecursiveAI.OneShader.Build),
 which compiles `*.hlsl` during `dotnet build` and generates C# bindings. This package is the
@@ -70,7 +70,7 @@ set, binding, kind, array size and stage visibility, the entry points present an
 sizes. Edits to function bodies, new entry points, and resources that become visible to fewer stages are compatible.
 `ShaderCompiler.Compile` can be called from several threads at once. `samples/HotReload` is a complete console loop.
 
-## What works in 0.1
+## What works in 0.2
 
 - Vertex, pixel and compute shaders in modern HLSL (HLSL 2021): structs, functions, constant
   buffers, textures and samplers, structured and byte-address buffers, storage images,
@@ -81,11 +81,9 @@ sizes. Edits to function bodies, new entry points, and resources that become vis
 
 ## Known limits
 
-- SPIR-V only. Metal (MSL) and WebGPU (WGSL) output are planned; asking for them returns
+- SPIR-V only. Metal (MSL) and WebGPU (WGSL) output are in development; asking for them returns
   diagnostic OSH0002.
-- Resources are single (`Count == 1`); resource arrays are not supported yet.
-- HLSL templates, struct member functions, operator overloads and wave intrinsics report
-  "not supported yet".
+- Unbounded resource arrays and wave intrinsics are not supported.
 
 ## License
 
