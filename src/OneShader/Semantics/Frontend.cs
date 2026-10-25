@@ -89,7 +89,7 @@ internal static class Frontend
         }
         catch (Exception ex)
         {
-            bag.Error(SemanticCodes.Internal, "Internal compiler error (" + ex.GetType().Name + ": " + ex.Message + ") while compiling this file. This is a bug in the compiler; please report it with the shader.", new SourceSpan(path, 1, 1));
+            bag.Error(SemanticCodes.Internal, "Internal compiler error (" + InternalError.Describe(ex) + ") while compiling this file. This is a bug in the compiler; please report it with the shader.", new SourceSpan(path, 1, 1));
             return new FrontendResult(null, null, bag);
         }
     }

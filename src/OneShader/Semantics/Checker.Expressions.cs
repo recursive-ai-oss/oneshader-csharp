@@ -641,7 +641,7 @@ internal sealed partial class Checker
                 switch (n.Info?.Symbol)
                 {
                     case VariableSymbol { Kind: VarKind.CBufferMember } v:
-                        return "'" + v.Name + "' is a member of the constant buffer '" + v.Buffer!.Name + "', which shaders cannot write. Copy it into a local variable first.";
+                        return "'" + v.Name + "' is a member of the constant buffer '" + (v.Buffer?.Name ?? "") + "', which shaders cannot write. Copy it into a local variable first.";
                     case VariableSymbol { Kind: VarKind.Resource } v:
                         return "'" + v.Name + "' is a resource, not a variable.";
                     case VariableSymbol v when v.IsConst:

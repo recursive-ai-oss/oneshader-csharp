@@ -1,0 +1,1 @@
+struct VertexOutput{float1 Position:SV_Position}[shader("vertex"VertexOutput VSMain({

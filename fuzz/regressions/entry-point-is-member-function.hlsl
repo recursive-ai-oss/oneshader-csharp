@@ -1,0 +1,1 @@
+struct{[shader("compute"void CSMain({

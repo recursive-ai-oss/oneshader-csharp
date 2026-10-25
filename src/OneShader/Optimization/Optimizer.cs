@@ -76,7 +76,7 @@ internal static class Optimizer
         }
         catch (Exception ex)
         {
-            return "optimizer failed in " + current + ": " + ex.Message;
+            return "optimizer failed in " + current + ": " + Diagnostics.InternalError.Describe(ex);
         }
     }
 

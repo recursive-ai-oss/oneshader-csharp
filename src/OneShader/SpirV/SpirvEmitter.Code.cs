@@ -824,6 +824,13 @@ internal sealed partial class SpirvEmitter
         return info.Kind == TypeInfoKind.Struct ? info.Children[index < info.Children.Length ? index : 0] : info.Children[0];
     }
 
+    /// <summary>
+    /// The id for an access-chain index. A negative constant is emitted as the unsigned value with the same bits: the access is out of
+    /// bounds either way, but spirv-val rejects negative constant indices outright.
+    /// </summary>
+    private uint ChainIndexId(IrValue ix) =>
+        ix is Constant { ConstantKind: ConstantKind.Scalar } c && c.Type == ScalarType.Int && (int)c.Bits < 0 ? UIntConst((uint)c.Bits) : Id(ix);
+
     private void EmitAccessChain(Instruction i)
     {
         var baseValue = i.Operands[0];
@@ -840,7 +847,7 @@ internal sealed partial class SpirvEmitter
                 _s.Capabilities.Add(DynamicIndexingCapability(cur is ArrayType resourceElements ? resourceElements.Element : cur));
             }
 
-            idx.Add(Id(i.Operands[k]));
+            idx.Add(ChainIndexId(i.Operands[k]));
             pe = ChildType(pe, 0, i.Span);
             cur = cur is ArrayType resourceArray ? resourceArray.Element : cur;
             k++;
@@ -857,7 +864,7 @@ internal sealed partial class SpirvEmitter
                 // Storage buffers are a block holding one runtime array: step into member 0, then the element.
                 idx.Add(UIntConst(0));
                 pe = ChildType(pe, 0, i.Span);
-                idx.Add(Id(i.Operands[k]));
+                idx.Add(ChainIndexId(i.Operands[k]));
                 pe = ChildType(pe, 0, i.Span);
                 cur = rt.Element ?? ScalarType.UInt;
                 k++;
@@ -870,7 +877,7 @@ internal sealed partial class SpirvEmitter
             int? c = ix is Constant { ConstantKind: ConstantKind.Scalar } cc ? (int)cc.Bits : null;
             if (Step(ref cur, c, i.Span))
             {
-                idx.Add(Id(ix));
+                idx.Add(ChainIndexId(ix));
                 pe = ChildType(pe, c ?? 0, i.Span);
             }
         }

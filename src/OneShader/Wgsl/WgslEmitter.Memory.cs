@@ -229,10 +229,38 @@ internal sealed partial class WgslEmitter
         }
         else
         {
-            steps.Add(new PlainStep(null, index));
+            steps.Add(new PlainStep(null, ClampIndex(index, m.Type)));
         }
 
         return new PlainMem(next, m.Root, m.AtomicRoot, steps);
+    }
+
+    /// <summary>
+    /// WGSL rejects a constant index outside a fixed-size array, vector or matrix when the shader is created, while HLSL leaves it
+    /// undefined. Clamp such a constant to the valid range, which is what WGSL itself does for a run-time index.
+    /// </summary>
+    private static IrValue ClampIndex(IrValue index, HlslType container)
+    {
+        int length = container switch
+        {
+            ArrayType { Length: > 0 } a => a.Length,
+            VectorType v => v.Count,
+            MatrixType m => m.Rows,
+            _ => 0,
+        };
+        if (length == 0 || index is not Constant { ConstantKind: ConstantKind.Scalar } c || c.Type is not ScalarType st)
+        {
+            return index;
+        }
+
+        bool negative = st == ScalarType.Int && (int)c.Bits < 0;
+        if (!negative && (uint)c.Bits < (uint)length)
+        {
+            return index;
+        }
+
+        uint clamped = negative ? 0u : (uint)(length - 1);
+        return Constant.FromBits(st, clamped);
     }
 
     private string Render(PlainMem m)
@@ -260,9 +288,12 @@ internal sealed partial class WgslEmitter
     private static Cur AddIndex(Cur c, HlslType type, TypeLayout? layout, IrValue index, int stride, int extraOffset, int compStride)
     {
         int k = ConstIndex(index);
+        long folded = (long)c.Offset + extraOffset + (long)k * stride;
         if (k != int.MinValue)
         {
-            return new Cur(type, layout, c.Offset + extraOffset + k * stride, c.Dyn, compStride);
+            // A negative or enormous constant index is out of bounds, and the byte offset would overflow. Pin it to a fixed offset far
+            // past any buffer so that the access stays out of bounds (WGSL discards or clamps it) and the generated text stays valid.
+            return new Cur(type, layout, folded is >= 0 and < (1 << 30) ? (int)folded : (1 << 30) - 16, c.Dyn, compStride);
         }
 
         var dyn = new List<(IrValue, int)>(c.Dyn) { (index, stride) };
@@ -310,6 +341,8 @@ internal sealed partial class WgslEmitter
                     return c;
                 }
 
+                index = ClampIndex(index, a);
+
                 var next = AddIndex(c, a.Element, c.Layout.Element, index, c.Layout.ArrayStride, 0, 0);
                 return a.Element is VectorType v ? new Cur(next.Type, next.Layout, next.Offset, next.Dyn, ElemBytes(v.Element)) : next;
             }
@@ -321,13 +354,13 @@ internal sealed partial class WgslEmitter
                     return new Cur(v.Element, null, c.Offset, c.Dyn, 0);
                 }
 
-                return AddIndex(c, v.Element, null, index, c.CompStride, 0, 0);
+                return AddIndex(c, v.Element, null, ClampIndex(index, v), c.CompStride, 0, 0);
             }
 
             case MatrixType m:
             {
                 var row = HlslType.Vector(m.Element, m.Columns);
-                return MatrixRow(c, m, row, m.Rows == 1 ? null : index);
+                return MatrixRow(c, m, row, m.Rows == 1 ? null : ClampIndex(index, m));
             }
 
             default:

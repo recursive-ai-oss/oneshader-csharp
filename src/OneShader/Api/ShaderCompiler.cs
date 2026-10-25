@@ -271,7 +271,7 @@ public static class ShaderCompiler
         catch (Exception ex)
         {
             var failure = new DiagnosticBag();
-            failure.Error(ApiDiagnosticCodes.InternalError, "Internal compiler error (" + ex.GetType().Name + ": " + ex.Message + "). This is a bug in the compiler, not in the shader; please report it with the shader. Setting Optimize to false may avoid it.", new SourceSpan(path, 1, 1));
+            failure.Error(ApiDiagnosticCodes.InternalError, "Internal compiler error (" + InternalError.Describe(ex) + "). This is a bug in the compiler, not in the shader; please report it with the shader. Setting Optimize to false may avoid it.", new SourceSpan(path, 1, 1));
             return new CompileResult(failure.Items, [], null) { Files = ListFiles(path, includes) };
         }
     }

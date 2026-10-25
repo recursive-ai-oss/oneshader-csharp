@@ -717,6 +717,13 @@ internal sealed partial class Lowerer
             return;
         }
 
+        if (target is MemberAccessExpression { SwizzleComponents.Count: 1, Target.Type: ScalarType } scalarSwizzle)
+        {
+            // 'x.x = v' on a scalar: the swizzle names the scalar itself.
+            Store(scalarSwizzle.Target, value);
+            return;
+        }
+
         var p = Address(target);
         if (p is null)
         {

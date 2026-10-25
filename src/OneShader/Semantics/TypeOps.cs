@@ -367,29 +367,34 @@ internal static class TypeOps
     };
 
     /// <summary>True when values of the type can be held in a local variable (not a resource or void).</summary>
-    public static bool IsValueType(HlslType t) => t switch
-    {
-        ScalarType or VectorType or MatrixType or EnumType => true,
-        StructType s => AllFieldsAreValues(s, 0),
-        ArrayType a => IsValueType(a.Element),
-        _ => false,
-    };
+    public static bool IsValueType(HlslType t) => IsValueType(t, 0);
 
-    private static bool AllFieldsAreValues(StructType s, int depth)
+    // The depth counts through structs and arrays alike: a struct that holds an array of itself must end the walk too.
+    private static bool IsValueType(HlslType t, int depth)
     {
-        if (depth > 32)
+        switch (t)
         {
-            return false;
-        }
+            case ScalarType or VectorType or MatrixType or EnumType:
+                return true;
+            case ArrayType a:
+                return depth <= 32 && IsValueType(a.Element, depth + 1);
+            case StructType s:
+                if (depth > 32)
+                {
+                    return false;
+                }
 
-        foreach (var f in s.Fields)
-        {
-            if (f.Type is StructType inner ? !AllFieldsAreValues(inner, depth + 1) : !IsValueType(f.Type))
-            {
+                foreach (var f in s.Fields)
+                {
+                    if (!IsValueType(f.Type, depth + 1))
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            default:
                 return false;
-            }
         }
-
-        return true;
     }
 }

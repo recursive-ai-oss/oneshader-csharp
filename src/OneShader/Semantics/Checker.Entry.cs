@@ -152,7 +152,8 @@ internal sealed partial class Checker
             return;
         }
 
-        foreach (var f in Functions)
+        // Checking an entry point can instantiate templates, which adds to Functions: walk a snapshot.
+        foreach (var f in (FunctionSymbol[])[.. Functions])
         {
             if (f.EntryStage is { } stage)
             {
@@ -187,6 +188,16 @@ internal sealed partial class Checker
         if (f.ReturnType.IsError)
         {
             return;
+        }
+
+        foreach (var p in f.Params)
+        {
+            if (p.Decl is null)
+            {
+                // The implicit 'this' of a member function has no declaration.
+                Err(SemanticCodes.BadEntryPoint, "The entry point '" + f.Name + "' is a member function. Move it out of the struct and make it a free function.", nameSpan);
+                return;
+            }
         }
 
         if (stage == ShaderStage.Compute)
@@ -281,6 +292,9 @@ internal sealed partial class Checker
     private const int MaxInterfaceVars = 1024;
 
     private bool _interfaceOverflow;
+
+    /// <summary>Explicit stage-variable locations must be below this; devices offer a few dozen.</summary>
+    private const int MaxLocation = 4096;
 
     private void Flatten(EntryInfo entry, List<InterfaceVar> into, HlslType type, string name, string? semantic, List<int> path, int paramIndex, bool isOutput, Interpolation interp, int? location, string? format, SourceSpan span, int depth)
     {
@@ -411,6 +425,19 @@ internal sealed partial class Checker
                 }
             }
 
+            // Two stage variables on one location would be rejected by the driver (Vulkan: conflicting location assignment).
+            var claimed = new HashSet<int>();
+            bool Claim(InterfaceVar v, int location)
+            {
+                if (claimed.Add(location))
+                {
+                    return true;
+                }
+
+                Err(SemanticCodes.BadSemantic, "'" + v.Name + "' uses location " + Num(location) + ", which another " + stageName + " shader " + (outputs ? "output" : "input") + " already uses. Give each stage variable its own [[vk::location(n)]] or SV_Target index.", v.Span);
+                return false;
+            }
+
             int next = 0;
             foreach (var v in list)
             {
@@ -424,6 +451,12 @@ internal sealed partial class Checker
                 v.BuiltIn = bi;
                 if (bi != BuiltIn.None)
                 {
+                    if (BuiltInTypeProblem(v, bi) is { } problem)
+                    {
+                        Err(SemanticCodes.BadSemantic, "'" + v.Name + "' has the semantic " + v.Semantic + ", which needs " + problem + ", not '" + v.Type + "'.", v.Span);
+                        continue;
+                    }
+
                     if (bi == BuiltIn.FragDepth)
                     {
                         e.WritesDepth = true;
@@ -434,13 +467,27 @@ internal sealed partial class Checker
 
                 if (targetIndex is { } ti)
                 {
+                    if (ti is < 0 or >= MaxLocation)
+                    {
+                        Err(SemanticCodes.BadSemantic, "The render target index " + Num(ti) + " of '" + v.Name + "' is out of range; use SV_Target0 to SV_Target" + Num(MaxLocation - 1) + ".", v.Span);
+                        continue;
+                    }
+
                     v.Location = ti;
+                    Claim(v, ti);
                     continue;
                 }
 
                 if (v.ExplicitLocation is { } loc)
                 {
+                    if (loc is < 0 or >= MaxLocation)
+                    {
+                        Err(SemanticCodes.BadSemantic, "The location " + Num(loc) + " of '" + v.Name + "' is out of range; use a value from 0 to " + Num(MaxLocation - 1) + ".", v.Span);
+                        continue;
+                    }
+
                     v.Location = loc;
+                    Claim(v, loc);
                     continue;
                 }
 
@@ -450,6 +497,7 @@ internal sealed partial class Checker
                 }
 
                 v.Location = next;
+                claimed.Add(next);
                 taken.Add(next);
                 next++;
             }
@@ -479,6 +527,30 @@ internal sealed partial class Checker
             {
                 Err(SemanticCodes.BadEntryPoint, "A compute shader cannot have outputs; write results to a resource.", e.Function.Decl.Name.Span);
             }
+        }
+    }
+
+    /// <summary>What a built-in's type must be (Vulkan's BuiltIn rules), or null when <paramref name="v"/> has it.</summary>
+    private static string? BuiltInTypeProblem(InterfaceVar v, BuiltIn bi)
+    {
+        var t = v.Type;
+        int n = TypeOps.Count(t);
+        var e = t.ScalarElement;
+        switch (bi)
+        {
+            case BuiltIn.Position or BuiltIn.FragCoord:
+                return n == 4 && e == ScalarType.Float && t is not MatrixType ? null : "a float4";
+            case BuiltIn.FragDepth:
+                return n == 1 && e == ScalarType.Float && t is not MatrixType ? null : "a float";
+            case BuiltIn.FrontFacing:
+                return n == 1 && e == ScalarType.Bool && t is not MatrixType ? null : "a bool";
+            case BuiltIn.VertexIndex or BuiltIn.InstanceIndex or BuiltIn.PrimitiveIndex or BuiltIn.SampleIndex or BuiltIn.SampleMask
+                or BuiltIn.LocalInvocationIndex or BuiltIn.Layer or BuiltIn.ViewportIndex:
+                return n == 1 && (e == ScalarType.UInt || e == ScalarType.Int) && t is not MatrixType ? null : "a uint or int";
+            case BuiltIn.GlobalInvocationId or BuiltIn.LocalInvocationId or BuiltIn.WorkgroupId:
+                return n is >= 1 and <= 3 && (e == ScalarType.UInt || e == ScalarType.Int) && t is not MatrixType ? null : "a uint3 (or fewer components, or int)";
+            default:
+                return null;
         }
     }
 
