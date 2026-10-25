@@ -60,6 +60,27 @@ internal static class Harness
         return (sources, diagnostics);
     }
 
+    /// <summary>
+    /// Resolves symbolic links in every directory of a path, so it compares equal to what MSBuild reports
+    /// (macOS temp directories live behind a /var -> /private/var link).
+    /// </summary>
+    public static string RealPath(string path)
+    {
+        string full = Path.GetFullPath(path);
+        string current = Path.GetPathRoot(full)!;
+        foreach (string part in full[current.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+        {
+            current = Path.Combine(current, part);
+            var target = new DirectoryInfo(current).ResolveLinkTarget(returnFinalTarget: true);
+            if (target is not null)
+            {
+                current = target.FullName;
+            }
+        }
+
+        return current;
+    }
+
     public static string Golden(string file) => Path.Combine(TestsDirectory, "Golden", file);
 
     /// <summary>Compares text with a checked-in golden file; ONESHADER_UPDATE_GOLDEN=1 rewrites the file instead.</summary>

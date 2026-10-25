@@ -183,28 +183,36 @@ internal sealed class Reflector
         _path = path;
     }
 
-    private static void Collect(IrFunction f, HashSet<GlobalVariable> into, HashSet<IrFunction> seen)
+    // Walks the call graph with an explicit stack: call chains can be thousands deep, and a recursive
+    // walk would overflow the stack of a thread with a small default stack.
+    private static void Collect(IrFunction root, HashSet<GlobalVariable> into, HashSet<IrFunction> seen)
     {
-        if (!seen.Add(f))
+        var pending = new Stack<IrFunction>();
+        pending.Push(root);
+        while (pending.Count > 0)
         {
-            return;
-        }
-
-        foreach (var b in f.Blocks)
-        {
-            foreach (var i in b.Instructions)
+            var f = pending.Pop();
+            if (!seen.Add(f))
             {
-                foreach (var o in i.Operands)
-                {
-                    if (o is GlobalVariable { GlobalKind: GlobalKind.Resource } g)
-                    {
-                        into.Add(g);
-                    }
-                }
+                continue;
+            }
 
-                if (i.Callee is { } callee)
+            foreach (var b in f.Blocks)
+            {
+                foreach (var i in b.Instructions)
                 {
-                    Collect(callee, into, seen);
+                    foreach (var o in i.Operands)
+                    {
+                        if (o is GlobalVariable { GlobalKind: GlobalKind.Resource } g)
+                        {
+                            into.Add(g);
+                        }
+                    }
+
+                    if (i.Callee is { } callee)
+                    {
+                        pending.Push(callee);
+                    }
                 }
             }
         }
