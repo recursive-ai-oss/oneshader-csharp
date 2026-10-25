@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="460" viewBox="0 0 1000 460" role="img" font-family="system-ui, -apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+<title>How many times faster OneShader is than DXC, per task</title>
+<rect width="1000" height="460" fill="#0d1117"/>
+<text x="16" y="28" font-size="17" font-weight="600" fill="#e6edf3">OneShader compile time vs DXC (SPIR-V)</text>
+<text x="16" y="48" font-size="12" fill="#7d8590">Whole process per entry point, geometric mean over the corpus, log scale. Right of the line: OneShader is faster.</text>
+<line x1="330.0" y1="62" x2="330.0" y2="410" stroke="#30363d" stroke-width="1"/>
+<text x="330.0" y="428" font-size="11" text-anchor="middle" fill="#7d8590">1/16×</text>
+<line x1="395.0" y1="62" x2="395.0" y2="410" stroke="#30363d" stroke-width="1"/>
+<text x="395.0" y="428" font-size="11" text-anchor="middle" fill="#7d8590">1/8×</text>
+<line x1="460.0" y1="62" x2="460.0" y2="410" stroke="#30363d" stroke-width="1"/>
+<text x="460.0" y="428" font-size="11" text-anchor="middle" fill="#7d8590">1/4×</text>
+<line x1="525.0" y1="62" x2="525.0" y2="410" stroke="#30363d" stroke-width="1"/>
+<text x="525.0" y="428" font-size="11" text-anchor="middle" fill="#7d8590">1/2×</text>
+<line x1="590.0" y1="62" x2="590.0" y2="410" stroke="#7d8590" stroke-width="1.5"/>
+<text x="590.0" y="428" font-size="11" text-anchor="middle" fill="#7d8590">1×</text>
+<line x1="655.0" y1="62" x2="655.0" y2="410" stroke="#30363d" stroke-width="1"/>
+<text x="655.0" y="428" font-size="11" text-anchor="middle" fill="#7d8590">2×</text>
+<line x1="720.0" y1="62" x2="720.0" y2="410" stroke="#30363d" stroke-width="1"/>
+<text x="720.0" y="428" font-size="11" text-anchor="middle" fill="#7d8590">4×</text>
+<line x1="785.0" y1="62" x2="785.0" y2="410" stroke="#30363d" stroke-width="1"/>
+<text x="785.0" y="428" font-size="11" text-anchor="middle" fill="#7d8590">8×</text>
+<line x1="850.0" y1="62" x2="850.0" y2="410" stroke="#30363d" stroke-width="1"/>
+<text x="850.0" y="428" font-size="11" text-anchor="middle" fill="#7d8590">16×</text>
+<text x="318" y="91" font-size="13" text-anchor="end" fill="#e6edf3">NativeAOT, warm: 2D renderer</text>
+<rect x="590.0" y="76" width="84.6" height="22" rx="2" fill="#3fb950"/>
+<text x="682.6" y="91" font-size="12" font-weight="600" text-anchor="start" fill="#e6edf3">2.46× faster</text>
+<text x="318" y="125" font-size="13" text-anchor="end" fill="#e6edf3">NativeAOT, warm: 3D (PBR set)</text>
+<rect x="590.0" y="110" width="82.4" height="22" rx="2" fill="#3fb950"/>
+<text x="680.4" y="125" font-size="12" font-weight="600" text-anchor="start" fill="#e6edf3">2.41× faster</text>
+<text x="318" y="159" font-size="13" text-anchor="end" fill="#e6edf3">NativeAOT, warm: compute</text>
+<rect x="590.0" y="144" width="85.6" height="22" rx="2" fill="#3fb950"/>
+<text x="683.6" y="159" font-size="12" font-weight="600" text-anchor="start" fill="#e6edf3">2.49× faster</text>
+<text x="318" y="193" font-size="13" text-anchor="end" fill="#e6edf3">NativeAOT, warm: language features</text>
+<rect x="590.0" y="178" width="78.1" height="22" rx="2" fill="#3fb950"/>
+<text x="676.1" y="193" font-size="12" font-weight="600" text-anchor="start" fill="#e6edf3">2.30× faster</text>
+<text x="318" y="227" font-size="13" text-anchor="end" fill="#e6edf3">NativeAOT, warm: all</text>
+<rect x="590.0" y="212" width="83.2" height="22" rx="2" fill="#3fb950"/>
+<text x="681.2" y="227" font-size="12" font-weight="600" text-anchor="start" fill="#e6edf3">2.43× faster</text>
+<text x="318" y="261" font-size="13" text-anchor="end" fill="#e6edf3">NativeAOT, cold: all</text>
+<rect x="590.0" y="246" width="92.5" height="22" rx="2" fill="#3fb950"/>
+<text x="690.5" y="261" font-size="12" font-weight="600" text-anchor="start" fill="#e6edf3">2.68× faster</text>
+<text x="318" y="295" font-size="13" text-anchor="end" fill="#e6edf3">ReadyToRun, warm: all</text>
+<rect x="420.5" y="280" width="169.5" height="22" rx="2" fill="#f85149"/>
+<text x="598.0" y="295" font-size="12" font-weight="600" text-anchor="start" fill="#e6edf3">6.10× slower</text>
+<text x="318" y="329" font-size="13" text-anchor="end" fill="#e6edf3">ReadyToRun, cold: all</text>
+<rect x="433.6" y="314" width="156.4" height="22" rx="2" fill="#f85149"/>
+<text x="598.0" y="329" font-size="12" font-weight="600" text-anchor="start" fill="#e6edf3">5.30× slower</text>
+<text x="318" y="363" font-size="13" text-anchor="end" fill="#e6edf3">JIT, warm: all</text>
+<rect x="340.4" y="348" width="249.6" height="22" rx="2" fill="#f85149"/>
+<text x="598.0" y="363" font-size="12" font-weight="600" text-anchor="start" fill="#e6edf3">14.3× slower</text>
+<text x="318" y="397" font-size="13" text-anchor="end" fill="#e6edf3">JIT, cold: all</text>
+<rect x="349.9" y="382" width="240.1" height="22" rx="2" fill="#f85149"/>
+<text x="598.0" y="397" font-size="12" font-weight="600" text-anchor="start" fill="#e6edf3">12.9× slower</text>
+</svg>
