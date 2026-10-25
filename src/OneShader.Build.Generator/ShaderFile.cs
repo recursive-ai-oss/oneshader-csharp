@@ -42,11 +42,22 @@ internal sealed class ResourceNode
     public string Kind = "";
     public uint Count;
     public string Stages = "";
-    public bool HasSpirVSlot;
+
+    /// <summary>
+    /// True when some selected target gave the resource a slot. <see cref="Set"/> and <see cref="Binding"/> are the SPIR-V slot, the WGSL slot
+    /// (same numbers) when SPIR-V was not selected, and the Metal index (set 0) when only Metal was.
+    /// </summary>
+    public bool HasSlot;
     public uint Set;
     public uint Binding;
     public bool HasCounter;
     public uint CounterBinding;
+
+    /// <summary>The Metal argument index (within the resource's class: buffer, texture or sampler) when Msl was selected.</summary>
+    public bool HasMsl;
+    public uint MslIndex;
+    public bool HasMslCounter;
+    public uint MslCounterIndex;
     public TypeNode? Layout;
 }
 
@@ -70,6 +81,19 @@ internal sealed class EntryNode
     public List<VariableNode> Inputs = new List<VariableNode>();
 }
 
+/// <summary>The text of one entry point for one text target.</summary>
+internal sealed class TextBlob
+{
+    public byte[] Data = [];
+
+    /// <summary>The function name in the target source.</summary>
+    public string Function = "";
+
+    /// <summary>MSL vertex functions: the buffer index the vertex attributes are read from.</summary>
+    public bool HasVertexBuffer;
+    public uint VertexBuffer;
+}
+
 /// <summary>
 /// One <c>.oneshader</c> file written by the build task: the reflection records followed by
 /// <c>generate</c> and <c>blob</c> records. Parsed here, without the compiler library, so the
@@ -91,6 +115,15 @@ internal sealed class ShaderFile
 
     /// <summary>SPIR-V blobs by entry point name.</summary>
     public Dictionary<string, byte[]> SpirV = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+
+    /// <summary>MSL sources by entry point name.</summary>
+    public Dictionary<string, TextBlob> Msl = new Dictionary<string, TextBlob>(StringComparer.Ordinal);
+
+    /// <summary>WGSL sources by entry point name.</summary>
+    public Dictionary<string, TextBlob> Wgsl = new Dictionary<string, TextBlob>(StringComparer.Ordinal);
+
+    /// <summary>The targets the shader was compiled for (<c>SpirV</c>, <c>Msl</c>, <c>Wgsl</c>).</summary>
+    public HashSet<string> Targets = new HashSet<string>(StringComparer.Ordinal);
 
     private const int MaxTypeDepth = 64;
 
@@ -171,19 +204,15 @@ internal sealed class ShaderFile
                     Namespace = Str(r, "namespace");
                     ClassName = Str(r, "class");
                     break;
-                case "blob":
-                    if (Str(r, "target") == "SpirV")
+                case "targets":
+                    foreach (string t in Str(r, "list").Split(','))
                     {
-                        try
-                        {
-                            SpirV[Str(r, "entry")] = Convert.FromBase64String(Str(r, "data"));
-                        }
-                        catch (FormatException)
-                        {
-                            throw Err(r, "blob data is not base64");
-                        }
+                        Targets.Add(t);
                     }
 
+                    break;
+                case "blob":
+                    ReadBlob(r);
                     break;
                 case "resource":
                     pos = ReadResource(recs, pos, r);
@@ -199,6 +228,36 @@ internal sealed class ShaderFile
         return this;
     }
 
+    private void ReadBlob(Rec r)
+    {
+        string target = Str(r, "target");
+        byte[] data;
+        try
+        {
+            data = Convert.FromBase64String(Str(r, "data"));
+        }
+        catch (FormatException)
+        {
+            throw Err(r, "blob data is not base64");
+        }
+
+        if (target == "SpirV")
+        {
+            SpirV[Str(r, "entry")] = data;
+        }
+        else if (target == "Msl" || target == "Wgsl")
+        {
+            var blob = new TextBlob { Data = data, Function = Str(r, "function") };
+            if (r.Attrs.ContainsKey("vertexBuffer"))
+            {
+                blob.HasVertexBuffer = true;
+                blob.VertexBuffer = U(r, "vertexBuffer");
+            }
+
+            (target == "Msl" ? Msl : Wgsl)[Str(r, "entry")] = blob;
+        }
+    }
+
     private int ReadResource(List<Rec> recs, int pos, Rec r)
     {
         var res = new ResourceNode
@@ -208,20 +267,44 @@ internal sealed class ShaderFile
             Count = U(r, "count"),
             Stages = Str(r, "stages"),
         };
+        bool spirvSlot = false, spirvCounter = false, primary = false;
         while (pos < recs.Count && recs[pos].Depth > 0)
         {
             var c = recs[pos];
-            if (c.Depth == 1 && c.Keyword == "slot" && Str(c, "target") == "SpirV")
+            if (c.Depth == 1 && c.Keyword == "slot")
             {
-                res.HasSpirVSlot = true;
-                res.Set = U(c, "set");
-                res.Binding = U(c, "binding");
+                string t = Str(c, "target");
+                if (t == "Msl")
+                {
+                    res.HasMsl = true;
+                    res.MslIndex = U(c, "binding");
+                }
+                else if (t == "SpirV" || (t == "Wgsl" && !spirvSlot))
+                {
+                    spirvSlot = t == "SpirV";
+                    res.HasSlot = true;
+                    res.Set = U(c, "set");
+                    res.Binding = U(c, "binding");
+                    primary = true;
+                }
+
                 pos++;
             }
-            else if (c.Depth == 1 && c.Keyword == "counter" && Str(c, "target") == "SpirV")
+            else if (c.Depth == 1 && c.Keyword == "counter")
             {
-                res.HasCounter = true;
-                res.CounterBinding = U(c, "binding");
+                string t = Str(c, "target");
+                if (t == "Msl")
+                {
+                    res.HasMslCounter = true;
+                    res.MslCounterIndex = U(c, "binding");
+                }
+                else if (t == "SpirV" || (t == "Wgsl" && !spirvCounter))
+                {
+                    spirvCounter = t == "SpirV";
+                    res.HasCounter = true;
+                    res.CounterBinding = U(c, "binding");
+                }
+
                 pos++;
             }
             else if (c.Depth == 1 && c.Keyword == "layout")
@@ -236,6 +319,16 @@ internal sealed class ShaderFile
             {
                 pos++;
             }
+        }
+
+        if (!primary && res.HasMsl)
+        {
+            // Metal only: the index stands in for set and binding.
+            res.HasSlot = true;
+            res.Set = 0;
+            res.Binding = res.MslIndex;
+            res.HasCounter = res.HasMslCounter;
+            res.CounterBinding = res.MslCounterIndex;
         }
 
         Resources.Add(res);

@@ -187,6 +187,65 @@ public sealed class PackageTests : IClassFixture<PackageFixture>
     }
 
     [Fact]
+    public void SpriteSampleWithAllTargetsEmbedsMslAndWgslIdenticallyToTheCompiler()
+    {
+        string[] flags = ["-p:EmitCompilerGeneratedFiles=true", "-p:OneShaderTargets=SpirV%3BMsl%3BWgsl"];
+        string a = Path.Combine(_fx.Root, "art-targets-a");
+        string b = Path.Combine(_fx.Root, "art-targets-b");
+        var first = Build("Sprite", a, flags);
+        Assert.True(first.Code == 0, first.Output);
+        Assert.Matches(new Regex(@"\b0 Warning\(s\)"), first.Output);
+
+        string shader = Path.Combine(Harness.RepoRoot, "samples", "Sprite", "Shaders", "Sprite.hlsl");
+        var compiled = ShaderCompiler.Compile(
+            File.ReadAllText(shader),
+            shader,
+            new CompileOptions { Targets = [CompileTarget.SpirV, CompileTarget.Msl, CompileTarget.Wgsl] },
+            TestContext.Current.CancellationToken);
+        Assert.True(compiled.Success, string.Join("\n", compiled.Diagnostics));
+
+        // The generated C# holds the compiler's bytes for each target, spelled out as a byte-array literal.
+        string generated = File.ReadAllText(Find(a, "OneShader.*.g.cs"));
+        foreach (string entry in new[] { "VSMain", "PSMain" })
+        {
+            string body = generated.Substring(generated.IndexOf("public static class " + entry, StringComparison.Ordinal));
+            body = body.Substring(0, body.IndexOf("\n    }\n", StringComparison.Ordinal));
+            foreach (var (member, target) in new[] { ("SpirV", CompileTarget.SpirV), ("Msl", CompileTarget.Msl), ("Wgsl", CompileTarget.Wgsl) })
+            {
+                var match = Regex.Match(body, @"ReadOnlySpan<byte> " + member + @" => new byte\[\]\s*\{(?<bytes>[^}]*)\}");
+                Assert.True(match.Success, entry + "." + member + " is missing");
+                byte[] embedded = Regex.Matches(match.Groups["bytes"].Value, "0x([0-9a-f]{2})").Select(m => Convert.ToByte(m.Groups[1].Value, 16)).ToArray();
+                Assert.Equal(compiled.Find(entry, target)!.ToArray(), embedded);
+            }
+        }
+
+        // Metal indices in the generated bindings are the ones reflection recorded.
+        foreach (var r in compiled.Reflection!.Resources)
+        {
+            uint index = r.Slots.Single(x => x.Target == CompileTarget.Msl).Binding;
+            var cls = Regex.Match(generated, @"public static class " + r.Name + @"\s*\{(?<body>[^}]*)\}");
+            Assert.True(cls.Success, r.Name);
+            Assert.Contains($"MslIndex = {index}u", cls.Groups["body"].Value, StringComparison.Ordinal);
+        }
+
+        Assert.Contains($"MslVertexBufferIndex = {Msl.MslBackend.VertexBufferIndex}u", generated, StringComparison.Ordinal);
+
+        // A no-op rebuild compiles nothing; a second build elsewhere gives byte-identical C# and task output.
+        string blob = Find(a, "Sprite.hlsl.oneshader");
+        var blobStamp = File.GetLastWriteTimeUtc(blob);
+        string dll = Find(a, "Sprite.dll");
+        var dllStamp = File.GetLastWriteTimeUtc(dll);
+        var again = Dotnet_("Sprite", a, ["build", "{project}", "--no-restore", "-nologo", .. flags]);
+        Assert.True(again.Code == 0, again.Output);
+        Assert.Equal(blobStamp, File.GetLastWriteTimeUtc(blob));
+        Assert.Equal(dllStamp, File.GetLastWriteTimeUtc(dll));
+        var second = Build("Sprite", b, flags);
+        Assert.True(second.Code == 0, second.Output);
+        Assert.Equal(File.ReadAllBytes(Find(a, "OneShader.*.g.cs")), File.ReadAllBytes(Find(b, "OneShader.*.g.cs")));
+        Assert.Equal(File.ReadAllBytes(blob), File.ReadAllBytes(Find(b, "Sprite.hlsl.oneshader")));
+    }
+
+    [Fact]
     public async Task HotReloadSampleBuildsAndReportsCompatibleIncompatibleAndBrokenEdits()
     {
         string art = Path.Combine(_fx.Root, "art-hot");

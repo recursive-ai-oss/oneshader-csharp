@@ -25,10 +25,11 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
     private const string InternalErrorCode = "OSH0900";
     private const string BadMetadataCode = "OSH0901";
     private const string UnreadableCode = "OSH0902";
+    private const string BadTargetCode = "OSH0903";
 
     private readonly CancellationTokenSource _cancel = new CancellationTokenSource();
 
-    /// <summary>The shaders to compile. Metadata: <c>EntryPoints</c> (<c>Name:Stage;...</c>), <c>Defines</c> (<c>A;B=2</c>), <c>IncludeDirectories</c>, <c>Namespace</c>, <c>ClassName</c>.</summary>
+    /// <summary>The shaders to compile. Metadata: <c>EntryPoints</c> (<c>Name:Stage;...</c>), <c>Defines</c> (<c>A;B=2</c>), <c>IncludeDirectories</c>, <c>Namespace</c>, <c>ClassName</c>, <c>Targets</c> (<c>SpirV;Msl;Wgsl</c>, overrides <see cref="DefaultTargets"/>).</summary>
     [Required]
     public ITaskItem[] Shaders { get; set; } = [];
 
@@ -42,6 +43,9 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
 
     /// <summary>Namespace for shaders whose item has no <c>Namespace</c> metadata.</summary>
     public string DefaultNamespace { get; set; } = "";
+
+    /// <summary>Semicolon-separated targets to compile for (<c>SpirV</c>, <c>Msl</c>, <c>Wgsl</c>); empty means SPIR-V only.</summary>
+    public string DefaultTargets { get; set; } = "";
 
     /// <summary>Semicolon-separated definitions applied to every shader (<c>NAME</c> or <c>NAME=value</c>).</summary>
     public string DefaultDefines { get; set; } = "";
@@ -131,12 +135,12 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
         string ns = Meta(item, "Namespace", DefaultNamespace);
         string className = Meta(item, "ClassName", "");
 
-        if (!TryOptions(item, full, projectDir, out var defines, out var includeDirs, out var entries))
+        if (!TryOptions(item, full, projectDir, out var defines, out var includeDirs, out var entries, out var targets))
         {
             return null;
         }
 
-        string optionsHash = HashOptions(relative, ns, className, defines, includeDirs, entries);
+        string optionsHash = HashOptions(relative, ns, className, defines, includeDirs, entries, targets);
         if (TryReuse(outputPath, optionsHash))
         {
             return outputPath;
@@ -157,6 +161,7 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
         {
             Defines = defines,
             EntryPoints = entries,
+            Targets = targets,
             IncludeResolver = (requested, including, isSystem) => ResolveInclude(requested, including, isSystem, projectDir, includeDirs),
         };
 
@@ -226,13 +231,22 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
         sb.Append("generate namespace=").Append(Quote(ns)).Append(" class=").Append(Quote(className)).Append('\n');
         foreach (var b in blobs)
         {
-            if (b.Target != CompileTarget.SpirV)
+            sb.Append("blob entry=").Append(Quote(b.EntryPoint)).Append(" target=").Append(b.Target);
+            if (b.Target == CompileTarget.Msl)
             {
-                continue;
+                // What a host passes to newFunction(name:), and where a vertex function reads its attributes from.
+                sb.Append(" function=").Append(Quote(Msl.MslBackend.EntryFunctionName(b.EntryPoint)));
+                if (b.Stage == ShaderStage.Vertex && HasVertexInputs(reflection, b.EntryPoint))
+                {
+                    sb.Append(" vertexBuffer=").Append(Msl.MslBackend.VertexBufferIndex.ToString(CultureInfo.InvariantCulture));
+                }
+            }
+            else if (b.Target == CompileTarget.Wgsl)
+            {
+                sb.Append(" function=").Append(Quote(WgslEntryName(b.AsText(), b.EntryPoint)));
             }
 
-            sb.Append("blob entry=").Append(Quote(b.EntryPoint)).Append(" target=SpirV data=")
-              .Append(Quote(Convert.ToBase64String(b.Data))).Append('\n');
+            sb.Append(" data=").Append(Quote(Convert.ToBase64String(b.Data))).Append('\n');
         }
 
         // Bookkeeping for the next build. Paths are relative to the project, so the file is the
@@ -255,6 +269,61 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
         }
 
         return sb.ToString();
+    }
+
+    private static bool HasVertexInputs(ShaderReflection reflection, string entry)
+    {
+        foreach (var e in reflection.EntryPoints)
+        {
+            if (e.Name == entry)
+            {
+                return e.Inputs.Count > 0;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// The name of the entry function in WGSL text. The backend renames entry points whose names WGSL reserves, so the name is read from
+    /// the declaration that follows the stage attribute (<c>@vertex</c>, <c>@fragment</c> or <c>@compute</c>); the HLSL name is the fallback.
+    /// </summary>
+    internal static string WgslEntryName(string wgsl, string fallback)
+    {
+        int from = 0;
+        while (from < wgsl.Length)
+        {
+            int at = wgsl.IndexOf('@', from);
+            if (at < 0)
+            {
+                break;
+            }
+
+            from = at + 1;
+            var rest = wgsl.AsSpan(at);
+            if (!(rest.StartsWith("@vertex", StringComparison.Ordinal) || rest.StartsWith("@fragment", StringComparison.Ordinal) || rest.StartsWith("@compute", StringComparison.Ordinal)))
+            {
+                continue;
+            }
+
+            // Other attributes (@workgroup_size(...)) may sit between the stage attribute and the fn keyword.
+            int fn = wgsl.IndexOf("fn ", at, StringComparison.Ordinal);
+            if (fn < 0)
+            {
+                break;
+            }
+
+            int start = fn + 3;
+            int end = start;
+            while (end < wgsl.Length && (char.IsAsciiLetterOrDigit(wgsl[end]) || wgsl[end] == '_'))
+            {
+                end++;
+            }
+
+            return end > start ? wgsl.Substring(start, end - start) : fallback;
+        }
+
+        return fallback;
     }
 
     private static void AppendDep(StringBuilder sb, string relative, string full)
@@ -377,12 +446,34 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
         string projectDir,
         out List<KeyValuePair<string, string?>> defines,
         out List<string> includeDirs,
-        out List<EntryPointRequest> entries)
+        out List<EntryPointRequest> entries,
+        out List<CompileTarget> targets)
     {
         defines = [];
         includeDirs = [];
         entries = [];
+        targets = [];
         bool ok = true;
+        string requested = item.GetMetadata("Targets").Length > 0 ? item.GetMetadata("Targets") : DefaultTargets;
+        foreach (string t in Split(requested))
+        {
+            if (!Enum.TryParse<CompileTarget>(t, ignoreCase: true, out var target) || !Enum.IsDefined(target) || char.IsDigit(t[0]))
+            {
+                Log.LogError(null, BadTargetCode, null, full, 0, 0, 0, 0, "Unknown target '" + t + "' in OneShaderTargets (or the item's Targets). Use SpirV, Msl or Wgsl separated by ';', for example OneShaderTargets=\"SpirV;Msl\".");
+                ok = false;
+            }
+            else if (!targets.Contains(target))
+            {
+                targets.Add(target);
+            }
+        }
+
+        if (targets.Count == 0)
+        {
+            targets.Add(CompileTarget.SpirV);
+        }
+
+        targets.Sort();
         foreach (string d in Split(DefaultDefines + ";" + item.GetMetadata("Defines")))
         {
             int eq = d.IndexOf('=', StringComparison.Ordinal);
@@ -465,7 +556,8 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
         string className,
         List<KeyValuePair<string, string?>> defines,
         List<string> includeDirs,
-        List<EntryPointRequest> entries)
+        List<EntryPointRequest> entries,
+        IReadOnlyList<CompileTarget>? targets = null)
     {
         var sb = new StringBuilder();
 
@@ -484,6 +576,11 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
         foreach (var e in entries)
         {
             sb.Append("E ").Append(e.Name).Append(':').Append(e.Stage).Append('\n');
+        }
+
+        foreach (var t in targets ?? [CompileTarget.SpirV])
+        {
+            sb.Append("T ").Append(t).Append('\n');
         }
 
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));

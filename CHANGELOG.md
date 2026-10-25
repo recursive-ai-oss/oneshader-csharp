@@ -5,6 +5,7 @@ Versions follow [Semantic Versioning](https://semver.org/); before 1.0 the API m
 
 ## [Unreleased]
 
+- Build package: `OneShaderTargets` (`SpirV;Msl;Wgsl`, default `SpirV`; per-item `Targets` metadata) embeds Metal and WGSL sources next to the SPIR-V. Entry-point classes gain `Msl`, `MslFunctionName`, `MslVertexBufferIndex`, `Wgsl` and `WgslEntryPoint`; resource bindings gain `MslIndex` / `MslCounterIndex` and `ResourceBinding.MetalIndex`. A target's refusal (for example OSH5202 on WGSL) is a build error on the HLSL line only when that target is selected; unknown target names are OSH0903.
 - New WGSL target (`CompileTarget.Wgsl`): vertex, fragment and compute entry points as WGSL text for WebGPU, with the same buffer byte layouts as the SPIR-V target. See docs/wgsl-backend.md for what is not available.
 - New: Metal Shading Language output (`CompileTarget.Msl`, `MslBackend`): one source file per entry point with the same buffer byte layout as the SPIR-V output, Metal argument indices in reflection, and `tools/validate-msl.sh` to check the files with Apple's compiler. See `docs/msl-backend.md`.
 

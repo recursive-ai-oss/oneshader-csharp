@@ -7,7 +7,7 @@ with no dependency beyond .NET itself. Shader errors are build errors on the HLS
 constant buffers, vertex inputs and resource bindings become C# types and constants laid out to
 match the compiled shader, so a CPU/GPU mismatch fails the build instead of the frame.
 
-**Preview.** Version 0.2 targets Vulkan (SPIR-V). The API and the generated code may still
+**Preview.** Vulkan (SPIR-V) is the default target; Metal (MSL) and WebGPU (WGSL) are opt-in with `OneShaderTargets`. The API and the generated code may still
 change before 1.0.
 
 ## Install
@@ -79,15 +79,48 @@ One static class per HLSL file (named after the file, in PascalCase), containing
 - a struct per structured-buffer element type;
 - `Bindings`: set, binding, count and kind of every resource, as constants;
 - per entry point: stage, entry name, the SPIR-V bytes; for vertex shaders a `Vertex` struct,
-  `Stride` and `Inputs`; for compute shaders the thread-group size.
+  `Stride` and `Inputs`; for compute shaders the thread-group size. Entry points also carry the
+  MSL and WGSL sources when those targets are selected (next section).
+
+## Choosing targets
+
+```xml
+<PropertyGroup>
+  <OneShaderTargets>SpirV;Msl;Wgsl</OneShaderTargets>   <!-- default: SpirV -->
+</PropertyGroup>
+```
+
+`OneShaderTargets` is a `;`-list of `SpirV`, `Msl` and `Wgsl` (case-insensitive). A `OneShader` item
+can override it with `Targets` metadata. The default stays SPIR-V only because some valid shaders
+are refused by a target (for example clip distances or resource arrays on WGSL, OSH5202); a
+refusal is a build error on the HLSL line, `Shader.hlsl(12,5): error OSH5202: ...`, only when that
+target is selected, and a target nobody asked for costs no build time.
+
+With a target selected, every entry point class gains (in addition to `SpirV`):
+
+| Member | Target | Meaning |
+|---|---|---|
+| `Msl` | Msl | `ReadOnlySpan<byte>`, UTF-8 Metal Shading Language source |
+| `MslFunctionName` | Msl | the function to pass to `newFunction(name:)`; differs from `EntryPoint` when MSL reserves the name (`main` becomes `main0`) |
+| `MslVertexBufferIndex` | Msl | vertex shaders with inputs: the Metal buffer index the interleaved vertex buffer (`Stride`, `Inputs`) is bound at |
+| `Wgsl` | Wgsl | `ReadOnlySpan<byte>`, UTF-8 WGSL source |
+| `WgslEntryPoint` | Wgsl | the entry function name in the WGSL source |
+
+Bindings carry the numbers of every selected target. `Set` and `Binding` are Vulkan's (WGSL uses
+the same numbers as `@group`/`@binding`); with Msl selected, each resource class also has
+`MslIndex` (and `MslCounterIndex` for Append/Consume counters), the Metal argument index counted
+within the resource's class (buffer, texture, sampler) in declaration order, and
+`ResourceBinding.MetalIndex` in `Bindings.All` holds the same number (`ResourceBinding.NoMetalIndex`
+when Msl is not selected). With only Msl selected, `Set` is 0 and `Binding` repeats the Metal index.
+Constant-buffer and vertex structs are the same for every target: all backends use one byte layout.
 
 Support types (`ShaderStage`, `ResourceKind`, `VertexFormat`, `VertexAttribute`,
 `ResourceBinding`) come from `RecursiveAI.OneShader`, so a rendering layer in another assembly can
 take them. When only these are used, trimming removes the compiler from a NativeAOT app.
 
-Item metadata: `EntryPoints`, `Defines`, `IncludeDirectories`, `Namespace`, `ClassName`.
-Properties: `EnableDefaultOneShaderItems`, `OneShaderNamespace`, `OneShaderDefines`,
-`OneShaderIncludeDirectories`. Shaders are recompiled only when they, a file they include, or the
+Item metadata: `EntryPoints`, `Defines`, `IncludeDirectories`, `Namespace`, `ClassName`, `Targets`.
+Properties: `EnableDefaultOneShaderItems`, `OneShaderNamespace`, `OneShaderTargets`,
+`OneShaderDefines`, `OneShaderIncludeDirectories`. Shaders are recompiled only when they, a file they include, or the
 options change; the output is deterministic.
 
 ## What works in 0.2
@@ -110,7 +143,7 @@ options change; the output is deterministic.
 
 ## Known limits
 
-- The generated bindings and embedded blobs cover SPIR-V; Metal (MSL) and WebGPU (WGSL) are available from the compiler API only.
+- Clip-space Y points up in Metal and WebGPU and down in Vulkan; the shader is not adjusted, so flip with the viewport.
 - Unbounded resource arrays and wave intrinsics are not supported.
 - `dotnet build` only (not Visual Studio's .NET Framework MSBuild).
 

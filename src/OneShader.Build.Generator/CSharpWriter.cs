@@ -44,7 +44,7 @@ internal sealed class CSharpWriter
     // Names an entry-point class declares itself; a class cannot share its name with a member.
     private static readonly HashSet<string> EntryMembers = new HashSet<string>(StringComparer.Ordinal)
     {
-        "Stage", "EntryPoint", "SpirV", "Vertex", "Stride", "Inputs", "ThreadGroupSizeX", "ThreadGroupSizeY", "ThreadGroupSizeZ",
+        "Stage", "EntryPoint", "SpirV", "Msl", "MslFunctionName", "MslVertexBufferIndex", "Wgsl", "WgslEntryPoint", "Vertex", "Stride", "Inputs", "ThreadGroupSizeX", "ThreadGroupSizeY", "ThreadGroupSizeZ",
     };
 
     private readonly ShaderFile _file;
@@ -661,7 +661,7 @@ internal sealed class CSharpWriter
         bool first = true;
         foreach (var r in _file.Resources)
         {
-            if (!r.HasSpirVSlot)
+            if (!r.HasSlot)
             {
                 continue;
             }
@@ -683,11 +683,22 @@ internal sealed class CSharpWriter
             Line("{");
             _indent++;
             Line("public const uint Set = " + Num(r.Set) + ", Binding = " + Num(r.Binding) + ", Count = " + Num(r.Count) + ";");
+            if (r.HasMsl)
+            {
+                Line("/// <summary>Metal argument index, counted within the resource's class (buffer, texture or sampler).</summary>");
+                Line("public const uint MslIndex = " + Num(r.MslIndex) + ";");
+            }
+
             Line("public const global::OneShader.ResourceKind Kind = global::OneShader.ResourceKind." + r.Kind + ";");
             if (r.HasCounter)
             {
                 Line("/// <summary>Binding of the hidden element counter, in the same set. Bind a 4-byte storage buffer there; zero it to start empty.</summary>");
                 Line("public const uint CounterBinding = " + Num(r.CounterBinding) + ";");
+                if (r.HasMslCounter)
+                {
+                    Line("/// <summary>Metal buffer index of the hidden element counter.</summary>");
+                    Line("public const uint MslCounterIndex = " + Num(r.MslCounterIndex) + ";");
+                }
             }
 
             _indent--;
@@ -705,11 +716,11 @@ internal sealed class CSharpWriter
         foreach (var r in listed)
         {
             Line("new global::OneShader.ResourceBinding(" + Str(r.Name) + ", " + Num(r.Set) + ", " + Num(r.Binding) + ", " + Num(r.Count)
-                + ", global::OneShader.ResourceKind." + r.Kind + ", " + StagesExpr(r.Stages) + "),");
+                + ", global::OneShader.ResourceKind." + r.Kind + ", " + StagesExpr(r.Stages) + (r.HasMsl ? ", " + Num(r.MslIndex) : "") + "),");
             if (r.HasCounter)
             {
                 Line("new global::OneShader.ResourceBinding(" + Str(r.Name + ".counter") + ", " + Num(r.Set) + ", " + Num(r.CounterBinding) + ", 1u"
-                    + ", global::OneShader.ResourceKind.StorageBuffer, " + StagesExpr(r.Stages) + "),");
+                    + ", global::OneShader.ResourceKind.StorageBuffer, " + StagesExpr(r.Stages) + (r.HasMslCounter ? ", " + Num(r.MslCounterIndex) : "") + "),");
             }
         }
 
@@ -750,6 +761,31 @@ internal sealed class CSharpWriter
         {
             Line("");
             EmitBytes("SpirV", blob);
+        }
+
+        if (_file.Msl.TryGetValue(e.Name, out var msl))
+        {
+            Line("");
+            Line("/// <summary>UTF-8 Metal Shading Language source.</summary>");
+            EmitBytes("Msl", msl.Data);
+            Line("");
+            Line("/// <summary>The function to look up in the compiled library (differs from <see cref=\"EntryPoint\"/> when MSL reserves the name).</summary>");
+            Line("public const string MslFunctionName = " + Str(msl.Function) + ";");
+            if (msl.HasVertexBuffer)
+            {
+                Line("/// <summary>Metal buffer index of the interleaved vertex buffer (layout: <c>Stride</c> and <c>Inputs</c>).</summary>");
+                Line("public const uint MslVertexBufferIndex = " + Num(msl.VertexBuffer) + ";");
+            }
+        }
+
+        if (_file.Wgsl.TryGetValue(e.Name, out var wgsl))
+        {
+            Line("");
+            Line("/// <summary>UTF-8 WGSL source.</summary>");
+            EmitBytes("Wgsl", wgsl.Data);
+            Line("");
+            Line("/// <summary>The entry point name in the WGSL source (differs from <see cref=\"EntryPoint\"/> when WGSL reserves the name).</summary>");
+            Line("public const string WgslEntryPoint = " + Str(wgsl.Function) + ";");
         }
 
         if (e.Stage == "Vertex")

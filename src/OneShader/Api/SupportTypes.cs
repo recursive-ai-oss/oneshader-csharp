@@ -155,5 +155,10 @@ public readonly record struct VertexAttribute(uint Location, VertexFormat Format
 /// <param name="Count">Array size; 1 for a single resource, 0 when unbounded.</param>
 /// <param name="Kind">The descriptor kind.</param>
 /// <param name="Stages">Stages whose entry points use the resource.</param>
+/// <param name="MetalIndex">Metal argument index within the resource's class (buffer, texture or sampler), or <see cref="ResourceBinding.NoMetalIndex"/> when the shader was not built for Metal.</param>
 public readonly record struct ResourceBinding(
-    string Name, uint Set, uint Binding, uint Count, ResourceKind Kind, ShaderStages Stages);
+    string Name, uint Set, uint Binding, uint Count, ResourceKind Kind, ShaderStages Stages, uint MetalIndex = ResourceBinding.NoMetalIndex)
+{
+    /// <summary>The value of <see cref="MetalIndex"/> when Metal was not a build target.</summary>
+    public const uint NoMetalIndex = uint.MaxValue;
+}
