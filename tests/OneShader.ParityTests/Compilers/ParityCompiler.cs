@@ -108,7 +108,10 @@ public static class ParityCompilers
         if (c.Graphics is { } g)
         {
             yield return (g.VertexEntry, ShaderStage.Vertex);
-            yield return (g.PixelEntry, ShaderStage.Pixel);
+            if (g.PixelEntry.Length > 0)
+            {
+                yield return (g.PixelEntry, ShaderStage.Pixel);
+            }
         }
         foreach (string entry in c.Dispatches.Select(d => d.Entry).Distinct())
         {

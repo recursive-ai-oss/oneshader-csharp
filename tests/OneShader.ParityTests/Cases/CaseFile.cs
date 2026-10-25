@@ -21,8 +21,11 @@ public sealed class CaseFormatException : Exception
 /// case NAME
 /// shader 2d/file.hlsl
 /// define NAME=VALUE
-/// graphics vs=ENTRY ps=ENTRY
-/// target W H [background=GEN]
+/// graphics vs=ENTRY [ps=ENTRY]            (no ps: depth-only draw)
+/// target W H [format=rgba8|rgba16f|rgba32f|r32f] [background=GEN]
+/// depth [clear=1.0] [test=less|none] [out]   (adds a D32 attachment; out reads it back as image "depth")
+/// cull none|back|front
+/// ftolerance X                              (float images: |a-b| &lt;= X * (1 + |a|))
 /// blend none|premul|alpha
 /// tolerance N
 /// vertexbuffer BINDING STRIDE [instance] : DATA
@@ -31,10 +34,10 @@ public sealed class CaseFormatException : Exception
 /// draw vertices=N|indexed=N [instances=M]
 /// dispatch ENTRY X Y Z
 /// uniform SET BINDING : DATA
-/// storage SET BINDING [out] [size=BYTES] [: DATA]
-/// texture SET BINDING WxH[xLAYERS] FORMAT GENERATOR
+/// storage SET BINDING [out] [sorted] [size=BYTES] [: DATA]
+/// texture SET BINDING WxH[xLAYERS] FORMAT GENERATOR [mips=N] [cube]
 /// image SET BINDING WxH FORMAT GENERATOR [out]
-/// sampler SET BINDING linear|nearest clamp|repeat
+/// sampler SET BINDING linear|nearest clamp|repeat [mips] [compare]
 /// expect NAME
 /// </code>
 /// </summary>
@@ -87,6 +90,10 @@ public static class CaseFile
         string background = "";
         var blend = BlendMode.None;
         int tolerance = 0;
+        double floatTolerance = 0;
+        var targetFormat = PixelFormat.Rgba8;
+        DepthDecl? depth = null;
+        var cull = CullMode.None;
         var vertexBuffers = new List<VertexBufferDecl>();
         var attributes = new List<VertexInputAttr>();
         string? indexData = null;
@@ -124,12 +131,46 @@ public static class CaseFile
                     }
                 case "graphics":
                     vs = Option(t, "vs", fail);
-                    ps = Option(t, "ps", fail);
+                    ps = OptionOrNull(t, "ps") ?? "";
                     break;
                 case "target":
                     width = Int(Arg(t, 1, fail), fail);
                     height = Int(Arg(t, 2, fail), fail);
                     background = OptionOrNull(t, "background") ?? "";
+                    if (OptionOrNull(t, "format") is { } tf)
+                    {
+                        targetFormat = tf switch
+                        {
+                            "rgba8" => PixelFormat.Rgba8,
+                            "rgba16f" => PixelFormat.Rgba16F,
+                            "rgba32f" => PixelFormat.Rgba32F,
+                            "r32f" => PixelFormat.R32F,
+                            _ => throw fail($"unknown target format '{tf}' (use rgba8, rgba16f, rgba32f or r32f)"),
+                        };
+                    }
+                    break;
+                case "depth":
+                    depth = new DepthDecl(
+                        float.Parse(OptionOrNull(t, "clear") ?? "1.0", NumberStyles.Float, CultureInfo.InvariantCulture),
+                        (OptionOrNull(t, "test") ?? "less") switch
+                        {
+                            "less" => true,
+                            "none" => false,
+                            var other => throw fail($"unknown depth test '{other}' (use less or none)"),
+                        },
+                        Array.IndexOf(t, "out") >= 0);
+                    break;
+                case "cull":
+                    cull = Arg(t, 1, fail) switch
+                    {
+                        "none" => CullMode.None,
+                        "back" => CullMode.Back,
+                        "front" => CullMode.Front,
+                        var other => throw fail($"unknown cull mode '{other}' (use none, back or front)"),
+                    };
+                    break;
+                case "ftolerance":
+                    floatTolerance = double.Parse(Arg(t, 1, fail), NumberStyles.Float, CultureInfo.InvariantCulture);
                     break;
                 case "blend":
                     blend = Arg(t, 1, fail) switch
@@ -193,6 +234,7 @@ public static class CaseFile
                         Set = Int(Arg(t, 1, fail), fail),
                         Binding = Int(Arg(t, 2, fail), fail),
                         Output = Array.IndexOf(t, "out") >= 0,
+                        Sorted = Array.IndexOf(t, "sorted") >= 0,
                         SizeBytes = int.Parse(OptionOrNull(t, "size") ?? "0", CultureInfo.InvariantCulture),
                         Data = data,
                     });
@@ -217,6 +259,8 @@ public static class CaseFile
                             Format = ParseFormat(Arg(t, 4, fail), fail),
                             Generator = Arg(t, 5, fail),
                             Output = isImage && Array.IndexOf(t, "out") >= 0,
+                            MipLevels = int.Parse(OptionOrNull(t, "mips") ?? "1", CultureInfo.InvariantCulture),
+                            Cube = Array.IndexOf(t, "cube") >= 0,
                         });
                         break;
                     }
@@ -238,6 +282,8 @@ public static class CaseFile
                             "clamp" => false,
                             var other => throw fail($"unknown address mode '{other}' (use clamp or repeat)"),
                         },
+                        MipFilter = Array.IndexOf(t, "mips") >= 0,
+                        Compare = Array.IndexOf(t, "compare") >= 0,
                     });
                     break;
                 case "expect":
@@ -256,7 +302,7 @@ public static class CaseFile
         {
             throw Error(origin, 1, "missing 'shader PATH'");
         }
-        var model = new CaseModel { Name = name, Shader = shader };
+        var model = new CaseModel { Name = name, Shader = shader, FloatTolerance = floatTolerance };
         model.Defines.AddRange(defines);
         model.Resources.AddRange(resources);
         model.Dispatches.AddRange(dispatches);
@@ -268,9 +314,9 @@ public static class CaseFile
         }
         if (graphics)
         {
-            if (vs is null || ps is null || width <= 0 || height <= 0 || drawCount <= 0)
+            if (vs is null || ps is null || (ps.Length == 0 && depth is null) || width <= 0 || height <= 0 || drawCount <= 0)
             {
-                throw Error(origin, 1, "graphics case needs vs=, ps=, 'target W H' and 'draw'");
+                throw Error(origin, 1, "graphics case needs vs=, ps= (or a 'depth' line for depth-only draws), 'target W H' and 'draw'");
             }
             var g = new GraphicsDecl
             {
@@ -281,6 +327,9 @@ public static class CaseFile
                 Background = background,
                 Blend = blend,
                 Tolerance = tolerance,
+                TargetFormat = targetFormat,
+                Depth = depth,
+                Cull = cull,
                 IndexData = indexed ? indexData ?? throw Error(origin, 1, "indexed draw needs an 'index' line") : null,
                 IndexIs16Bit = index16,
                 Count = drawCount,
@@ -325,7 +374,9 @@ public static class CaseFile
         "r32f" => PixelFormat.R32F,
         "rgba32f" => PixelFormat.Rgba32F,
         "r32uint" => PixelFormat.R32UInt,
-        _ => throw fail($"unknown texel format '{s}' (use r8, rgba8, r32f, rgba32f or r32uint)"),
+        "rgba16f" => PixelFormat.Rgba16F,
+        "d32f" => PixelFormat.Depth32F,
+        _ => throw fail($"unknown texel format '{s}' (use r8, rgba8, r32f, rgba32f, r32uint, rgba16f or d32f)"),
     };
 
     private static VertexFormat ParseVertexFormat(string s, Func<string, Exception> fail) => s switch

@@ -11,6 +11,9 @@ public sealed class ParityReport
 {
     public List<string> Failures { get; } = new();
 
+    /// <summary>Observations worth keeping even when the comparison passes, such as the largest float error seen.</summary>
+    public List<string> Notes { get; } = new();
+
     public override string ToString() => string.Join(Environment.NewLine, Failures);
 }
 
@@ -43,13 +46,18 @@ public static class Parity
         foreach (var x in a.Outputs)
         {
             var y = b.Get(x.Key);
+            if (x.IsImage && IsFloatImage(x.Format))
+            {
+                CompareFloatImages(report, model, x, y, reference.Name, candidate.Name, model.FloatTolerance);
+                continue;
+            }
             CompareBlobs(report, model, x, y, reference.Name, candidate.Name, x.IsImage ? tolerance : 0);
         }
         if (Environment.GetEnvironmentVariable("ONESHADER_PARITY_DUMP") == "1")
         {
             foreach (var o in a.Outputs.Where(o => o.IsImage))
             {
-                WritePpm(model, o, "dump", o.Bytes);
+                WriteImage(model, o, "dump", o.Bytes);
             }
         }
         return report;
@@ -110,15 +118,66 @@ public static class Parity
         report.Failures.Add($"{model.Name} {a.Key}: {nameA} and {nameB} differ in {differing} bytes (max difference {maxDiff}, tolerance {tolerance}), {where}");
         if (a.IsImage)
         {
-            WritePpm(model, a, nameA, a.Bytes);
-            WritePpm(model, b, nameB, b.Bytes);
-            byte[] diff = new byte[a.Bytes.Length];
-            for (int i = 0; i < diff.Length; i++)
+            WriteImage(model, a, nameA, a.Bytes);
+            WriteImage(model, b, nameB, b.Bytes);
+            if (a.Format is PixelFormat.R8 or PixelFormat.Rgba8)
             {
-                diff[i] = (byte)Math.Min(255, Math.Abs(a.Bytes[i] - b.Bytes[i]) * 16);
+                byte[] diff = new byte[a.Bytes.Length];
+                for (int i = 0; i < diff.Length; i++)
+                {
+                    diff[i] = (byte)Math.Min(255, Math.Abs(a.Bytes[i] - b.Bytes[i]) * 16);
+                }
+                WriteImage(model, a, "diff", diff);
             }
-            WritePpm(model, a, "diff", diff);
         }
+    }
+
+    /// <summary>Writes every image output of a run as a PNG when <c>ONESHADER_PARITY_DUMP=1</c>.</summary>
+    public static void DumpImages(CaseModel model, RunResult run, string label)
+    {
+        if (Environment.GetEnvironmentVariable("ONESHADER_PARITY_DUMP") == "1")
+        {
+            foreach (var o in run.Outputs.Where(o => o.IsImage))
+            {
+                WriteImage(model, o, label, o.Bytes);
+            }
+        }
+    }
+
+    // Float images: |a-b| <= tolerance * (1 + |a|), two NaNs count as equal; tolerance 0 means identical values.
+    internal static void CompareFloatImages(ParityReport report, CaseModel model, OutputBlob a, OutputBlob b, string nameA, string nameB, double tolerance)
+    {
+        float[] fa = DecodeFloats(a.Format, a.Bytes);
+        float[] fb = DecodeFloats(b.Format, b.Bytes);
+        int channels = fa.Length / (a.Width * a.Height);
+        int differing = 0;
+        int first = -1;
+        double worst = 0;
+        double maxSeen = 0;
+        for (int i = 0; i < fa.Length; i++)
+        {
+            if (float.IsNaN(fa[i]) && float.IsNaN(fb[i]))
+            {
+                continue;
+            }
+            double err = Math.Abs((double)fa[i] - fb[i]) / (1.0 + Math.Abs(fa[i]));
+            maxSeen = double.IsNaN(err) ? double.PositiveInfinity : Math.Max(maxSeen, err);
+            if (!(err <= tolerance))
+            {
+                differing++;
+                first = first < 0 ? i : first;
+                worst = double.IsNaN(err) ? double.PositiveInfinity : Math.Max(worst, err);
+            }
+        }
+        if (differing == 0)
+        {
+            report.Notes.Add($"{a.Key} largest relative error {maxSeen:G3}");
+            return;
+        }
+        int texel = first / channels;
+        report.Failures.Add($"{model.Name} {a.Key}: {nameA} and {nameB} differ in {differing} values (largest relative error {worst:G3}, tolerance {tolerance:G3}), first at pixel ({texel % a.Width},{texel / a.Width}): {fa[first]:R} vs {fb[first]:R}");
+        WriteImage(model, a, nameA, a.Bytes);
+        WriteImage(model, b, nameB, b.Bytes);
     }
 
     private static void CompareExpected(ParityReport report, CaseModel model, Expectation e, OutputBlob actual, string compiler)
@@ -161,28 +220,72 @@ public static class Parity
         }
     }
 
-    /// <summary>Writes an RGBA8 or R8 image as a binary PPM (alpha dropped) under the artifacts directory.</summary>
-    private static void WritePpm(CaseModel model, OutputBlob image, string label, byte[] bytes)
+    /// <summary>Writes an image as a PNG (alpha dropped; float values are tone mapped) under the artifacts directory.</summary>
+    private static void WriteImage(CaseModel model, OutputBlob image, string label, byte[] bytes)
     {
-        if (image.Format is not (PixelFormat.R8 or PixelFormat.Rgba8))
-        {
-            return;
-        }
-        int bpp = ImageGen.BytesPerTexel(image.Format);
         string dir = Path.Combine(Tools.ArtifactsDir, model.Name);
         Directory.CreateDirectory(dir);
         string safeLabel = new(label.Select(ch => char.IsLetterOrDigit(ch) ? ch : '_').ToArray());
         string safeKey = new(image.Key.Select(ch => char.IsLetterOrDigit(ch) ? ch : '_').ToArray());
-        using var fs = File.Create(Path.Combine(dir, $"{safeKey}-{safeLabel}.ppm"));
-        fs.Write(Encoding.ASCII.GetBytes($"P6\n{image.Width} {image.Height}\n255\n"));
-        byte[] rgb = new byte[image.Width * image.Height * 3];
-        for (int i = 0; i < image.Width * image.Height; i++)
+        File.WriteAllBytes(Path.Combine(dir, $"{safeKey}-{safeLabel}.png"), PngWriter.Encode(image.Width, image.Height, ToRgb8(image, bytes)));
+    }
+
+    private static byte[] ToRgb8(OutputBlob image, byte[] bytes)
+    {
+        int pixels = image.Width * image.Height;
+        byte[] rgb = new byte[pixels * 3];
+        if (image.Format is PixelFormat.R8 or PixelFormat.Rgba8)
+        {
+            int bpp = ImageGen.BytesPerTexel(image.Format);
+            for (int i = 0; i < pixels; i++)
+            {
+                for (int c = 0; c < 3; c++)
+                {
+                    rgb[(i * 3) + c] = bpp == 1 ? bytes[i] : bytes[(i * 4) + c];
+                }
+            }
+            return rgb;
+        }
+        float[] f = DecodeFloats(image.Format, bytes);
+        int channels = f.Length / pixels;
+        bool hdr = channels == 4;
+        for (int i = 0; i < pixels; i++)
         {
             for (int c = 0; c < 3; c++)
             {
-                rgb[(i * 3) + c] = bpp == 1 ? bytes[i] : bytes[(i * 4) + c];
+                float v = f[(i * channels) + (channels == 1 ? 0 : c)];
+                v = hdr ? v / (1f + Math.Max(v, 0f)) : v;
+                rgb[(i * 3) + c] = (byte)MathF.Round(Math.Clamp(v, 0f, 1f) * 255f);
             }
         }
-        fs.Write(rgb);
+        return rgb;
     }
+
+    /// <summary>Decodes the float formats (R32F, depth, RGBA16F, RGBA32F) to floats, texel-major.</summary>
+    internal static float[] DecodeFloats(PixelFormat format, byte[] bytes)
+    {
+        switch (format)
+        {
+            case PixelFormat.Rgba16F:
+                {
+                    float[] f = new float[bytes.Length / 2];
+                    for (int i = 0; i < f.Length; i++)
+                    {
+                        f[i] = (float)BitConverter.ToHalf(bytes, i * 2);
+                    }
+                    return f;
+                }
+            default:
+                {
+                    float[] f = new float[bytes.Length / 4];
+                    for (int i = 0; i < f.Length; i++)
+                    {
+                        f[i] = BitConverter.ToSingle(bytes, i * 4);
+                    }
+                    return f;
+                }
+        }
+    }
+
+    internal static bool IsFloatImage(PixelFormat f) => f is PixelFormat.R32F or PixelFormat.Rgba32F or PixelFormat.Rgba16F or PixelFormat.Depth32F;
 }

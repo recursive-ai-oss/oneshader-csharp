@@ -95,6 +95,17 @@ public static unsafe class VkRunner
         throw new InvalidOperationException("SPIR-V module has no OpEntryPoint");
     }
 
+    /// <summary>Sorts the 32-bit words of a buffer ascending (for lists whose order depends on atomics).</summary>
+    internal static byte[] SortWords(byte[] bytes)
+    {
+        uint[] words = new uint[bytes.Length / 4];
+        System.Buffer.BlockCopy(bytes, 0, words, 0, words.Length * 4);
+        Array.Sort(words);
+        byte[] sorted = new byte[bytes.Length];
+        System.Buffer.BlockCopy(words, 0, sorted, 0, sorted.Length);
+        return sorted;
+    }
+
     private sealed class RunState : IDisposable
     {
         private readonly VkContext ctx;
@@ -146,16 +157,25 @@ public static unsafe class VkRunner
             if (model.Graphics is { } g)
             {
                 var (target, targetView) = CreateTarget(g);
+                var (depthImage, depthView) = g.Depth is null ? (default, default) : CreateDepth(g);
                 Submit(cb =>
                 {
                     // Draw into the uploaded background.
-                    DrawGraphics(cb, g, pipelineLayout, sets, target, targetView);
-                    // The render pass leaves the target in TransferSrcOptimal.
-                    int size = g.Width * g.Height * 4;
+                    DrawGraphics(cb, g, pipelineLayout, sets, targetView, depthView);
+                    // The render pass leaves the attachments in TransferSrcOptimal.
+                    int size = g.Width * g.Height * ImageGen.BytesPerTexel(g.TargetFormat);
                     var (buf, map) = CreateHostBuffer(size, BufferUsageFlags.TransferDstBit);
                     var region = ImageCopyRegion(g.Width, g.Height, 1);
                     vk.CmdCopyImageToBuffer(cb, target, ImageLayout.TransferSrcOptimal, buf, 1, &region);
-                    readbacks.Add(("target", buf, map, size, g.Width, g.Height, PixelFormat.Rgba8, true));
+                    readbacks.Add(("target", buf, map, size, g.Width, g.Height, g.TargetFormat, true));
+                    if (g.Depth is { Output: true })
+                    {
+                        int depthSize = g.Width * g.Height * 4;
+                        var (dbuf, dmap) = CreateHostBuffer(depthSize, BufferUsageFlags.TransferDstBit);
+                        var dregion = ImageCopyRegion(g.Width, g.Height, 1, ImageAspectFlags.DepthBit);
+                        vk.CmdCopyImageToBuffer(cb, depthImage, ImageLayout.TransferSrcOptimal, dbuf, 1, &dregion);
+                        readbacks.Add(("depth", dbuf, dmap, depthSize, g.Width, g.Height, PixelFormat.R32F, true));
+                    }
                     HostBarrier(cb, PipelineStageFlags.TransferBit, AccessFlags.TransferWriteBit);
                 });
             }
@@ -201,14 +221,16 @@ public static unsafe class VkRunner
                         if (r.Kind == ResourceKind.StorageImage)
                         {
                             var img = images[i];
+                            int layers = Math.Max(r.Layers, 1);
                             ImageBarrier(cb, img.Image, ImageLayout.General, ImageLayout.TransferSrcOptimal,
                                 PipelineStageFlags.ComputeShaderBit, AccessFlags.ShaderWriteBit,
-                                PipelineStageFlags.TransferBit, AccessFlags.TransferReadBit, 1);
-                            int size = r.Width * r.Height * IBytes(r.Format);
+                                PipelineStageFlags.TransferBit, AccessFlags.TransferReadBit, layers);
+                            int size = r.Width * r.Height * layers * IBytes(r.Format);
                             var (buf, map) = CreateHostBuffer(size, BufferUsageFlags.TransferDstBit);
-                            var region = ImageCopyRegion(r.Width, r.Height, 1);
+                            var region = ImageCopyRegion(r.Width, r.Height, layers);
                             vk.CmdCopyImageToBuffer(cb, img.Image, ImageLayout.TransferSrcOptimal, buf, 1, &region);
-                            readbacks.Add((r.OutputKey, buf, map, size, r.Width, r.Height, r.Format, true));
+                            // Layers are reported stacked vertically, so one blob is one tall image.
+                            readbacks.Add((r.OutputKey, buf, map, size, r.Width, r.Height * layers, r.Format, true));
                         }
                     }
                     var hb = new MemoryBarrier
@@ -237,7 +259,12 @@ public static unsafe class VkRunner
                 if (r.Output && r.Kind == ResourceKind.Storage)
                 {
                     var b = buffers[i];
-                    outputs.Add(new OutputBlob(r.OutputKey, CopyOut(b.Map, b.Size), 0, 0, PixelFormat.R8, false));
+                    byte[] bytes = CopyOut(b.Map, b.Size);
+                    if (r.Sorted)
+                    {
+                        bytes = SortWords(bytes);
+                    }
+                    outputs.Add(new OutputBlob(r.OutputKey, bytes, 0, 0, PixelFormat.R8, false));
                 }
             }
             return outputs;
@@ -258,9 +285,10 @@ public static unsafe class VkRunner
             vk.CmdPipelineBarrier(cb, srcStage, PipelineStageFlags.HostBit, 0, 1, &hb, 0, null, 0, null);
         }
 
-        private static BufferImageCopy ImageCopyRegion(int w, int h, int layers) => new()
+        private static BufferImageCopy ImageCopyRegion(int w, int h, int layers, ImageAspectFlags aspect = ImageAspectFlags.ColorBit, int level = 0, ulong bufferOffset = 0) => new()
         {
-            ImageSubresource = new ImageSubresourceLayers { AspectMask = ImageAspectFlags.ColorBit, LayerCount = (uint)layers },
+            BufferOffset = bufferOffset,
+            ImageSubresource = new ImageSubresourceLayers { AspectMask = aspect, MipLevel = (uint)level, LayerCount = (uint)layers },
             ImageExtent = new Extent3D((uint)w, (uint)h, 1),
         };
 
@@ -329,15 +357,17 @@ public static unsafe class VkRunner
             return (buf, map);
         }
 
-        private (VkImage, ImageView) CreateImage(Format format, int w, int h, int layers, bool array, ImageUsageFlags usage)
+        private (VkImage, ImageView) CreateImage(Format format, int w, int h, int layers, bool array, ImageUsageFlags usage,
+            int levels = 1, bool cube = false, ImageAspectFlags aspect = ImageAspectFlags.ColorBit)
         {
             var ii = new ImageCreateInfo
             {
                 SType = StructureType.ImageCreateInfo,
+                Flags = cube ? ImageCreateFlags.CreateCubeCompatibleBit : 0,
                 ImageType = ImageType.Type2D,
                 Format = format,
                 Extent = new Extent3D((uint)w, (uint)h, 1),
-                MipLevels = 1,
+                MipLevels = (uint)levels,
                 ArrayLayers = (uint)layers,
                 Samples = SampleCountFlags.Count1Bit,
                 Tiling = ImageTiling.Optimal,
@@ -359,9 +389,9 @@ public static unsafe class VkRunner
             {
                 SType = StructureType.ImageViewCreateInfo,
                 Image = image,
-                ViewType = array ? ImageViewType.Type2DArray : ImageViewType.Type2D,
+                ViewType = cube ? ImageViewType.TypeCube : array ? ImageViewType.Type2DArray : ImageViewType.Type2D,
                 Format = format,
-                SubresourceRange = new ImageSubresourceRange(ImageAspectFlags.ColorBit, 0, 1, 0, (uint)layers),
+                SubresourceRange = new ImageSubresourceRange(aspect, 0, (uint)levels, 0, (uint)layers),
             };
             Check(vk.CreateImageView(dev, &vi, null, out ImageView view), "vkCreateImageView");
             cleanup.Add(() =>
@@ -379,11 +409,14 @@ public static unsafe class VkRunner
             PixelFormat.Rgba8 => Format.R8G8B8A8Unorm,
             PixelFormat.R32F => Format.R32Sfloat,
             PixelFormat.R32UInt => Format.R32Uint,
+            PixelFormat.Rgba16F => Format.R16G16B16A16Sfloat,
+            PixelFormat.Depth32F => Format.D32Sfloat,
             _ => Format.R32G32B32A32Sfloat,
         };
 
         private void ImageBarrier(CommandBuffer cb, VkImage image, ImageLayout from, ImageLayout to,
-            PipelineStageFlags srcStage, AccessFlags srcAccess, PipelineStageFlags dstStage, AccessFlags dstAccess, int layers)
+            PipelineStageFlags srcStage, AccessFlags srcAccess, PipelineStageFlags dstStage, AccessFlags dstAccess, int layers,
+            int levels = 1, ImageAspectFlags aspect = ImageAspectFlags.ColorBit)
         {
             var b = new ImageMemoryBarrier
             {
@@ -395,24 +428,36 @@ public static unsafe class VkRunner
                 SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
                 DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
                 Image = image,
-                SubresourceRange = new ImageSubresourceRange(ImageAspectFlags.ColorBit, 0, 1, 0, (uint)layers),
+                SubresourceRange = new ImageSubresourceRange(aspect, 0, (uint)levels, 0, (uint)layers),
             };
             vk.CmdPipelineBarrier(cb, srcStage, dstStage, 0, 0, null, 0, null, 1, &b);
         }
 
         /// <summary>Uploads texel bytes into an image and leaves it in <paramref name="finalLayout"/>.</summary>
-        private void Upload(VkImage image, byte[] bytes, int w, int h, int layers, ImageLayout finalLayout)
+        private void Upload(VkImage image, byte[] bytes, int w, int h, int layers, ImageLayout finalLayout,
+            int levels = 1, int bytesPerTexel = 4, ImageAspectFlags aspect = ImageAspectFlags.ColorBit)
         {
             var (staging, _) = CreateFilledBuffer(bytes, BufferUsageFlags.TransferSrcBit);
+            var regions = new BufferImageCopy[levels];
+            ulong offset = 0;
+            for (int level = 0; level < levels; level++)
+            {
+                int lw = Math.Max(w >> level, 1);
+                int lh = Math.Max(h >> level, 1);
+                regions[level] = ImageCopyRegion(lw, lh, layers, aspect, level, offset);
+                offset += (ulong)lw * (ulong)lh * (ulong)layers * (ulong)bytesPerTexel;
+            }
             Submit(cb =>
             {
                 ImageBarrier(cb, image, ImageLayout.Undefined, ImageLayout.TransferDstOptimal,
-                    PipelineStageFlags.TopOfPipeBit, 0, PipelineStageFlags.TransferBit, AccessFlags.TransferWriteBit, layers);
-                var region = ImageCopyRegion(w, h, layers);
-                vk.CmdCopyBufferToImage(cb, staging, image, ImageLayout.TransferDstOptimal, 1, &region);
+                    PipelineStageFlags.TopOfPipeBit, 0, PipelineStageFlags.TransferBit, AccessFlags.TransferWriteBit, layers, levels, aspect);
+                fixed (BufferImageCopy* pr = regions)
+                {
+                    vk.CmdCopyBufferToImage(cb, staging, image, ImageLayout.TransferDstOptimal, (uint)levels, pr);
+                }
                 ImageBarrier(cb, image, ImageLayout.TransferDstOptimal, finalLayout,
                     PipelineStageFlags.TransferBit, AccessFlags.TransferWriteBit,
-                    PipelineStageFlags.AllCommandsBit, AccessFlags.MemoryReadBit | AccessFlags.MemoryWriteBit, layers);
+                    PipelineStageFlags.AllCommandsBit, AccessFlags.MemoryReadBit | AccessFlags.MemoryWriteBit, layers, levels, aspect);
             });
         }
 
@@ -440,8 +485,10 @@ public static unsafe class VkRunner
                             var usage = storage
                                 ? ImageUsageFlags.StorageBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.TransferSrcBit
                                 : ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit;
-                            var (img, view) = CreateImage(ToVk(r.Format), r.Width, r.Height, layers, r.Layers > 0, usage);
-                            Upload(img, data.Images[i], r.Width, r.Height, layers, storage ? ImageLayout.General : ImageLayout.ShaderReadOnlyOptimal);
+                            var aspect = r.Format == PixelFormat.Depth32F ? ImageAspectFlags.DepthBit : ImageAspectFlags.ColorBit;
+                            var (img, view) = CreateImage(ToVk(r.Format), r.Width, r.Height, layers, r.Layers > 0, usage, r.MipLevels, r.Cube, aspect);
+                            Upload(img, data.Images[i], r.Width, r.Height, layers, storage ? ImageLayout.General : ImageLayout.ShaderReadOnlyOptimal,
+                                r.MipLevels, ImageGen.BytesPerTexel(r.Format), aspect);
                             images[i] = (img, view, layers);
                             break;
                         }
@@ -454,11 +501,13 @@ public static unsafe class VkRunner
                                 SType = StructureType.SamplerCreateInfo,
                                 MagFilter = filter,
                                 MinFilter = filter,
-                                MipmapMode = SamplerMipmapMode.Nearest,
+                                MipmapMode = r.MipFilter ? SamplerMipmapMode.Linear : SamplerMipmapMode.Nearest,
                                 AddressModeU = mode,
                                 AddressModeV = mode,
                                 AddressModeW = mode,
-                                MaxLod = 0f,
+                                CompareEnable = r.Compare,
+                                CompareOp = CompareOp.LessOrEqual,
+                                MaxLod = r.MipFilter ? 16f : 0f,
                                 BorderColor = BorderColor.FloatTransparentBlack,
                             };
                             Check(vk.CreateSampler(dev, &si, null, out VkSampler s), "vkCreateSampler");
@@ -673,11 +722,15 @@ public static unsafe class VkRunner
 
         private (VkImage, ImageView) CreateTarget(GraphicsDecl g)
         {
-            var (image, view) = CreateImage(Format.R8G8B8A8Unorm, g.Width, g.Height, 1, false,
+            var (image, view) = CreateImage(ToVk(g.TargetFormat), g.Width, g.Height, 1, false,
                 ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.TransferSrcBit);
-            Upload(image, data.Background!, g.Width, g.Height, 1, ImageLayout.ColorAttachmentOptimal);
+            Upload(image, data.Background!, g.Width, g.Height, 1, ImageLayout.ColorAttachmentOptimal, 1, ImageGen.BytesPerTexel(g.TargetFormat));
             return (image, view);
         }
+
+        private (VkImage, ImageView) CreateDepth(GraphicsDecl g) =>
+            CreateImage(Format.D32Sfloat, g.Width, g.Height, 1, false,
+                ImageUsageFlags.DepthStencilAttachmentBit | ImageUsageFlags.TransferSrcBit, 1, false, ImageAspectFlags.DepthBit);
 
         private static Format VertexFormatToVk(VertexFormat f) => f switch
         {
@@ -690,12 +743,15 @@ public static unsafe class VkRunner
             _ => Format.R32Uint,
         };
 
-        private void DrawGraphics(CommandBuffer cb, GraphicsDecl g, PipelineLayout layout, DescriptorSet?[] sets, VkImage target, ImageView targetView)
+        private void DrawGraphics(CommandBuffer cb, GraphicsDecl g, PipelineLayout layout, DescriptorSet?[] sets, ImageView targetView, ImageView depthView)
         {
-            // Render pass: one RGBA8 attachment that keeps its contents (the uploaded background).
-            var attachment = new AttachmentDescription
+            bool hasDepth = g.Depth is not null;
+            // Render pass: one colour attachment that keeps its contents (the uploaded background), plus an
+            // optional depth attachment that is cleared and kept for readback.
+            var attachments = stackalloc AttachmentDescription[2];
+            attachments[0] = new AttachmentDescription
             {
-                Format = Format.R8G8B8A8Unorm,
+                Format = ToVk(g.TargetFormat),
                 Samples = SampleCountFlags.Count1Bit,
                 LoadOp = AttachmentLoadOp.Load,
                 StoreOp = AttachmentStoreOp.Store,
@@ -704,38 +760,54 @@ public static unsafe class VkRunner
                 InitialLayout = ImageLayout.ColorAttachmentOptimal,
                 FinalLayout = ImageLayout.TransferSrcOptimal,
             };
+            attachments[1] = new AttachmentDescription
+            {
+                Format = Format.D32Sfloat,
+                Samples = SampleCountFlags.Count1Bit,
+                LoadOp = AttachmentLoadOp.Clear,
+                StoreOp = AttachmentStoreOp.Store,
+                StencilLoadOp = AttachmentLoadOp.DontCare,
+                StencilStoreOp = AttachmentStoreOp.DontCare,
+                InitialLayout = ImageLayout.Undefined,
+                FinalLayout = ImageLayout.TransferSrcOptimal,
+            };
             var colorRef = new AttachmentReference(0, ImageLayout.ColorAttachmentOptimal);
+            var depthRef = new AttachmentReference(1, ImageLayout.DepthStencilAttachmentOptimal);
             var subpass = new SubpassDescription
             {
                 PipelineBindPoint = PipelineBindPoint.Graphics,
                 ColorAttachmentCount = 1,
                 PColorAttachments = &colorRef,
+                PDepthStencilAttachment = hasDepth ? &depthRef : null,
             };
+            const PipelineStageFlags AttachmentStages = PipelineStageFlags.ColorAttachmentOutputBit
+                | PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit;
             var deps = stackalloc SubpassDependency[]
             {
                 new SubpassDependency
                 {
                     SrcSubpass = Vk.SubpassExternal,
                     DstSubpass = 0,
-                    SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
-                    DstStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
-                    DstAccessMask = AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit,
+                    SrcStageMask = AttachmentStages,
+                    DstStageMask = AttachmentStages,
+                    DstAccessMask = AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit
+                        | AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit,
                 },
                 new SubpassDependency
                 {
                     SrcSubpass = 0,
                     DstSubpass = Vk.SubpassExternal,
-                    SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
+                    SrcStageMask = AttachmentStages,
                     DstStageMask = PipelineStageFlags.TransferBit,
-                    SrcAccessMask = AccessFlags.ColorAttachmentWriteBit,
+                    SrcAccessMask = AccessFlags.ColorAttachmentWriteBit | AccessFlags.DepthStencilAttachmentWriteBit,
                     DstAccessMask = AccessFlags.TransferReadBit,
                 },
             };
             var rpi = new RenderPassCreateInfo
             {
                 SType = StructureType.RenderPassCreateInfo,
-                AttachmentCount = 1,
-                PAttachments = &attachment,
+                AttachmentCount = hasDepth ? 2u : 1u,
+                PAttachments = attachments,
                 SubpassCount = 1,
                 PSubpasses = &subpass,
                 DependencyCount = 2,
@@ -743,12 +815,13 @@ public static unsafe class VkRunner
             };
             Check(vk.CreateRenderPass(dev, &rpi, null, out RenderPass renderPass), "vkCreateRenderPass");
             cleanup.Add(() => vk.DestroyRenderPass(dev, renderPass, null));
+            var views = stackalloc ImageView[] { targetView, depthView };
             var fbi = new FramebufferCreateInfo
             {
                 SType = StructureType.FramebufferCreateInfo,
                 RenderPass = renderPass,
-                AttachmentCount = 1,
-                PAttachments = &targetView,
+                AttachmentCount = hasDepth ? 2u : 1u,
+                PAttachments = views,
                 Width = (uint)g.Width,
                 Height = (uint)g.Height,
                 Layers = 1,
@@ -758,11 +831,12 @@ public static unsafe class VkRunner
 
             // Shaders.
             byte[] vsCode = spirv(g.VertexEntry, ShaderStage.Vertex);
-            byte[] psCode = spirv(g.PixelEntry, ShaderStage.Pixel);
+            bool hasPixel = g.PixelEntry.Length > 0;
+            byte[] psCode = hasPixel ? spirv(g.PixelEntry, ShaderStage.Pixel) : [];
             var vsModule = CreateModule(vsCode);
-            var psModule = CreateModule(psCode);
+            var psModule = hasPixel ? CreateModule(psCode) : default;
             nint vsName = Marshal.StringToHGlobalAnsi(EntryPointName(vsCode));
-            nint psName = Marshal.StringToHGlobalAnsi(EntryPointName(psCode));
+            nint psName = hasPixel ? Marshal.StringToHGlobalAnsi(EntryPointName(psCode)) : 0;
             var stages = stackalloc PipelineShaderStageCreateInfo[]
             {
                 new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.VertexBit, Module = vsModule, PName = (byte*)vsName },
@@ -814,7 +888,7 @@ public static unsafe class VkRunner
                 {
                     SType = StructureType.PipelineRasterizationStateCreateInfo,
                     PolygonMode = PolygonMode.Fill,
-                    CullMode = CullModeFlags.None,
+                    CullMode = g.Cull switch { CullMode.Back => CullModeFlags.BackBit, CullMode.Front => CullModeFlags.FrontBit, _ => CullModeFlags.None },
                     FrontFace = FrontFace.CounterClockwise,
                     LineWidth = 1f,
                 };
@@ -829,10 +903,19 @@ public static unsafe class VkRunner
                     AttachmentCount = 1,
                     PAttachments = &blendAttachment,
                 };
+                var depthState = new PipelineDepthStencilStateCreateInfo
+                {
+                    SType = StructureType.PipelineDepthStencilStateCreateInfo,
+                    DepthTestEnable = g.Depth is { Test: true },
+                    DepthWriteEnable = hasDepth,
+                    DepthCompareOp = CompareOp.Less,
+                    MaxDepthBounds = 1f,
+                };
                 var gci = new GraphicsPipelineCreateInfo
                 {
                     SType = StructureType.GraphicsPipelineCreateInfo,
-                    StageCount = 2,
+                    StageCount = hasPixel ? 2u : 1u,
+                    PDepthStencilState = hasDepth ? &depthState : null,
                     PStages = stages,
                     PVertexInputState = &vertexInput,
                     PInputAssemblyState = &inputAssembly,
@@ -847,7 +930,10 @@ public static unsafe class VkRunner
                 Check(vk.CreateGraphicsPipelines(dev, default, 1, &gci, null, out pipeline), "vkCreateGraphicsPipelines");
             }
             Marshal.FreeHGlobal(vsName);
-            Marshal.FreeHGlobal(psName);
+            if (hasPixel)
+            {
+                Marshal.FreeHGlobal(psName);
+            }
             cleanup.Add(() => vk.DestroyPipeline(dev, pipeline, null));
 
             // Geometry buffers.
@@ -864,15 +950,17 @@ public static unsafe class VkRunner
                 indexBuffer = CreateFilledBuffer(PadTo4(indices), BufferUsageFlags.IndexBufferBit).Item1;
             }
 
-            var clear = default(ClearValue);
+            // Index 0 (the colour attachment) loads and ignores its value; index 1 is the depth clear.
+            var clears = stackalloc ClearValue[2];
+            clears[1].DepthStencil = new ClearDepthStencilValue(g.Depth?.Clear ?? 1f, 0);
             var rbi = new RenderPassBeginInfo
             {
                 SType = StructureType.RenderPassBeginInfo,
                 RenderPass = renderPass,
                 Framebuffer = framebuffer,
                 RenderArea = scissor,
-                ClearValueCount = 0,
-                PClearValues = &clear,
+                ClearValueCount = hasDepth ? 2u : 0u,
+                PClearValues = clears,
             };
             vk.CmdBeginRenderPass(cb, &rbi, SubpassContents.Inline);
             vk.CmdBindPipeline(cb, PipelineBindPoint.Graphics, pipeline);
@@ -897,7 +985,6 @@ public static unsafe class VkRunner
                 vk.CmdDraw(cb, (uint)g.Count, (uint)g.Instances, 0, 0);
             }
             vk.CmdEndRenderPass(cb);
-            _ = target;
         }
 
         private static byte[] PadTo4(byte[] bytes)

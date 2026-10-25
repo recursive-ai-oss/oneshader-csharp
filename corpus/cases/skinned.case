@@ -1,0 +1,19 @@
+# A sphere bent by a chain of four joints: second vertex buffer with joint indices and weights,
+# joint matrices in a structured buffer.
+case skinned
+shader 3d/skinned.hlsl
+graphics vs=VSMain ps=PSMain
+target 128 128 background=solid(0.05,0.05,0.08,1.0)
+depth
+tolerance 1
+vertexbuffer 0 48 : @sphere(24,24,0.6)
+vertexbuffer 1 32 : @sphereskin(24,24,4)
+attr 0 float3 0
+attr 1 float3 12
+attr 2 float2 24
+attr 3 uint4 0 binding=1
+attr 4 float4 16 binding=1
+index u32 : @sphereindex(24,24)
+draw indexed=3456
+uniform 0 0 : @viewproj(0,0.3,3.0,0,0,0,50,1,0.1,50,row) -0.4 -0.7 -0.5 0.25
+storage 0 1 : @jointchain(4,18.0,-0.6,0.6,col)

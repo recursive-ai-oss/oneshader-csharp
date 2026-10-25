@@ -1,0 +1,26 @@
+# Four cascades of a (generated) shadow map sampled with hardware comparison and a 3x3 PCF kernel;
+# the cascade is chosen by view depth. Sphere and floor, directional light.
+case shadow_cascades
+shader 3d/shadow_cascades.hlsl
+graphics vs=VSMain ps=PSMain
+target 128 128 background=solid(0.05,0.05,0.08,1.0)
+depth
+tolerance 1
+vertexbuffer 0 48 : @sphere(32,24,1.0) @plane(4.0,-1.0)
+attr 0 float3 0
+attr 1 float3 12
+index u32 : @sphereindex(32,24) @planeindex(825)
+draw indexed=4614
+uniform 0 0 :
+  @viewproj(0,1.2,4.0,0,-0.2,0,60,1,0.1,50,row)
+  @view(0,1.2,4.0,0,-0.2,0,row)
+  @orthoviewproj(4,10,3,0,0,0,2.5,1,25,row)
+  @orthoviewproj(4,10,3,0,0,0,5.0,1,25,row)
+  @orthoviewproj(4,10,3,0,0,0,10.0,1,25,row)
+  @orthoviewproj(4,10,3,0,0,0,20.0,1,25,row)
+  2.0 4.0 8.0 100.0
+  -0.4 -1.0 -0.3 0.00390625
+  1.0 0.95 0.85 0.002
+  0.15 0.17 0.25 0.0
+texture 0 1 256x256x4 d32f shadowmap
+sampler 0 2 linear clamp compare
