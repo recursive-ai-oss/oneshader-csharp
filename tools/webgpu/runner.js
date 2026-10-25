@@ -2,7 +2,8 @@
 // Test tooling only: the job format is written by tests/OneShader.ParityTests/WebGpuParityTests.cs.
 //
 // Orientation: WebGPU's clip-space y points up, like the Vulkan reference run, which the test draws with a
-// negative-height viewport. Both therefore see the same clip coordinates, framebuffer rows and front faces.
+// negative-height viewport. Both therefore see the same clip coordinates and framebuffer rows. The cases keep the
+// reference's winding (counter-clockwise fronts in Vulkan's y-down space), which on a y-up target is 'cw'.
 
 const BYTES_PER_TEXEL = { r8unorm: 1, rgba8unorm: 4, r32float: 4, rgba32float: 16, r32uint: 4, rgba16float: 8, depth32float: 4 };
 const VERTEX_FORMATS = {
@@ -360,7 +361,7 @@ async function execute(job, errors) {
     const desc = {
       layout: pipelineLayout,
       vertex: { module: modules[g.vertexEntry], entryPoint: g.vertexEntry, buffers: vbLayouts },
-      primitive: { topology: 'triangle-list', frontFace: 'ccw', cullMode: { none: 'none', back: 'back', front: 'front' }[g.cull] },
+      primitive: { topology: 'triangle-list', frontFace: 'cw', cullMode: { none: 'none', back: 'back', front: 'front' }[g.cull] },
     };
     if (g.pixelEntry) {
       const t = { format: g.targetFormat };

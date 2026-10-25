@@ -34,7 +34,8 @@ public static class Parity
         var data = CaseData.Build(model);
         var a = Run(ctx, model, data, reference);
         var b = Run(ctx, model, data, candidate);
-        return CompareRuns(model, a, b, reference.Name, candidate.Name);
+        // WGSL implementations, naga included, may fuse multiply-adds, so cases that declare a float tolerance get it here.
+        return CompareRuns(model, a, b, reference.Name, candidate.Name, allowFloatBufferTolerance: candidate.Name.EndsWith("wgsl", StringComparison.Ordinal));
     }
 
     /// <summary>Compares two finished runs of the same case: buffers exactly, images within the case tolerance.</summary>

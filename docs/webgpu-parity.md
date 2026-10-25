@@ -35,8 +35,10 @@ mismatches are expected.
 ## Orientation
 
 Clip-space y points up in WebGPU, like D3D and Metal. The Vulkan reference draws with a negative-height viewport and
-clockwise front faces (`VkRunner.Run(..., yUp: true)`), so both sides see the same clip coordinates, framebuffer rows
-(`SV_Position`) and front faces. A shader written for Vulkan's y-down clip space draws upside down on WebGPU unless its
+clockwise front faces (`VkRunner.Run(..., yUp: true)`), so both sides see the same clip coordinates and framebuffer rows
+(`SV_Position`). The corpus meshes wind counter-clockwise for Vulkan's y-down space; on a y-up target the same
+vertices need `frontFace: 'cw'` to keep `SV_IsFrontFace` and back-face culling identical, which is what the runner sets.
+A shader and mesh authored for y-up conventions would use `ccw` instead. A shader written for Vulkan's y-down clip space draws upside down on WebGPU unless its
 projection accounts for it; the backend does not flip.
 
 ## Options and limits
