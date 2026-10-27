@@ -467,7 +467,9 @@ public class OptimizerTests
         sb.Append("[shader(\"compute\")] [numthreads(1, 1, 1)] void CSMain(uint3 id : SV_DispatchThreadID) { Output[0] = f24(id.x); }\n");
         var clock = System.Diagnostics.Stopwatch.StartNew();
         var result = ShaderCompiler.Compile(sb.ToString(), "deep.hlsl", new CompileOptions(), TestContext.Current.CancellationToken);
-        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(30), "took " + clock.Elapsed);
+        // A few seconds on a quiet machine; the generous bound leaves room for busy CI runners, while full
+        // inlining (2^24 copies) would still run far past it.
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(120), "took " + clock.Elapsed);
         Assert.True(result.Success, string.Join("\n", result.Diagnostics));
     }
 
