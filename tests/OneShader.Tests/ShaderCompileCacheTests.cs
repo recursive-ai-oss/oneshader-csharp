@@ -27,6 +27,21 @@ public sealed class ShaderCompileCacheTests : IDisposable
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
+    private static readonly TimeSpan Limit = TimeSpan.FromSeconds(60);
+
+    // Every wait in these tests ends: a stuck cache fails the test with a message instead of hanging the run.
+    private static async Task<T> Bounded<T>(Task<T> task, string what)
+    {
+        try
+        {
+            return await task.WaitAsync(Limit, Ct);
+        }
+        catch (TimeoutException)
+        {
+            throw new Xunit.Sdk.XunitException(what + " did not finish within " + Limit.TotalSeconds + " s");
+        }
+    }
+
     private static CompileOptions Defines(params string[] names) =>
         new() { Defines = names.Select(n => new KeyValuePair<string, string?>(n, null)).ToList() };
 
@@ -182,13 +197,13 @@ public sealed class ShaderCompileCacheTests : IDisposable
         };
         const string source = "#include \"x.hlsli\"\n[shader(\"pixel\")] float4 PS() : SV_Target { return SCALE; }\n";
         var tasks = Enumerable.Range(0, 16).Select(_ => Task.Run(() => cache.Compile(source, "a.hlsl", options, Ct), Ct)).ToArray();
-        var results = await Task.WhenAll(tasks);
+        var results = await Bounded(Task.WhenAll(tasks), "16 concurrent compiles of one key");
         Assert.All(results, r => Assert.Same(results[0], r));
         Assert.Equal(1L, cache.Misses);
         Assert.Equal(15L, cache.Hits);
 
         // Different keys compile independently.
-        var many = await Task.WhenAll(Enumerable.Range(0, 8).Select(i => Task.Run(() => cache.Compile(Pixel, "k" + i + ".hlsl", null, Ct), Ct)));
+        var many = await Bounded(Task.WhenAll(Enumerable.Range(0, 8).Select(i => Task.Run(() => cache.Compile(Pixel, "k" + i + ".hlsl", null, Ct), Ct))), "8 compiles of different keys");
         Assert.Equal(8, many.Distinct().Count());
         Assert.Equal(9L, cache.Misses);
     }
@@ -237,16 +252,33 @@ public sealed class ShaderCompileCacheTests : IDisposable
         Assert.Throws<OperationCanceledException>(() => cache.Compile(Pixel, "z.hlsl", null, cancelled.Token));
         Assert.Equal(1, cache.Count);
 
-        // A waiter can give up while another caller compiles.
+        // A waiter can give up while another caller compiles. The compiling caller signals when it is inside the compile,
+        // so the waiter certainly arrives second; the gate wait is bounded.
         using var gate = new ManualResetEventSlim();
-        var slow = new CompileOptions { IncludeResolver = (name, including, system) => { gate.Wait(Ct); return new ResolvedInclude(name, string.Empty); } };
+        using var started = new ManualResetEventSlim();
+        var slow = new CompileOptions
+        {
+            IncludeResolver = (name, including, system) =>
+            {
+                started.Set();
+                Assert.True(gate.Wait(Limit, Ct), "the test did not release the compile");
+                return new ResolvedInclude(name, string.Empty);
+            },
+        };
         const string withInclude = "#include \"x\"\n[shader(\"pixel\")] float4 PS() : SV_Target { return 0; }\n";
         var running = Task.Run(() => cache.Compile(withInclude, "s.hlsl", slow, Ct), Ct);
-        Thread.Sleep(200);
-        using var impatient = new CancellationTokenSource(100);
-        Assert.Throws<OperationCanceledException>(() => cache.Compile(withInclude, "s.hlsl", slow, impatient.Token));
-        gate.Set();
-        Assert.True((await running).Success);
+        try
+        {
+            Assert.True(started.Wait(Limit, Ct), "the first compile never started");
+            using var impatient = new CancellationTokenSource(100);
+            Assert.ThrowsAny<OperationCanceledException>(() => cache.Compile(withInclude, "s.hlsl", slow, impatient.Token));
+        }
+        finally
+        {
+            gate.Set();
+        }
+
+        Assert.True((await Bounded(running, "the first compile")).Success);
 
         Assert.Throws<ArgumentNullException>(() => cache.Compile(null!, "a.hlsl", null, Ct));
         Assert.Throws<ArgumentNullException>(() => cache.CompileFile(null!, null, Ct));
