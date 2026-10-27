@@ -1,0 +1,7 @@
+# Group reductions from wave sum, product, min, max and bit operations (unsigned, signed, float, vector): 4 groups of 256 values.
+case wave_reduce
+shader compute/wave_reduce.hlsl
+dispatch CSMain 4 1 1
+storage 0 0 : @u32(11,1024,1000)
+storage 0 1 out size=256
+expect wave_reduce

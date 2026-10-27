@@ -50,6 +50,12 @@ public class WebGpuParityTests
 
         var result = outcome.Result!;
         var errors = result["errors"]!.AsArray().Select(e => e!.GetValue<string>()).ToList();
+        if (errors.FirstOrDefault(e => e.StartsWith("no-subgroups:", StringComparison.Ordinal)) is { } noSubgroups)
+        {
+            Row(name, "skipped", noSubgroups);
+            Assert.Skip(noSubgroups);
+        }
+
         var web = new List<OutputBlob>();
         foreach (var r in outcome.Reference!.Outputs)
         {
@@ -231,6 +237,8 @@ public class WebGpuParityTests
         {
             ["name"] = model.Name,
             ["kind"] = model.IsCompute ? "compute" : "graphics",
+            // WGSL with `enable subgroups;` needs a device created with that optional feature; the others keep the default device.
+            ["subgroups"] = modules.Any(m => m.Wgsl.StartsWith("enable subgroups;", StringComparison.Ordinal)),
             ["modules"] = new JsonArray(modules.Select(m => (JsonNode)new JsonObject
             {
                 ["entry"] = m.Entry,

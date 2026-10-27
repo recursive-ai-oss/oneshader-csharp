@@ -351,7 +351,8 @@ public enum Intrinsic
     QuadReadAcrossY, /// <summary>QuadReadAcrossDiagonal.</summary>
     QuadReadAcrossDiagonal, /// <summary>QuadReadLaneAt.</summary>
     QuadReadLaneAt, /// <summary>NonUniformResourceIndex(i): the index may differ between invocations of a wave; yields its operand.</summary>
-    NonUniformIndex,
+    NonUniformIndex, /// <summary>WaveActiveAllEqual(x): true when every active lane holds the same value (per component for vectors).</summary>
+    WaveActiveAllEqual,
 }
 
 /// <summary>The role of a block in structured control flow.</summary>
@@ -438,7 +439,7 @@ public sealed class Instruction : IrValue
         Opcode.Store or Opcode.AtomicRmw or Opcode.AtomicCompareExchange or Opcode.Barrier or Opcode.Call
             or Opcode.TextureStore or Opcode.ByteAddressStore => true,
         Opcode.CallIntrinsic => Intrinsic is Intrinsic.Frexp or Intrinsic.Modf or Intrinsic.SinCos
-            or >= Intrinsic.WaveGetLaneCount and <= Intrinsic.QuadReadLaneAt,
+            or >= Intrinsic.WaveGetLaneCount and <= Intrinsic.QuadReadLaneAt or Intrinsic.WaveActiveAllEqual,
         _ => IsTerminator,
     };
 }

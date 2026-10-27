@@ -188,6 +188,12 @@ internal sealed partial class Lowerer
         {
             case BuiltinKind.Intrinsic:
             {
+                if (bi.Ir is Intrinsic.WaveGetLaneIndex or Intrinsic.WaveGetLaneCount)
+                {
+                    // Lane index and count are stage inputs that only the entry point can read; helpers see a private copy it fills in.
+                    return _b.Load(LaneGlobal(bi.Ir == Intrinsic.WaveGetLaneCount));
+                }
+
                 var ops = new IrValue[bi.ParamTypes.Length];
                 for (int i = 0; i < ops.Length; i++)
                 {

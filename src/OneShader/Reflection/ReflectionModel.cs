@@ -79,6 +79,42 @@ public enum BuiltIn
 
     /// <summary><c>SV_GroupIndex</c>.</summary>
     LocalInvocationIndex,
+
+    /// <summary>The lane's index in its subgroup (<c>WaveGetLaneIndex</c>). Never a shader's own stage variable; the compiler adds it when a wave intrinsic needs it.</summary>
+    SubgroupLocalInvocationId,
+
+    /// <summary>The number of lanes in the subgroup (<c>WaveGetLaneCount</c>). Never a shader's own stage variable.</summary>
+    SubgroupSize,
+}
+
+/// <summary>
+/// Kinds of subgroup (wave) operations a shader uses. The values equal Vulkan's <c>VkSubgroupFeatureFlagBits</c>, so a Vulkan host can test
+/// them against <c>subgroupSupportedOperations</c> directly. A Metal host needs a GPU family with SIMD-group functions (all Apple
+/// silicon and the Macs Metal 2.1 supports); a WebGPU host needs the <c>subgroups</c> feature.
+/// </summary>
+[Flags]
+public enum SubgroupOperations
+{
+    /// <summary>No subgroup operation.</summary>
+    None = 0,
+
+    /// <summary>Lane index, lane count, <c>WaveIsFirstLane</c>.</summary>
+    Basic = 1,
+
+    /// <summary><c>WaveActiveAnyTrue</c>, <c>WaveActiveAllTrue</c>, <c>WaveActiveAllEqual</c>.</summary>
+    Vote = 2,
+
+    /// <summary><c>WaveActiveSum</c>, <c>Min</c>, <c>Max</c>, bit operations and the <c>WavePrefix*</c> scans.</summary>
+    Arithmetic = 4,
+
+    /// <summary><c>WaveActiveBallot</c>, <c>WaveActiveCountBits</c>, <c>WavePrefixCountBits</c>, <c>WaveReadLaneFirst</c>.</summary>
+    Ballot = 8,
+
+    /// <summary><c>WaveReadLaneAt</c>.</summary>
+    Shuffle = 16,
+
+    /// <summary>Quad operations: <c>QuadReadAcross*</c>, <c>QuadReadLaneAt</c>.</summary>
+    Quad = 128,
 }
 
 /// <summary>
@@ -328,6 +364,12 @@ public sealed class EntryPointInfo
 
     /// <summary>The name of the push-constant block this entry point reads (an entry of <see cref="ShaderReflection.PushConstants"/>), or null.</summary>
     public string? PushConstant { get; init; }
+
+    /// <summary>The subgroup operations this entry point (and the functions it calls) uses; <see cref="SubgroupOperations.None"/> when it uses none.</summary>
+    public SubgroupOperations SubgroupOperations { get; init; }
+
+    /// <summary>True when the entry point needs subgroup support from the device (Vulkan subgroup operations, Metal SIMD-group functions, the WebGPU <c>subgroups</c> feature).</summary>
+    public bool UsesSubgroups => SubgroupOperations != SubgroupOperations.None;
 }
 
 /// <summary>Everything tooling and generated code need to know about one compiled shader file.</summary>
@@ -350,4 +392,21 @@ public sealed class ShaderReflection
 
     /// <summary>Entry points in declaration order.</summary>
     public IReadOnlyList<EntryPointInfo> EntryPoints { get; init; } = [];
+
+    /// <summary>True when any entry point uses subgroup operations; a WebGPU host must then request the <c>subgroups</c> feature.</summary>
+    public bool UsesSubgroups
+    {
+        get
+        {
+            foreach (var e in EntryPoints)
+            {
+                if (e.UsesSubgroups)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+    }
 }

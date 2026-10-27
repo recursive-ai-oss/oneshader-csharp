@@ -77,6 +77,7 @@ internal sealed partial class WgslEmitter
     private readonly HashSet<GlobalVariable> _reachableGlobals = [];
     private readonly HashSet<GlobalVariable> _atomicWorkgroup = [];
     private bool _usesDerivatives;
+    private bool _usesSubgroups;
     private string? _entryReturnExpr;
 
     public WgslEmitter(IrModule m, WgslOptions o, DiagnosticBag d)
@@ -322,6 +323,7 @@ internal sealed partial class WgslEmitter
             case Opcode.CallIntrinsic:
                 _usesDerivatives |= i.Intrinsic is Intrinsic.Ddx or Intrinsic.DdxCoarse or Intrinsic.DdxFine or Intrinsic.Ddy
                     or Intrinsic.DdyCoarse or Intrinsic.DdyFine or Intrinsic.Fwidth;
+                _usesSubgroups |= SubgroupUse.Of(i.Intrinsic) != SubgroupOperations.None;
                 break;
             default:
                 break;
@@ -506,6 +508,19 @@ internal sealed partial class WgslEmitter
         if (_failed)
         {
             return string.Empty;
+        }
+
+        foreach (var input in _ep.Inputs)
+        {
+            _usesSubgroups |= input.BuiltIn is BuiltIn.SubgroupLocalInvocationId or BuiltIn.SubgroupSize;
+        }
+
+        if (_usesSubgroups)
+        {
+            // WebGPU's optional subgroups feature; the host must request it (reflection says when).
+            sb.Append("enable subgroups;\n");
+            // HLSL does not require wave operations to run in uniform control flow, so the checks that WGSL adds are off.
+            sb.Append("diagnostic(off, subgroup_uniformity);\n");
         }
 
         if (_usesDerivatives && _ep.Stage == ShaderStage.Pixel)

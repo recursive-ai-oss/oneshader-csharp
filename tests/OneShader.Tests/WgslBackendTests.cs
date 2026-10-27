@@ -90,6 +90,13 @@ public sealed partial class WgslBackendTests
                     File.WriteAllText(Path.Combine(dump, Path.GetFileNameWithoutExtension(path) + "." + b.EntryPoint + ".wgsl"), b.AsText());
                 }
 
+                if (UsesSubgroups(b.AsText()))
+                {
+                    // naga's WGSL reader does not know the subgroups extension yet (it rejects `enable subgroups;` and the subgroup
+                    // functions), so these are checked by WebGPU's own compiler through the browser run instead.
+                    continue;
+                }
+
                 var (code, output) = Oracles.Run(naga!, [file], dir);
                 Assert.True(code == 0, name + " " + b.EntryPoint + ":\n" + output + "\n" + b.AsText());
             }
@@ -99,6 +106,9 @@ public sealed partial class WgslBackendTests
             Directory.Delete(dir, true);
         }
     }
+
+    /// <summary>True for WGSL that needs WebGPU's optional subgroups feature.</summary>
+    internal static bool UsesSubgroups(string wgsl) => wgsl.StartsWith("enable subgroups;", StringComparison.Ordinal);
 
     [Theory]
     [InlineData(true)]

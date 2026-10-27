@@ -704,6 +704,14 @@ internal sealed partial class SpirvEmitter
                 case BuiltIn.LocalInvocationIndex:
                     builtIn = Bi.LocalInvocationIndex;
                     break;
+                case BuiltIn.SubgroupLocalInvocationId:
+                    builtIn = Bi.SubgroupLocalInvocationId;
+                    _s.Capabilities.Add(Cap.GroupNonUniform);
+                    break;
+                case BuiltIn.SubgroupSize:
+                    builtIn = Bi.SubgroupSize;
+                    _s.Capabilities.Add(Cap.GroupNonUniform);
+                    break;
                 default:
                     Unsupported("The system value " + (g.Semantic ?? g.BuiltIn.ToString()) + " is not supported by the SPIR-V backend yet.", g.Span);
                     return;

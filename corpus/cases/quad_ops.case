@@ -1,0 +1,7 @@
+# Quad reads in a pixel shader: across x, across y, diagonal and from lane 0 of each 2x2 quad, checked against the fine derivatives.
+case quad_ops
+shader 2d/quad_ops.hlsl
+graphics vs=VSMain ps=PSMain
+target 64 64
+tolerance 2
+draw vertices=3
