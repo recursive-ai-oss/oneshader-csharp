@@ -5,6 +5,12 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Shader variants in the build package. A `OneShader` item takes `Axes="ALPHA_TEST;LIGHTING=NONE|LAMBERT|PBR"` (flags and choices; the cartesian product is compiled), or `OneShaderVariant` items name hand-picked define sets. One compile per variant per selected target, in parallel; only variants whose define set, shader, includes or options changed are recompiled. More than 64 variants is error OSH0905 (raise it with `MaxVariants` / `OneShaderMaxVariants`); malformed declarations are OSH0904 and OSH0906. An error that happens under some variants is reported once on the HLSL line with the define set (`(variant ALPHA_TEST=1, LIGHTING=PBR)`).
+- Generated code for a file with variants: `Key` (one property per axis, enums for choices), `Variants.Get(key)` returning a `Variant` with an `Entry` per entry point (`SpirV`, `Msl`, `Wgsl`, `Layout`, ...), `Bindings` and `Pipeline` per variant, and a static class per variant shaped like a single file's class. Constant-buffer, push-constant and vertex structs are generated once when all variants agree on the layout, per variant when they differ. Files without variants generate exactly the same C# as before. See `docs/generated-bindings.md`.
+- A file listed explicitly as a `OneShader` item (to give it metadata) is no longer added a second time by the default `**/*.hlsl` glob.
+- `ShaderCompileCache` (`RecursiveAI.OneShader`): thread-safe, bounded compile cache keyed by source, path, options and the content of the includes the compile read; concurrent calls for one key compile once; `Clear()` empties it.
+- The build task logs `OneShader: N compiled, M up to date.` at low importance (`-v:d`).
+
 ## [1.1.0]
 
 - New package `RecursiveAI.OneShader.Tool`: the `oneshader` command-line compiler (a .NET tool, and a NativeAOT single-file binary with `dotnet publish -r <rid>`). It takes DXC's core flags (`-T`, `-E`, `-D`, `-I`, `-Fo`, `-spirv`, `-O0`..`-O3`, `-Zpr`/`-Zpc`, `-HV 2021`, `-WX`) plus `--target spirv|msl|wgsl` (repeatable), `--all-entries`, `--reflect <file.json>` and `--depfile <file>`. Diagnostics print as `file(line,col): error OSHnnnn: message`; exit code 0, 1 for compile errors, 2 for command-line errors.

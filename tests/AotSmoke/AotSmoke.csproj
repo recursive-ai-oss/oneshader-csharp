@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- Published with NativeAOT to prove the library is trim- and AOT-clean. -->
+  <!-- Published with NativeAOT to prove the library and the generated variant lookup are trim- and AOT-clean. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
+    <RootNamespace>AotSmoke</RootNamespace>
     <IsPackable>false</IsPackable>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <PublishAot>true</PublishAot>
@@ -9,8 +10,20 @@
     <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
     <InvariantGlobalization>true</InvariantGlobalization>
     <TrimmerSingleWarn>false</TrimmerSingleWarn>
+    <SrcDir>$(MSBuildThisFileDirectory)../../src/</SrcDir>
+    <!-- The build task is loaded from the repository's own build output (see the LocalSource sample). -->
+    <OneShaderTaskAssembly>$(ArtifactsPath)/bin/OneShader.Build.Tasks/$(Configuration.ToLowerInvariant())/OneShader.Build.Tasks.dll</OneShaderTaskAssembly>
+    <EnableDefaultOneShaderItems>false</EnableDefaultOneShaderItems>
+    <OneShaderTargets>SpirV;Msl;Wgsl</OneShaderTargets>
+    <!-- Importing the targets from the project body (not from a package) runs before IntermediateOutputPath exists, so name the folder. -->
+    <OneShaderOutputDirectory>$(ArtifactsPath)/obj/AotSmoke/oneshader/</OneShaderOutputDirectory>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/OneShader/OneShader.csproj" />
+    <ProjectReference Include="$(SrcDir)OneShader.Build.Tasks/OneShader.Build.Tasks.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="$(SrcDir)OneShader.Build.Generator/OneShader.Build.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <OneShader Include="Tint.hlsl" Axes="FOG;QUALITY=LOW|HIGH" />
   </ItemGroup>
+  <Import Project="$(SrcDir)OneShader.Build/build/RecursiveAI.OneShader.Build.props" />
+  <Import Project="$(SrcDir)OneShader.Build/build/RecursiveAI.OneShader.Build.targets" />
 </Project>

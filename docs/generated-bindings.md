@@ -25,9 +25,11 @@ Entry points are found from `[shader("vertex")]`, `[shader("pixel")]` and `[shad
 attributes. Item metadata can list them explicitly instead.
 
 Item metadata, all optional: `EntryPoints="VSMain:Vertex;PSMain:Pixel"`, `Defines="A;B=2"`,
-`IncludeDirectories="dir;dir"` (searched after the including file's folder), `Namespace`, `ClassName`.
+`IncludeDirectories="dir;dir"` (searched after the including file's folder), `Namespace`, `ClassName`,
+`Targets`, and for variants `Axes` and `MaxVariants` (see Variants below).
 Project properties: `OneShaderNamespace` (default `$(RootNamespace).Shaders`), `OneShaderDefines`,
-`OneShaderIncludeDirectories`. A shader is compiled again only when it, a file it includes, the
+`OneShaderIncludeDirectories`, `OneShaderMaxVariants`. Listing a file as a `OneShader` item (to give it metadata) is
+fine: the default glob skips files that are already listed. A shader is compiled again only when it, a file it includes, the
 options or the compiler changed.
 
 Errors and warnings are ordinary MSBuild diagnostics on the HLSL line:
@@ -163,6 +165,32 @@ The support types (`ShaderStage`, `ResourceKind`, `VertexFormat`, `VertexAttribu
 `ResourceBinding`) live in `RecursiveAI.OneShader`, which the build package brings in, so a
 rendering layer in another assembly can accept them. When only these types are used, trimming
 removes the compiler from a NativeAOT app.
+
+## Variants
+
+A `OneShader` item with `Axes="ALPHA_TEST;LIGHTING=NONE|LAMBERT|PBR"`, or `OneShaderVariant` items naming the shader,
+is compiled once per define set (see the build package readme for the MSBuild side). The file's class then has this shape
+instead of the single-variant members `Bindings`, `Reflection`, `Pipeline` and the entry-point classes at file level
+(those move into each variant):
+
+| Member | Meaning |
+|---|---|
+| `Frame`, `PushConstants`, `<Entry>Vertex`, other structs | generated once when every variant agrees on the layout |
+| `<Axis>Value` | `enum` per choice axis (`LightingValue { None, Lambert, Pbr }`); flags are `bool`; named sets use `VariantName` |
+| `Key` | `readonly struct`, one property per axis, `Index` (-1 for an enum value out of range), equality |
+| `Variant` | `Index`, `Name`, `Defines`, `Key`, `Bindings`, `Reflection`, `Pipeline` (when any variant has one) and one `Entry` property per entry point |
+| `Entry` | `Stage`, `EntryPoint`, `SpirV`, `Msl`, `MslFunctionName`, `MslVertexBufferIndex`, `Wgsl`, `WgslEntryPoint`, `Stride`, `Inputs`, `ThreadGroupSizeX/Y/Z`, `SubgroupOperations`, `Layout` (each only when some variant has it) |
+| `Variants` | `Count`, `All`, `Get(Key)`, `Get(int)`, `TryGet(Key, out Variant)`, and one static class per variant (`Variants.AlphaTestOn_LightingPbr`) shaped like a single-variant file's class |
+
+Variant order is the cartesian product with the first axis changing slowest; `Key.Index` is the position in `Variants.All`.
+A flag axis contributes `<Axis>On`/`<Axis>Off` to the variant class name, a choice contributes `<Axis><Value>`, joined by `_`;
+all-capitals macro names and values are PascalCased (`ALPHA_TEST` gives `AlphaTest`). Lookup is an array index and the blobs are
+returned through switches over constants: no allocation, no reflection, trim- and AOT-clean.
+
+**When variants disagree about a struct.** Two variants may lay out a `cbuffer` (or push block, or vertex input) differently, for
+example because a member sits under `#if`. Then no shared type is generated for that name; each variant's class declares its own
+(`Variants.<Name>.Frame`, `Variants.<Name>.VSMain.Vertex`), matching that variant's reflection. Resource slots that differ between
+variants are not an error: read them from `Variant.Bindings` and `Variant.Pipeline`.
 
 ## Pipeline layouts
 

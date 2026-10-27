@@ -76,6 +76,9 @@ public sealed class CompileOptions
 
     /// <summary>Keep source-level names in the output where the target allows (SPIR-V debug names, MSL/WGSL identifiers). Default true.</summary>
     public bool KeepNames { get; init; } = true;
+
+    /// <summary>Replaces the include lookup entirely (the compile cache uses it to record what a compile read). Not part of the public API.</summary>
+    internal Preprocessing.IIncludeResolver? ResolverOverride { get; init; }
 }
 
 /// <summary>The compiled code of one entry point for one target.</summary>
