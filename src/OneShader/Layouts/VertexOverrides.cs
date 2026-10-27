@@ -97,17 +97,9 @@ public sealed partial class VertexLayout
             if (overrides.Attributes.TryGetValue(a.Location, out var o))
             {
                 var format = o.Format ?? a.Format;
-                if (FormatSize(format) == 0)
+                if (CheckFormat(a, format) is { } formatError)
                 {
-                    error = Unsupported("Location " + Num(a.Location) + ": " + ((int)format).ToString(CultureInfo.InvariantCulture) + " is not a VertexFormat.");
-                    return false;
-                }
-
-                if (ClassOf(format) != ClassOf(a.Format))
-                {
-                    string shaderType = ClassOf(a.Format) switch { ComponentClass.Float => "float", ComponentClass.Sint => "int", _ => "uint" };
-                    string suits = ClassOf(a.Format) switch { ComponentClass.Float => "a float, unorm, snorm or half format", ComponentClass.Sint => "a Sint format", _ => "a Uint format" };
-                    error = Unsupported("Location " + Num(a.Location) + " is read as " + shaderType + " by the shader, so the format " + format + " does not fit; use " + suits + ", or change the type in the shader.");
+                    error = formatError;
                     return false;
                 }
 
@@ -134,6 +126,24 @@ public sealed partial class VertexLayout
         layout = new VertexLayout(stride, result);
         error = null;
         return true;
+    }
+
+    // Null when the host's format can feed the attribute as the shader reads it.
+    private static LayoutError? CheckFormat(VertexAttribute a, VertexFormat format)
+    {
+        if (FormatSize(format) == 0)
+        {
+            return Unsupported("Location " + Num(a.Location) + ": " + ((int)format).ToString(CultureInfo.InvariantCulture) + " is not a VertexFormat.");
+        }
+
+        if (ClassOf(format) != ClassOf(a.Format))
+        {
+            string shaderType = ClassOf(a.Format) switch { ComponentClass.Float => "float", ComponentClass.Sint => "int", _ => "uint" };
+            string suits = ClassOf(a.Format) switch { ComponentClass.Float => "a float, unorm, snorm or half format", ComponentClass.Sint => "a Sint format", _ => "a Uint format" };
+            return Unsupported("Location " + Num(a.Location) + " is read as " + shaderType + " by the shader, so the format " + format + " does not fit; use " + suits + ", or change the type in the shader.");
+        }
+
+        return null;
     }
 
     private static LayoutError Unsupported(string message) => new(LayoutErrorKind.InvalidVertexInput, message);
