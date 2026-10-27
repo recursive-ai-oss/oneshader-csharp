@@ -1,4 +1,5 @@
 using System;
+using AotSmoke.Shaders;
 using OneShader;
 using OneShader.Diagnostics;
 using OneShader.IR;
@@ -112,6 +113,16 @@ var missing = ShaderCompiler.CompileFile("does-not-exist.hlsl");
 if (missing.Success || missing.Diagnostics[0].Code != ApiDiagnosticCodes.FileNotReadable)
 {
     return 7;
+}
+
+// The generated variant lookup: four variants compiled at build time, picked by a typed key without allocating.
+var variant = Tint.Variants.Get(new Tint.Key(fog: true, quality: Tint.QualityValue.High));
+if (Tint.Variants.Count != 4 || variant.Defines != "FOG=1 QUALITY=HIGH" || variant.PS.SpirV.Length < 20 || variant.PS.SpirV[0] != 0x03
+    || variant.PS.Msl.Length == 0 || variant.PS.Wgsl.Length == 0 || variant.Bindings.Length != 1
+    || Tint.Variants.Get(new Tint.Key(fog: false, quality: Tint.QualityValue.Low)).PS.SpirV.SequenceEqual(variant.PS.SpirV))
+{
+    Console.Error.WriteLine("variant lookup smoke test failed");
+    return 10;
 }
 
 Console.WriteLine("compiled " + result.Reflection.EntryPoints.Count + " entry points");

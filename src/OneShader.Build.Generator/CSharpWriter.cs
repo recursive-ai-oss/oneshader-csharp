@@ -19,7 +19,7 @@ internal sealed class GenProblem
 }
 
 /// <summary>Turns one parsed shader file into C# source.</summary>
-internal sealed class CSharpWriter
+internal sealed partial class CSharpWriter
 {
     // Generated code spells every type out with global:: so a project's own namespaces
     // (a namespace called "OneShader" or "System", say) cannot change what it means.
@@ -47,11 +47,11 @@ internal sealed class CSharpWriter
         "Stage", "EntryPoint", "SpirV", "Msl", "MslFunctionName", "MslVertexBufferIndex", "Wgsl", "WgslEntryPoint", "Vertex", "Stride", "Inputs", "ThreadGroupSizeX", "ThreadGroupSizeY", "ThreadGroupSizeZ", "SubgroupOperations",
     };
 
-    private readonly ShaderFile _file;
+    private ShaderFile _file;
     private readonly string _className;
     private readonly List<GenProblem> _problems = new List<GenProblem>();
-    private readonly StringBuilder _sb = new StringBuilder();
-    private readonly HashSet<string> _topNames = new HashSet<string>(StringComparer.Ordinal);
+    private StringBuilder _sb = new StringBuilder();
+    private HashSet<string> _topNames = new HashSet<string>(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _structBySignature = new Dictionary<string, string>(StringComparer.Ordinal);
     private readonly List<KeyValuePair<string, TypeNode>> _structQueue = new List<KeyValuePair<string, TypeNode>>();
     private int _indent;
@@ -351,7 +351,7 @@ internal sealed class CSharpWriter
 
         string baseName = TypeName(s.Name.Length == 0 ? "Struct" : s.Name);
         string name = baseName;
-        for (int n = 1; !_topNames.Add(name); n++)
+        for (int n = 1; !ClaimTopName(name); n++)
         {
             name = baseName + "_" + n.ToString(CultureInfo.InvariantCulture);
         }
@@ -918,6 +918,7 @@ internal sealed class CSharpWriter
         Line("");
         Line("/// <summary>The pipeline layout of this file's " + (graphics ? "vertex and pixel" : "compute") + " entry point" + (graphics ? "s" : "") + " as plain data; convert it with <c>ToVulkan</c>, <c>TryToMetal</c> or <c>TryToWebGpu</c>.</summary>");
         Line("public static global::OneShader.Layouts.PipelineLayout Pipeline => s_pipeline ??= global::OneShader.Layouts.PipelineLayout.Create(new global::OneShader.Layouts.EntryLayout[] { " + args + " });");
+        _pipelineEmitted = true;
     }
 
     // The entry point's share of the bindings as plain data, so a host can build a pipeline layout without parsing the reflection.
@@ -1004,7 +1005,7 @@ internal sealed class CSharpWriter
         Line("};");
     }
 
-    private void EmitVertex(EntryNode e)
+    private static List<VariableNode> VertexAttributes(EntryNode e)
     {
         var attrs = new List<VariableNode>();
         foreach (var v in e.Inputs)
@@ -1015,46 +1016,63 @@ internal sealed class CSharpWriter
             }
         }
 
-        if (attrs.Count > 0)
-        {
-            var ctx = new StructContext("Vertex");
-            ctx.Names.Remove("Size"); // a vertex has no Size constant
-            foreach (var v in attrs)
-            {
-                string n = v.Name;
-                int dot = n.LastIndexOf('.');
-                string shortName = dot >= 0 ? Sanitize(n.Substring(dot + 1)) : Sanitize(n);
-                if (ctx.Names.Contains(shortName))
-                {
-                    shortName = Sanitize(n);
-                }
+        return attrs;
+    }
 
-                AddVertexField(ctx, shortName, v);
+    // Returns false when a field could not be generated (a problem has been recorded).
+    private bool EmitVertexStruct(EntryNode e, List<VariableNode> attrs, string structName)
+    {
+        var ctx = new StructContext(structName);
+        ctx.Names.Remove("Size"); // a vertex has no Size constant
+        foreach (var v in attrs)
+        {
+            string n = v.Name;
+            int dot = n.LastIndexOf('.');
+            string shortName = dot >= 0 ? Sanitize(n.Substring(dot + 1)) : Sanitize(n);
+            if (ctx.Names.Contains(shortName))
+            {
+                shortName = Sanitize(n);
             }
 
-            if (ctx.Failed)
+            AddVertexField(ctx, shortName, v);
+        }
+
+        if (ctx.Failed)
+        {
+            return false;
+        }
+
+        Line("[global::System.Runtime.InteropServices.StructLayout(global::System.Runtime.InteropServices.LayoutKind.Explicit, Size = " + Lit(e.Stride) + ")]");
+        Line("public struct " + structName);
+        Line("{");
+        _indent++;
+        bool first = true;
+        foreach (var m in ctx.Members)
+        {
+            if (!first)
+            {
+                Line("");
+            }
+
+            first = false;
+            Line(m);
+        }
+
+        _indent--;
+        Line("}");
+        return true;
+    }
+
+    private void EmitVertex(EntryNode e)
+    {
+        var attrs = VertexAttributes(e);
+        if (attrs.Count > 0 && !HasSharedVertex(e))
+        {
+            if (!EmitVertexStruct(e, attrs, "Vertex"))
             {
                 return;
             }
 
-            Line("[global::System.Runtime.InteropServices.StructLayout(global::System.Runtime.InteropServices.LayoutKind.Explicit, Size = " + Lit(e.Stride) + ")]");
-            Line("public struct Vertex");
-            Line("{");
-            _indent++;
-            bool first = true;
-            foreach (var m in ctx.Members)
-            {
-                if (!first)
-                {
-                    Line("");
-                }
-
-                first = false;
-                Line(m);
-            }
-
-            _indent--;
-            Line("}");
             Line("");
         }
 

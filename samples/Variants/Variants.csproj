@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Shader variants: Material.hlsl is compiled once per combination of its keyword axes
+    (ALPHA_TEST on/off x LIGHTING NONE/LAMBERT/PBR = 6 variants) for SPIR-V, Metal and WebGPU.
+    The generated Material.Variants.Get(key) returns the compiled code of one combination.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>VariantsSample</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <OneShaderTargets>SpirV;Msl;Wgsl</OneShaderTargets>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="RecursiveAI.OneShader.Build" Version="0.1.0-dev.*" />
+    <!-- Listing the file gives it metadata; the default glob skips files that are already listed. -->
+    <OneShader Include="Shaders/Material.hlsl" Axes="ALPHA_TEST;LIGHTING=NONE|LAMBERT|PBR" />
+  </ItemGroup>
+</Project>

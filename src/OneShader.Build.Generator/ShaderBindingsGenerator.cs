@@ -61,10 +61,50 @@ public sealed class ShaderBindingsGenerator : IIncrementalGenerator
         // Inputs arrive in project order; sort so output does not depend on item order.
         parsed.Sort(static (a, b) => string.CompareOrdinal(a.Value.Source, b.Value.Source));
 
+        // The output of one variant is generated with its manifest, not on its own.
+        var variantFiles = new Dictionary<string, ShaderFile>(StringComparer.Ordinal);
+        foreach (var pair in parsed)
+        {
+            if (pair.Value.VariantKey.Length > 0)
+            {
+                variantFiles[pair.Value.Source + "\n" + pair.Value.VariantKey] = pair.Value;
+            }
+        }
+
         var taken = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var pair in parsed)
         {
             var file = pair.Value;
+            if (file.VariantKey.Length > 0)
+            {
+                continue;
+            }
+
+            bool isSet = file.VariantMode.Length > 0;
+            var members = new List<ShaderFile>();
+            if (isSet)
+            {
+                var refs = new List<VariantRef>(file.VariantRefs);
+                refs.Sort(static (x, y) => x.Index.CompareTo(y.Index));
+                file.VariantRefs = refs;
+                foreach (var r in refs)
+                {
+                    if (!variantFiles.TryGetValue(file.Source + "\n" + r.Key, out var member))
+                    {
+                        spc.ReportDiagnostic(Diagnostic.Create(BadFileRule, Location.Create(pair.Key.Path, default, default), "The output for a variant of '" + file.Source + "' is missing. Rebuild the project; if it persists, delete the obj/ folder."));
+                        members.Clear();
+                        break;
+                    }
+
+                    members.Add(member);
+                }
+
+                if (members.Count == 0 || members.Count != refs.Count)
+                {
+                    continue;
+                }
+            }
+
             string cls = CSharpWriter.ClassNameFor(file);
             string key = file.Namespace + "." + cls;
             if (taken.TryGetValue(key, out var other))
@@ -77,7 +117,17 @@ public sealed class ShaderBindingsGenerator : IIncrementalGenerator
             }
 
             taken[key] = file.Source;
-            string? text = CSharpWriter.Generate(file, out var problems);
+            string? text;
+            List<GenProblem> problems;
+            if (isSet)
+            {
+                text = CSharpWriter.GenerateVariants(file, members, out problems);
+            }
+            else
+            {
+                text = CSharpWriter.Generate(file, out problems);
+            }
+
             foreach (var p in problems)
             {
                 var rule = p.Code == Codes.NameClash ? NameClashRule : UnsupportedRule;
