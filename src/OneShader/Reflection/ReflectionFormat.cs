@@ -33,16 +33,34 @@ public static class ReflectionFormat
         Line(sb, 0, "targets", ("list", List(targets)));
         foreach (var r in model.Resources)
         {
-            Line(
-                sb,
-                0,
-                "resource",
-                ("name", Q(r.Name)),
-                ("kind", r.Kind.ToString()),
-                ("count", N(r.Count)),
-                ("stages", Stages(r.Stages)),
-                ("rtype", r.ResourceType.ToString()),
-                ("hlsl", Q(r.HlslType)));
+            if (r.ImageFormat.Length == 0)
+            {
+                Line(
+                    sb,
+                    0,
+                    "resource",
+                    ("name", Q(r.Name)),
+                    ("kind", r.Kind.ToString()),
+                    ("count", N(r.Count)),
+                    ("stages", Stages(r.Stages)),
+                    ("rtype", r.ResourceType.ToString()),
+                    ("hlsl", Q(r.HlslType)));
+            }
+            else
+            {
+                // Written only when present, so files for shaders without storage-image formats are unchanged.
+                Line(
+                    sb,
+                    0,
+                    "resource",
+                    ("name", Q(r.Name)),
+                    ("kind", r.Kind.ToString()),
+                    ("count", N(r.Count)),
+                    ("stages", Stages(r.Stages)),
+                    ("rtype", r.ResourceType.ToString()),
+                    ("hlsl", Q(r.HlslType)),
+                    ("format", Q(r.ImageFormat)));
+            }
             foreach (var s in r.Slots)
             {
                 Line(sb, 1, "slot", ("target", s.Target.ToString()), ("set", N(s.Set)), ("binding", N(s.Binding)));
@@ -397,6 +415,7 @@ public static class ReflectionFormat
                 Stages = ParseStages(n, Str(n, "stages")),
                 ResourceType = Enm<ResourceTypeKind>(n, Str(n, "rtype")),
                 HlslType = Str(n, "hlsl"),
+                ImageFormat = n.Attrs.TryGetValue("format", out var imageFormat) ? imageFormat : "",
                 Slots = slots,
                 CounterSlots = counters,
                 Layout = layout,

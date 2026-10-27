@@ -70,6 +70,52 @@ set, binding, kind, array size and stage visibility, the entry points present an
 sizes. Edits to function bodies, new entry points, and resources that become visible to fewer stages are compatible.
 `ShaderCompiler.Compile` can be called from several threads at once. `samples/HotReload` is a complete console loop.
 
+## Pipeline layouts
+
+`OneShader.Layouts` turns a shader into what a renderer creates, as plain data with no graphics API behind it: descriptor set
+layouts and push-constant ranges for Vulkan, per-stage argument indices for Metal, bind group layouts for WebGPU, and vertex
+input for all three. It reads the generated classes (no parsing) or a `ShaderReflection` (for shaders compiled at run time).
+
+```csharp
+using OneShader.Layouts;
+
+// Built with the project: one call per target.
+PipelineLayout pipeline = Shaders.Sprite.Pipeline;                    // vertex + pixel entry points of the file
+var vulkan = pipeline.ToVulkan();                                     // SetLayouts[i].Bindings, PushConstantRanges
+foreach (var set in vulkan.SetLayouts)
+    foreach (var b in set.Bindings)
+        Console.WriteLine($"set {set.Set} binding {b.Binding}: {b.DescriptorType} x{b.DescriptorCount} stages {b.StageFlags}");
+
+var vertex = Shaders.Sprite.VSMain.Layout.Vertex!.ToVulkan(VertexStepMode.Instance);   // VkVertexInputBinding/AttributeDescription data
+
+// Any combination, and conflicts come back as values:
+if (!PipelineLayout.TryCreate([Quad.VSMain.Layout, Quad.PSBlur.Layout], out var blur, out var error))
+    Console.WriteLine(error);
+
+// Compiled at run time:
+EntryLayout.TryCreate(result.Reflection!, "PSMain", out var ps, out _);
+```
+
+`PipelineLayout.TryCreate` merges entry points that run together: bindings at the same set and binding must agree on kind, count
+and type and get the union of their stages; push-constant blocks of the same name and size are shared. It returns a
+`LayoutError` (`ResourceConflict`, `DuplicateStage`, ...) with the message to show, never an exception. The three conversions:
+
+- `ToVulkan(VulkanLayoutOptions?)`: a `DescriptorSetLayoutInfo` per set from 0 (unused sets are empty, as Vulkan needs them),
+  and a `PushConstantRangeInfo` per block, using the numeric values of `VkDescriptorType`, `VkShaderStageFlagBits` and
+  `VkFormat`. `DynamicBuffers` names buffers to declare as dynamic-offset descriptors.
+- `TryToMetal(...)`: for each stage, the `[[buffer(n)]]`, `[[texture(n)]]` and `[[sampler(n)]]` index of every resource (an array
+  of N takes N indices), the buffer index to pass to `setVertexBytes`/`setFragmentBytes`/`setBytes`, and `MetalStageLayout.TryFind(set, binding)`
+  to go from a Vulkan-style slot to the index. `VertexLayout.ToMetal(bufferIndex, step)` gives the `MTLVertexDescriptor` data
+  (default buffer index 30; pass the generated `MslVertexBufferIndex`). Fails with `MissingTarget` if `Msl` was not built.
+- `TryToWebGpu(..., WebGpuLayoutOptions?)`: `GPUBindGroupLayoutEntry` data (`ToWebGpuString()` gives the API strings), with the
+  push-constant block as a uniform buffer entry at the group and binding the compiler reserved, and `VertexLayout.ToWebGpu(step)` for
+  `GPUVertexBufferLayout`. What WebGPU cannot express (resource arrays, typed buffers, 1D array textures, storage textures without
+  `[[vk::image_format]]`) is an `Unsupported` error that says what to change. Reflection does not record whether a texture is a
+  depth texture sampled with a comparison sampler, or how a storage texture is accessed, so those come from `WebGpuLayoutOptions`
+  (`DepthTextures`, `StorageAccess`, ...); defaults are `float` textures and `write-only` storage textures.
+
+Creating layouts allocates; do it when a shader loads, not per frame.
+
 ## What works
 
 - Vertex, pixel and compute shaders in modern HLSL (HLSL 2021): structs, functions, constant

@@ -114,7 +114,28 @@ public static partial class Particles
         };
 
         public const uint ThreadGroupSizeX = 8u, ThreadGroupSizeY = 8u, ThreadGroupSizeZ = 1u;
+
+        private static global::OneShader.Layouts.EntryLayout? s_layout;
+
+        /// <summary>The resources, push-constant block and vertex input of this entry point as plain data; combine entry points with <c>PipelineLayout</c>.</summary>
+        public static global::OneShader.Layouts.EntryLayout Layout => s_layout ??= CreateLayout();
+
+        private static global::OneShader.Layouts.EntryLayout CreateLayout()
+        {
+            var resources = new global::OneShader.Layouts.ResourceLayout[]
+            {
+                new global::OneShader.Layouts.ResourceLayout("params", 0u, 0u, 1u, global::OneShader.ResourceKind.ConstantBuffer, global::OneShader.ShaderStages.Compute, global::OneShader.Layouts.LayoutSlots.None, global::OneShader.Types.ResourceTypeKind.ConstantBuffer, global::OneShader.Types.ScalarKind.Float, false, ""),
+                new global::OneShader.Layouts.ResourceLayout("particles", 0u, 1u, 1u, global::OneShader.ResourceKind.StorageBuffer, global::OneShader.ShaderStages.Compute, global::OneShader.Layouts.LayoutSlots.None, global::OneShader.Types.ResourceTypeKind.RWStructuredBuffer, global::OneShader.Types.ScalarKind.Float, false, ""),
+                new global::OneShader.Layouts.ResourceLayout("light_list", 1u, 0u, 1u, global::OneShader.ResourceKind.ReadOnlyStorageBuffer, global::OneShader.ShaderStages.Compute, global::OneShader.Layouts.LayoutSlots.None, global::OneShader.Types.ResourceTypeKind.StructuredBuffer, global::OneShader.Types.ScalarKind.Float, false, ""),
+            };
+            return new global::OneShader.Layouts.EntryLayout(EntryPoint, Stage, resources, null, null, (ThreadGroupSizeX, ThreadGroupSizeY, ThreadGroupSizeZ));
+        }
     }
+
+    private static global::OneShader.Layouts.PipelineLayout? s_pipeline;
+
+    /// <summary>The pipeline layout of this file's compute entry point as plain data; convert it with <c>ToVulkan</c>, <c>TryToMetal</c> or <c>TryToWebGpu</c>.</summary>
+    public static global::OneShader.Layouts.PipelineLayout Pipeline => s_pipeline ??= global::OneShader.Layouts.PipelineLayout.Create(new global::OneShader.Layouts.EntryLayout[] { Csmain.Layout });
 
     public static global::System.ReadOnlySpan<byte> ReflectionData => new byte[]
     {

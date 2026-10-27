@@ -112,6 +112,20 @@ public static partial class SpriteBatch
         };
 
         public static global::System.ReadOnlySpan<global::OneShader.VertexAttribute> Inputs => s_inputs;
+
+        private static global::OneShader.Layouts.EntryLayout? s_layout;
+
+        /// <summary>The resources, push-constant block and vertex input of this entry point as plain data; combine entry points with <c>PipelineLayout</c>.</summary>
+        public static global::OneShader.Layouts.EntryLayout Layout => s_layout ??= CreateLayout();
+
+        private static global::OneShader.Layouts.EntryLayout CreateLayout()
+        {
+            var resources = new global::OneShader.Layouts.ResourceLayout[]
+            {
+                new global::OneShader.Layouts.ResourceLayout("frame", 0u, 0u, 1u, global::OneShader.ResourceKind.ConstantBuffer, global::OneShader.ShaderStages.Vertex, global::OneShader.Layouts.LayoutSlots.None, global::OneShader.Types.ResourceTypeKind.ConstantBuffer, global::OneShader.Types.ScalarKind.Float, false, ""),
+            };
+            return new global::OneShader.Layouts.EntryLayout(EntryPoint, Stage, resources, null, new global::OneShader.Layouts.VertexLayout(Stride, s_inputs), default);
+        }
     }
 
     public static class Psmain
@@ -124,7 +138,27 @@ public static partial class SpriteBatch
             0x03, 0x02, 0x23, 0x07, 0x23, 0x2a, 0x31, 0x38, 0x3f, 0x46, 0x4d, 0x54, 0x5b, 0x62, 0x69, 0x70, 0x77, 0x7e, 0x85, 0x8c, 0x93, 0x9a, 0xa1, 0xa8,
             0xaf, 0xb6, 0xbd, 0xc4,
         };
+
+        private static global::OneShader.Layouts.EntryLayout? s_layout;
+
+        /// <summary>The resources, push-constant block and vertex input of this entry point as plain data; combine entry points with <c>PipelineLayout</c>.</summary>
+        public static global::OneShader.Layouts.EntryLayout Layout => s_layout ??= CreateLayout();
+
+        private static global::OneShader.Layouts.EntryLayout CreateLayout()
+        {
+            var resources = new global::OneShader.Layouts.ResourceLayout[]
+            {
+                new global::OneShader.Layouts.ResourceLayout("atlas", 0u, 1u, 1u, global::OneShader.ResourceKind.SampledTexture, global::OneShader.ShaderStages.Pixel, global::OneShader.Layouts.LayoutSlots.None, global::OneShader.Types.ResourceTypeKind.Texture2D, global::OneShader.Types.ScalarKind.Float, false, ""),
+                new global::OneShader.Layouts.ResourceLayout("atlas_sampler", 0u, 2u, 1u, global::OneShader.ResourceKind.Sampler, global::OneShader.ShaderStages.Pixel, global::OneShader.Layouts.LayoutSlots.None, global::OneShader.Types.ResourceTypeKind.Texture1D, global::OneShader.Types.ScalarKind.Float, false, ""),
+            };
+            return new global::OneShader.Layouts.EntryLayout(EntryPoint, Stage, resources, null, null, default);
+        }
     }
+
+    private static global::OneShader.Layouts.PipelineLayout? s_pipeline;
+
+    /// <summary>The pipeline layout of this file's vertex and pixel entry points as plain data; convert it with <c>ToVulkan</c>, <c>TryToMetal</c> or <c>TryToWebGpu</c>.</summary>
+    public static global::OneShader.Layouts.PipelineLayout Pipeline => s_pipeline ??= global::OneShader.Layouts.PipelineLayout.Create(new global::OneShader.Layouts.EntryLayout[] { Vsmain.Layout, Psmain.Layout });
 
     public static global::System.ReadOnlySpan<byte> ReflectionData => new byte[]
     {

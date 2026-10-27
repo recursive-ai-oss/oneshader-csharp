@@ -278,6 +278,20 @@ public static partial class Matrices
         };
 
         public static global::System.ReadOnlySpan<global::OneShader.VertexAttribute> Inputs => s_inputs;
+
+        private static global::OneShader.Layouts.EntryLayout? s_layout;
+
+        /// <summary>The resources, push-constant block and vertex input of this entry point as plain data; combine entry points with <c>PipelineLayout</c>.</summary>
+        public static global::OneShader.Layouts.EntryLayout Layout => s_layout ??= CreateLayout();
+
+        private static global::OneShader.Layouts.EntryLayout CreateLayout()
+        {
+            var resources = new global::OneShader.Layouts.ResourceLayout[]
+            {
+                new global::OneShader.Layouts.ResourceLayout("Mats", 0u, 0u, 1u, global::OneShader.ResourceKind.ConstantBuffer, global::OneShader.ShaderStages.Vertex, global::OneShader.Layouts.LayoutSlots.None, global::OneShader.Types.ResourceTypeKind.ConstantBuffer, global::OneShader.Types.ScalarKind.Float, false, ""),
+            };
+            return new global::OneShader.Layouts.EntryLayout(EntryPoint, Stage, resources, null, new global::OneShader.Layouts.VertexLayout(Stride, s_inputs), default);
+        }
     }
 
     public static global::System.ReadOnlySpan<byte> ReflectionData => new byte[]

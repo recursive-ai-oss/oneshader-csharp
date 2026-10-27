@@ -223,6 +223,9 @@ public sealed class ResourceInfo
     /// <summary>The resource family, which tells textures' dimensionality and buffer flavour.</summary>
     public ResourceTypeKind ResourceType { get; init; }
 
+    /// <summary>For read-write textures declared with <c>[[vk::image_format("...")]]</c>: the format name as written (<c>rgba8</c>, <c>r32f</c>); empty otherwise.</summary>
+    public string ImageFormat { get; init; } = "";
+
     /// <summary>One slot per enabled target, in <see cref="CompileTarget"/> order.</summary>
     public IReadOnlyList<TargetSlot> Slots { get; init; } = [];
 

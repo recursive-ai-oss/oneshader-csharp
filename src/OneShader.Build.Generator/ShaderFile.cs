@@ -59,6 +59,15 @@ internal sealed class ResourceNode
     public bool HasMslCounter;
     public uint MslCounterIndex;
     public TypeNode? Layout;
+
+    /// <summary>The HLSL resource family (<c>Texture2D</c>, <c>RWTexture2D</c>, ...), as the <c>ResourceTypeKind</c> member name.</summary>
+    public string ResourceType = "ConstantBuffer";
+
+    /// <summary>The HLSL type as spelled; empty for a cbuffer.</summary>
+    public string Hlsl = "";
+
+    /// <summary>The storage-image format name, empty if none.</summary>
+    public string ImageFormat = "";
 }
 
 /// <summary>A push-constant block: its layout, stage visibility and where each selected target takes the bytes.</summary>
@@ -92,6 +101,12 @@ internal sealed class EntryNode
     public uint Z;
     public uint Stride;
     public List<VariableNode> Inputs = new List<VariableNode>();
+
+    /// <summary>Names of the resources the entry point uses, in the order the reflection lists them.</summary>
+    public List<string> Uses = new List<string>();
+
+    /// <summary>The name of the push-constant block it reads, or empty.</summary>
+    public string PushUse = "";
 }
 
 /// <summary>The text of one entry point for one text target.</summary>
@@ -283,6 +298,9 @@ internal sealed class ShaderFile
             Kind = Str(r, "kind"),
             Count = U(r, "count"),
             Stages = Str(r, "stages"),
+            ResourceType = r.Attrs.TryGetValue("rtype", out var rtype) ? rtype : "ConstantBuffer",
+            Hlsl = r.Attrs.TryGetValue("hlsl", out var hlsl) ? hlsl : "",
+            ImageFormat = r.Attrs.TryGetValue("format", out var imageFormat) ? imageFormat : "",
         };
         bool spirvSlot = false, spirvCounter = false, primary = false;
         while (pos < recs.Count && recs[pos].Depth > 0)
@@ -470,6 +488,14 @@ internal sealed class ShaderFile
                     Format = Str(c, "format"),
                     Offset = U(c, "offset"),
                 });
+            }
+            else if (c.Keyword == "uses")
+            {
+                e.Uses.Add(Str(c, "name"));
+            }
+            else if (c.Keyword == "pushuse")
+            {
+                e.PushUse = Str(c, "name");
             }
         }
 
