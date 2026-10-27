@@ -103,11 +103,12 @@ jobs:
         run: dotnet test --solution OneShader.slnx -c Release --no-build --results-directory "$ONESHADER_ARTIFACTS/TestResults"
 
       - name: Pack
-        # Both packages, from the binaries the tests ran on. They share one version. The library's
+        # The three packages, from the binaries the tests ran on. They share one version. The library's
         # symbols come out as a .snupkg.
         run: |
           dotnet pack src/OneShader -c Release --no-build -o "$RUNNER_TEMP/packages"
           dotnet pack src/OneShader.Build -c Release --no-build -o "$RUNNER_TEMP/packages"
+          dotnet pack src/OneShader.Tool -c Release --no-build -o "$RUNNER_TEMP/packages"
           ls -l "$RUNNER_TEMP/packages"
 
       - name: Attest build provenance

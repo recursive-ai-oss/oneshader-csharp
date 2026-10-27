@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" Version="3.*" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/OneShader.Tool/OneShader.Tool.csproj" />
+    <ProjectReference Include="../../src/OneShader/OneShader.csproj" />
+    <!-- Finds dxc and spirv-val the same way the compiler tests do. -->
+    <Compile Include="../OneShader.Tests/Oracles.cs" Link="Oracles.cs" />
+  </ItemGroup>
+</Project>
