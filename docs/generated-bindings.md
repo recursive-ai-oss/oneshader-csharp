@@ -187,6 +187,8 @@ member of `Specialization` (`Size`, `Count`, `Defaults`, ...) are reported by th
 `makeFunction(name:constantValues:)` even to get the defaults (see the MSL backend notes). `CompileOptions.SpecializationOverrides` (runtime compiler API) fixes
 constants at compile time instead.
 
+In a variant file the same `SpecializationConstants` and `Specialization` types are generated inside each variant (`Variants.<Name>.Specialization`), because the set of constants can differ per variant; the aggregate `Entry.SpecConstantIds` returns the ids the looked-up variant reads.
+
 ## Variants
 
 A `OneShader` item with `Axes="ALPHA_TEST;LIGHTING=NONE|LAMBERT|PBR"`, or `OneShaderVariant` items naming the shader,
