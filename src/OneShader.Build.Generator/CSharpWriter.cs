@@ -44,7 +44,7 @@ internal sealed class CSharpWriter
     // Names an entry-point class declares itself; a class cannot share its name with a member.
     private static readonly HashSet<string> EntryMembers = new HashSet<string>(StringComparer.Ordinal)
     {
-        "Stage", "EntryPoint", "SpirV", "Msl", "MslFunctionName", "MslVertexBufferIndex", "Wgsl", "WgslEntryPoint", "Vertex", "Stride", "Inputs", "ThreadGroupSizeX", "ThreadGroupSizeY", "ThreadGroupSizeZ",
+        "Stage", "EntryPoint", "SpirV", "Msl", "MslFunctionName", "MslVertexBufferIndex", "Wgsl", "WgslEntryPoint", "Vertex", "Stride", "Inputs", "ThreadGroupSizeX", "ThreadGroupSizeY", "ThreadGroupSizeZ", "SubgroupOperations",
     };
 
     private readonly ShaderFile _file;
@@ -855,6 +855,13 @@ internal sealed class CSharpWriter
             Line("public const uint ThreadGroupSizeX = " + Num(e.X) + ", ThreadGroupSizeY = " + Num(e.Y) + ", ThreadGroupSizeZ = " + Num(e.Z) + ";");
         }
 
+        if (e.Subgroup != 0)
+        {
+            Line("");
+            Line("/// <summary>The subgroup (wave) operations this entry point uses: a Vulkan host checks them against <c>subgroupSupportedOperations</c>, a WebGPU host requests the <c>subgroups</c> feature, a Metal host needs SIMD-group support.</summary>");
+            Line("public const global::OneShader.Reflection.SubgroupOperations SubgroupOperations = (global::OneShader.Reflection.SubgroupOperations)" + Num(e.Subgroup) + ";");
+        }
+
         // An entry point that happens to be called Layout would clash with its own member; it just goes without.
         if (TypeName(e.Name) != "Layout")
         {
@@ -966,7 +973,7 @@ internal sealed class CSharpWriter
 
         string vertex = e.Stage == "Vertex" ? "new global::OneShader.Layouts.VertexLayout(Stride, s_inputs)" : "null";
         string group = e.Stage == "Compute" ? "(ThreadGroupSizeX, ThreadGroupSizeY, ThreadGroupSizeZ)" : "default";
-        Line("return new global::OneShader.Layouts.EntryLayout(EntryPoint, Stage, resources, " + push + ", " + vertex + ", " + group + ");");
+        Line("return new global::OneShader.Layouts.EntryLayout(EntryPoint, Stage, resources, " + push + ", " + vertex + ", " + group + (e.Subgroup == 0 ? "" : ", SubgroupOperations") + ");");
         _indent--;
         Line("}");
     }

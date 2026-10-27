@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using OneShader.Layouts;
 using OneShader.Reflection;
 using Xunit;
 
@@ -259,5 +260,34 @@ public sealed class WaveTests
         var r = Compile(Src, CompileTarget.Msl);
         Assert.True(r.Success, Describe(r));
         Assert.Equal(3, Text(r, CompileTarget.Msl).Split("simd_sum(", StringSplitOptions.None).Length - 1);
+    }
+
+    [Fact]
+    public void LayoutsCarryTheSubgroupRequirementToEveryHost()
+    {
+        const string Src = """
+            [[vk::binding(0, 0)]] RWStructuredBuffer<uint> Out;
+            [shader("compute")] [numthreads(32, 1, 1)] void Wave(uint id : SV_DispatchThreadID) { Out[id] = WaveActiveSum(id) + WaveReadLaneAt(id, 0); }
+            [shader("compute")] [numthreads(32, 1, 1)] void Plain(uint id : SV_DispatchThreadID) { Out[id] = id; }
+            """;
+        var r = Compile(Src);
+        Assert.True(r.Success, Describe(r));
+        Assert.True(EntryLayout.TryCreate(r.Reflection!, "Wave", out var wave, out var error), error?.Message);
+        Assert.True(EntryLayout.TryCreate(r.Reflection!, "Plain", out var plain, out error), error?.Message);
+        Assert.Equal(SubgroupOperations.Arithmetic | SubgroupOperations.Shuffle, wave!.SubgroupOperations);
+        Assert.Equal(SubgroupOperations.None, plain!.SubgroupOperations);
+
+        var withWave = PipelineLayout.Create(wave);
+        Assert.Equal(wave.SubgroupOperations, withWave.SubgroupOperations);
+        Assert.Equal(wave.SubgroupOperations, withWave.ToVulkan().SubgroupOperations);
+        Assert.True(withWave.TryToWebGpu(out var web, out error), error?.Message);
+        Assert.Equal(["subgroups"], web!.RequiredFeatures);
+        Assert.True(withWave.TryToMetal(out var metal, out error), error?.Message);
+        Assert.Equal(wave.SubgroupOperations, metal!.SubgroupOperations);
+
+        var without = PipelineLayout.Create(plain);
+        Assert.Equal(SubgroupOperations.None, without.ToVulkan().SubgroupOperations);
+        Assert.True(without.TryToWebGpu(out var plainWeb, out error), error?.Message);
+        Assert.Empty(plainWeb!.RequiredFeatures!);
     }
 }

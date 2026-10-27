@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using OneShader.Reflection;
 using OneShader.Types;
 
 namespace OneShader.Layouts.WebGpu
@@ -229,7 +230,8 @@ namespace OneShader.Layouts.WebGpu
     /// <summary>The WebGPU description of a pipeline layout.</summary>
     /// <param name="Groups">One bind group layout per group from 0; the emulated push-constant buffer is an entry in its group.</param>
     /// <param name="PushConstants">The emulated push-constant blocks (usually none or one).</param>
-    public sealed record WebGpuPipelineLayout(IReadOnlyList<BindGroupLayoutInfo> Groups, IReadOnlyList<PushConstantEmulation> PushConstants);
+    /// <param name="RequiredFeatures">WebGPU features the device must be created with (<c>requiredFeatures</c>): <c>subgroups</c> when the shaders use wave operations.</param>
+    public sealed record WebGpuPipelineLayout(IReadOnlyList<BindGroupLayoutInfo> Groups, IReadOnlyList<PushConstantEmulation> PushConstants, IReadOnlyList<string>? RequiredFeatures = null);
 
     /// <summary>One <c>GPUVertexAttribute</c>.</summary>
     /// <param name="Format">The <c>GPUVertexFormat</c> string.</param>
@@ -345,7 +347,7 @@ namespace OneShader.Layouts
                 result[i] = new BindGroupLayoutInfo((uint)i, groups[i].ToArray());
             }
 
-            layout = new WebGpuPipelineLayout(result, pushes.ToArray());
+            layout = new WebGpuPipelineLayout(result, pushes.ToArray(), SubgroupOperations == SubgroupOperations.None ? [] : ["subgroups"]);
             error = null;
             return true;
         }

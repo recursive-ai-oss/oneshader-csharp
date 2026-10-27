@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using OneShader.Reflection;
 
 namespace OneShader.Layouts.Metal
 {
@@ -74,10 +75,14 @@ namespace OneShader.Layouts.Metal
     /// <summary>The Metal binding tables of a pipeline, one per stage that is present.</summary>
     public sealed class MetalPipelineLayout
     {
-        internal MetalPipelineLayout(MetalStageLayout[] stages)
+        internal MetalPipelineLayout(MetalStageLayout[] stages, SubgroupOperations subgroupOperations = SubgroupOperations.None)
         {
             Stages = stages;
+            SubgroupOperations = subgroupOperations;
         }
+
+        /// <summary>The subgroup operations the shaders use (Metal SIMD-group and quad functions); empty when none, otherwise the GPU family must support them.</summary>
+        public SubgroupOperations SubgroupOperations { get; }
 
         /// <summary>One entry per stage of the pipeline, in vertex, pixel, compute order.</summary>
         public IReadOnlyList<MetalStageLayout> Stages { get; }
@@ -278,7 +283,7 @@ namespace OneShader.Layouts
                 stages.Add(new MetalStageLayout(stage, args.ToArray(), push));
             }
 
-            layout = new MetalPipelineLayout(stages.ToArray());
+            layout = new MetalPipelineLayout(stages.ToArray(), SubgroupOperations);
             error = null;
             return true;
         }

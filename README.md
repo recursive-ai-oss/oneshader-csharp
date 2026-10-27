@@ -138,7 +138,7 @@ optimized SPIR-V, Metal Shading Language and WGSL with reflection; the build
 package embeds each selected target next to generated C# bindings (the
 `OneShaderTargets` switch), and the runtime API supports hot reload with a
 layout-compatibility check. Not supported: geometry, tessellation, mesh and
-ray-tracing stages, unbounded resource arrays and wave intrinsics, and some
+ray-tracing stages, unbounded resource arrays and the SM 6.5 partitioned wave operations (`WaveMatch`, `WaveMultiPrefix*`), and some
 features on some targets (the backend pages list them). The public API and the
 generated code follow [Semantic Versioning](https://semver.org/); the
 [changelog](CHANGELOG.md) lists what each release changes.

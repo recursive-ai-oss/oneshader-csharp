@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using OneShader.Reflection;
 
 namespace OneShader.Layouts.Vulkan
 {
@@ -189,7 +190,8 @@ namespace OneShader.Layouts.Vulkan
     /// <summary>What a <c>VkPipelineLayoutCreateInfo</c> is made of: one descriptor set layout per set, in set order, and the push-constant ranges.</summary>
     /// <param name="SetLayouts">One entry per set from 0; <c>SetLayouts[i].Set == i</c>.</param>
     /// <param name="PushConstantRanges">At most one range per stage.</param>
-    public sealed record PipelineLayoutInfo(IReadOnlyList<DescriptorSetLayoutInfo> SetLayouts, IReadOnlyList<PushConstantRangeInfo> PushConstantRanges);
+    /// <param name="SubgroupOperations">The subgroup operations the shaders use; check them against <c>subgroupSupportedOperations</c> before creating the pipeline.</param>
+    public sealed record PipelineLayoutInfo(IReadOnlyList<DescriptorSetLayoutInfo> SetLayouts, IReadOnlyList<PushConstantRangeInfo> PushConstantRanges, SubgroupOperations SubgroupOperations = SubgroupOperations.None);
 
     /// <summary>Choices a host can make that the shader does not decide.</summary>
     public sealed class VulkanLayoutOptions
@@ -243,7 +245,7 @@ namespace OneShader.Layouts
                 ranges[i] = new PushConstantRangeInfo(VulkanStages(PushConstants[i].Stages), 0, (PushConstants[i].Size + 3) & ~3u);
             }
 
-            return new PipelineLayoutInfo(sets, ranges);
+            return new PipelineLayoutInfo(sets, ranges, SubgroupOperations);
         }
 
         /// <summary>The Vulkan descriptor type for a resource kind.</summary>

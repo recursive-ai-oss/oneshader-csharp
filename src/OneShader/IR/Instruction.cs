@@ -327,8 +327,8 @@ public enum Intrinsic
     Ddy, /// <summary>ddy_coarse.</summary>
     DdyCoarse, /// <summary>ddy_fine.</summary>
     DdyFine, /// <summary>fwidth.</summary>
-    Fwidth, /// <summary>WaveGetLaneCount.</summary>
-    WaveGetLaneCount, /// <summary>WaveGetLaneIndex.</summary>
+    Fwidth, /// <summary>WaveGetLaneCount (lowered to a read of the subgroup-size built-in; never reaches a backend).</summary>
+    WaveGetLaneCount, /// <summary>WaveGetLaneIndex (lowered to a read of the lane-index built-in; never reaches a backend).</summary>
     WaveGetLaneIndex, /// <summary>WaveIsFirstLane.</summary>
     WaveIsFirstLane, /// <summary>WaveActiveAnyTrue.</summary>
     WaveActiveAnyTrue, /// <summary>WaveActiveAllTrue.</summary>

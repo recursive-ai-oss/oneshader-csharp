@@ -94,6 +94,7 @@ internal sealed class VariableNode
 
 internal sealed class EntryNode
 {
+    public uint Subgroup;
     public string Name = "";
     public string Stage = "";
     public uint X;
@@ -496,6 +497,10 @@ internal sealed class ShaderFile
             else if (c.Keyword == "pushuse")
             {
                 e.PushUse = Str(c, "name");
+            }
+            else if (c.Keyword == "subgroup")
+            {
+                e.Subgroup = U(c, "ops");
             }
         }
 

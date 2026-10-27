@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using OneShader.Reflection;
 using OneShader.Types;
 
 namespace OneShader.Layouts;
@@ -107,6 +108,21 @@ public sealed partial class PipelineLayout
     /// has at most one block per stage, so this is usually zero or one block.
     /// </summary>
     public IReadOnlyList<PushConstantBlock> PushConstants { get; }
+
+    /// <summary>The subgroup (wave) operations any entry point of the pipeline uses.</summary>
+    public SubgroupOperations SubgroupOperations
+    {
+        get
+        {
+            var all = SubgroupOperations.None;
+            foreach (var e in _entries)
+            {
+                all |= e.SubgroupOperations;
+            }
+
+            return all;
+        }
+    }
 
     /// <summary>The entry point of the given stage, or null.</summary>
     /// <param name="stage">The stage.</param>

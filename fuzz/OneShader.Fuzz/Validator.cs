@@ -74,8 +74,9 @@ internal static class Validator
                         throw new FindingException("invalid-spirv", "spirv-val rejected " + b.EntryPoint + ":\n" + output);
                     }
                 }
-                else
+                else if (!b.AsText().StartsWith("enable subgroups;", StringComparison.Ordinal))
                 {
+                    // naga's WGSL reader does not know the subgroups extension, so those modules cannot be checked here.
                     Targets.ValidatedWgsl++;
                     (int code, string output) = Run(_naga!, tmp);
                     if (code != 0)

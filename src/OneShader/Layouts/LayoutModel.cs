@@ -129,8 +129,10 @@ public sealed class EntryLayout
     /// <param name="pushConstant">The push-constant block it reads, if any.</param>
     /// <param name="vertex">The vertex input, for vertex entry points.</param>
     /// <param name="workgroupSize">The thread-group size for compute entry points.</param>
-    public EntryLayout(string name, ShaderStage stage, ReadOnlySpan<ResourceLayout> resources, PushConstantLayout? pushConstant = null, VertexLayout? vertex = null, (uint X, uint Y, uint Z) workgroupSize = default)
+    /// <param name="subgroupOperations">The subgroup (wave) operations the entry point uses.</param>
+    public EntryLayout(string name, ShaderStage stage, ReadOnlySpan<ResourceLayout> resources, PushConstantLayout? pushConstant = null, VertexLayout? vertex = null, (uint X, uint Y, uint Z) workgroupSize = default, SubgroupOperations subgroupOperations = SubgroupOperations.None)
     {
+        SubgroupOperations = subgroupOperations;
         ArgumentNullException.ThrowIfNull(name);
         Name = name;
         Stage = stage;
@@ -157,6 +159,12 @@ public sealed class EntryLayout
 
     /// <summary>The thread-group size of a compute entry point; zeros otherwise.</summary>
     public (uint X, uint Y, uint Z) WorkgroupSize { get; }
+
+    /// <summary>
+    /// The subgroup (wave) operations the entry point uses, or <see cref="SubgroupOperations.None"/>. A Vulkan host checks them against
+    /// <c>subgroupSupportedOperations</c>, a Metal host needs a GPU family with SIMD-group functions, a WebGPU host the <c>subgroups</c> feature.
+    /// </summary>
+    public SubgroupOperations SubgroupOperations { get; }
 
     /// <summary>The <see cref="ShaderStages"/> bit of <see cref="Stage"/>.</summary>
     public ShaderStages StageFlag => StageBit(Stage);
@@ -275,7 +283,7 @@ public sealed class EntryLayout
             vertex = new VertexLayout(entry.VertexStride, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(attributes));
         }
 
-        layout = new EntryLayout(entry.Name, entry.Stage, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(resources), push, vertex, entry.WorkgroupSize);
+        layout = new EntryLayout(entry.Name, entry.Stage, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(resources), push, vertex, entry.WorkgroupSize, entry.SubgroupOperations);
         error = null;
         return true;
     }
