@@ -424,6 +424,12 @@ public sealed class Instruction : IrValue
     /// <summary>Source position for diagnostics and debug names.</summary>
     public SourceSpan Span { get; set; }
 
+    /// <summary>For debug info: the call this instruction was inlined from, innermost first; null when it was never inlined.</summary>
+    public InlineSite? InlinedAt { get; set; }
+
+    /// <summary>For debug info: the user variable an <see cref="Opcode.Alloca"/> holds; null for compiler temporaries and all other instructions.</summary>
+    public SourceVariable? DebugVariable { get; set; }
+
     /// <summary>The block containing this instruction, or null while detached.</summary>
     public BasicBlock? Parent { get; internal set; }
 

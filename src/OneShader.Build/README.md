@@ -124,9 +124,9 @@ Support types (`ShaderStage`, `ResourceKind`, `VertexFormat`, `VertexAttribute`,
 `ResourceBinding`) come from `RecursiveAI.OneShader`, so a rendering layer in another assembly can
 take them. When only these are used, trimming removes the compiler from a NativeAOT app.
 
-Item metadata: `EntryPoints`, `Defines`, `IncludeDirectories`, `Namespace`, `ClassName`, `Targets`, `Axes`, `MaxVariants`.
+Item metadata: `EntryPoints`, `Defines`, `IncludeDirectories`, `Namespace`, `ClassName`, `Targets`, `Axes`, `MaxVariants`, `DebugInfo`, `Optimize`.
 Properties: `EnableDefaultOneShaderItems`, `OneShaderNamespace`, `OneShaderTargets`, `OneShaderEnable16BitTypes` (item metadata `Enable16BitTypes`),
-`OneShaderDefines`, `OneShaderIncludeDirectories`, `OneShaderMaxVariants`. Shaders are recompiled only when they, a file they include, or the
+`OneShaderDefines`, `OneShaderIncludeDirectories`, `OneShaderMaxVariants`, `OneShaderDebugInfo`, `OneShaderOptimize`. Shaders are recompiled only when they, a file they include, or the
 options change; the output is deterministic.
 
 ## Variants
@@ -222,3 +222,18 @@ PipelineLayout? pipeline = v.Pipeline;
 ## License
 
 MIT OR Apache-2.0, at your option. Copyright © Recursive AI, LLC.
+
+### Debugging shaders
+
+`OneShaderDebugInfo` puts source-level debug information in the embedded blobs so RenderDoc, Nsight and Xcode show your HLSL (SPIR-V:
+`NonSemantic.Shader.DebugInfo.100`; MSL: `#line` directives; WGSL: unchanged). It is off by default. To use it in Debug builds only:
+
+```xml
+<PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+  <OneShaderDebugInfo>true</OneShaderDebugInfo>   <!-- or lines -->
+  <OneShaderOptimize>false</OneShaderOptimize>    <!-- one step per statement, every local visible -->
+</PropertyGroup>
+```
+
+File names in the blobs are relative to the project directory, so the output does not depend on where the project is checked out. The generated C# is
+the same apart from the blob bytes. See docs/debugging.md in the repository for details and a RenderDoc walkthrough.

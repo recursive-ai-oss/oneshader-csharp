@@ -48,10 +48,12 @@ parse. Exit code: **0** success, **1** the shader did not compile (or an output 
 | `-WX` | Warnings are errors. |
 | `-enable-16bit-types` | `half` and `min16*` are 16-bit. |
 | `-fspv-target-env=vulkan1.2` | Accepted (`vulkan1.3` too); the output is valid for Vulkan 1.2 and newer. |
+| `-Zi` | Debug information: SPIR-V `OpSource` with the sources and `OpLine`, MSL `#line` directives, as DXC's `-Zi`. |
+| `-fspv-debug=vulkan-with-source` | `NonSemantic.Shader.DebugInfo.100` in SPIR-V for RenderDoc and Nsight (`vulkan` is the same; `file`, `source`, `line` and `tool` give the `-Zi` form). Combine with `-Od` for one step per statement. |
 | `-nologo` | Accepted, ignored. |
 
 Values may follow the flag after a space or directly (`-T ps_6_0`, `-Tps_6_0`). Every other `-fvk-*`
-and `-fspv-*` option, and DXC options such as `-Zi` or `-Fh`, is rejected with a message naming it.
+and `-fspv-*` option, and DXC options such as `-Fd` or `-Fh`, is rejected with a message naming it.
 oneshader always uses DXC's default Vulkan layout and binding rules; use `[[vk::binding]]`,
 `[[vk::location]]` and `[[vk::offset]]` in the shader.
 
@@ -59,6 +61,7 @@ oneshader always uses DXC's default Vulkan layout and binding rules; use `[[vk::
 
 | Option | Meaning |
 |---|---|
+| `--debug-root <dir>` | File names in debug information are made relative to `<dir>`; other absolute paths become bare file names. |
 | `--target spirv\|msl\|wgsl` | Target; repeat for several. |
 | `--all-entries` | Compile every `[shader("vertex"\|"pixel"\|"compute")]` entry point. This is also what happens without `-T`. Cannot be combined with `-T`/`-E`. |
 | `--reflect <file.json>` | Write reflection as JSON (schema below). |

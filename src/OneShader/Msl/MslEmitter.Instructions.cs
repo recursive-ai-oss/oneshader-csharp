@@ -60,6 +60,11 @@ internal sealed partial class MslEmitter
 
     private void EmitInstruction(Instruction i)
     {
+        if (i.Op is not (Opcode.Alloca or Opcode.Phi or Opcode.AccessChain))
+        {
+            Mark(i.Span);
+        }
+
         var o = i.Operands;
         switch (i.Op)
         {

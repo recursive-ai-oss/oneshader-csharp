@@ -534,6 +534,9 @@ public sealed class StructType : HlslType
     /// <summary>The declared name; may be empty for an anonymous struct or a cbuffer's member block.</summary>
     public string Name { get; }
 
+    /// <summary>Where the struct is declared (its name); unknown for structs the compiler makes. Debug output uses it.</summary>
+    public Diagnostics.SourceSpan DeclaredAt { get; set; }
+
     /// <summary>The members in declaration order.</summary>
     public IReadOnlyList<StructField> Fields => _fields;
 

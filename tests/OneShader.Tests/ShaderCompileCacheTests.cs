@@ -103,9 +103,24 @@ public sealed class ShaderCompileCacheTests : IDisposable
     public void ANewOptionOnCompileOptionsMustBeAddedToTheKey()
     {
         // The cache copies and hashes each option by name. If this list changes, update ShaderCompileCache.KeyOf and WithResolver, then this list.
-        string[] known = ["DefaultMatrixPacking", "Defines", "Enable16BitTypes", "EntryPoints", "IncludeDirectories", "IncludeResolver", "KeepNames", "Optimize", "ResourceHeapBinding", "SamplerHeapBinding", "SpecializationOverrides", "Targets"];
+        string[] known = ["DebugInfo", "DebugSourceRoot", "DefaultMatrixPacking", "Defines", "Enable16BitTypes", "EntryPoints", "IncludeDirectories", "IncludeResolver", "KeepNames", "Optimize", "ResourceHeapBinding", "SamplerHeapBinding", "SpecializationOverrides", "Targets"];
         string[] actual = typeof(CompileOptions).GetProperties(BindingFlags.Public | BindingFlags.Instance).Select(p => p.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray();
         Assert.Equal(known, actual);
+    }
+
+    [Fact]
+    public void DebugInfoAndItsRootAreOptionsOfTheKey()
+    {
+        const string source = "[shader(\"pixel\")] float4 PS() : SV_Target { return 1; }\n";
+        var cache = new ShaderCompileCache();
+        var plain = cache.Compile(source, "/a/b.hlsl", new CompileOptions(), Ct);
+        var lines = cache.Compile(source, "/a/b.hlsl", new CompileOptions { DebugInfo = DebugInfoLevel.Lines }, Ct);
+        var full = cache.Compile(source, "/a/b.hlsl", new CompileOptions { DebugInfo = DebugInfoLevel.Full }, Ct);
+        var rooted = cache.Compile(source, "/a/b.hlsl", new CompileOptions { DebugInfo = DebugInfoLevel.Full, DebugSourceRoot = "/" }, Ct);
+        Assert.Equal(4, new[] { plain, lines, full, rooted }.Distinct().Count());
+        Assert.Equal((0L, 4L), (cache.Hits, cache.Misses));
+        Assert.Same(rooted, cache.Compile(source, "/a/b.hlsl", new CompileOptions { DebugInfo = DebugInfoLevel.Full, DebugSourceRoot = "/" }, Ct));
+        Assert.NotEqual(full.Find("PS", CompileTarget.SpirV)!.ToArray(), rooted.Find("PS", CompileTarget.SpirV)!.ToArray());
     }
 
     [Fact]

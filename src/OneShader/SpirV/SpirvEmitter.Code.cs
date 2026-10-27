@@ -203,6 +203,7 @@ internal sealed partial class SpirvEmitter
     private void EmitFunction(IrFunction f)
     {
         _fn = f;
+        DebugBeginFunction(f);
         _labels.Clear();
         var blocks = OrderBlocks(f);
         foreach (var b in blocks)
@@ -320,8 +321,11 @@ internal sealed partial class SpirvEmitter
     private void EmitBlock(BasicBlock b)
     {
         bool terminated = false;
+        bool inEntry = ReferenceEquals(b, _fn.Entry);
+        DebugBeginBlock();
         foreach (var inst in b.Instructions)
         {
+            DebugBefore(inst, inEntry);
             if (inst.IsTerminator)
             {
                 EmitMerge(b, inst);

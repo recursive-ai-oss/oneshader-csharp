@@ -50,6 +50,9 @@ public sealed class IrFunction
     /// <summary>Where the function was declared.</summary>
     public SourceSpan Span { get; set; }
 
+    /// <summary>The source function this IR function was lowered from; null for compiler-made helpers.</summary>
+    public SourceFunction? Source { get; set; }
+
     /// <summary>The entry block, or null for a function without blocks.</summary>
     public BasicBlock? Entry => Blocks.Count > 0 ? Blocks[0] : null;
 
@@ -135,6 +138,12 @@ public sealed class IrModule
 
     /// <summary>Entry points in declaration order.</summary>
     public List<EntryPoint> EntryPoints { get; } = [];
+
+    /// <summary>Every function of the HLSL source, in declaration order. Debug output uses it to scope instructions that inlining moved.</summary>
+    public List<SourceFunction> SourceFunctions { get; } = [];
+
+    /// <summary>The main file's text, then each included file's, when the compile was asked to keep sources for debug output; otherwise empty.</summary>
+    public List<SourceText> Sources { get; } = [];
 
     /// <summary>Layout settings the buffer layouts in this module were computed with.</summary>
     public LayoutOptions LayoutOptions { get; set; } = LayoutOptions.Default;

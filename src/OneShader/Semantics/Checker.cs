@@ -429,7 +429,7 @@ internal sealed partial class Checker
             return HlslType.Error;
         }
 
-        var st = new StructType(name);
+        var st = new StructType(name) { DeclaredAt = s.Name?.Span ?? s.Span };
         s.Resolved = st;
         var info = new StructInfo { Decl = s };
         _structInfos[st] = info;

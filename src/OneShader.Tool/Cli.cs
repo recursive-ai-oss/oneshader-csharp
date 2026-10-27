@@ -40,6 +40,9 @@ internal static class Cli
         public bool Enable16Bit;
         public HeapBinding? ResourceHeap;
         public HeapBinding? SamplerHeap;
+        public DebugInfoLevel DebugInfo;
+        public bool DebugExplicit;
+        public string? DebugRoot;
         public bool WarningsAsErrors;
         public MatrixPacking Packing = MatrixPacking.ColumnMajor;
     }
@@ -165,6 +168,24 @@ internal static class Cli
                     s.Targets.Add(target);
                 }
             }
+            else if (a.StartsWith("-fspv-debug=", StringComparison.Ordinal))
+            {
+                // DXC: file, source, line and tool are subsets of the OpLine form; vulkan and vulkan-with-source are the NonSemantic form.
+                // Several -fspv-debug options combine; the richest form wins, and an explicit one overrules -Zi.
+                string kind = a["-fspv-debug=".Length..];
+                var wanted = kind switch
+                {
+                    "file" or "source" or "line" or "tool" => DebugInfoLevel.Lines,
+                    "vulkan" or "vulkan-with-source" => DebugInfoLevel.Full,
+                    _ => throw new UsageException("-fspv-debug=" + kind + " is not known. Use file, source, line, tool, vulkan or vulkan-with-source."),
+                };
+                s.DebugInfo = wanted > s.DebugInfo ? wanted : s.DebugInfo;
+                s.DebugExplicit = true;
+            }
+            else if (a == "--debug-root")
+            {
+                s.DebugRoot = Next(args, ref i, a);
+            }
             else if (a == "--reflect")
             {
                 s.ReflectPath = Next(args, ref i, a);
@@ -209,6 +230,16 @@ internal static class Cli
                         break;
                     case "-enable-16bit-types":
                         s.Enable16Bit = true;
+                        break;
+                    case "-Zi":
+                        // As DXC: line tables and sources unless -fspv-debug asks for something else.
+                        if (!s.DebugExplicit && s.DebugInfo == DebugInfoLevel.None)
+                        {
+                            s.DebugInfo = DebugInfoLevel.Lines;
+                        }
+
+                        break;
+                    case "-Qembed_debug":
                         break;
                     case "-nologo":
                         break;
@@ -266,9 +297,9 @@ internal static class Cli
             throw new UsageException("option '" + a + "' is not supported. oneshader always uses DXC's default Vulkan layout and binding rules; use [[vk::binding]], [[vk::location]] and [[vk::offset]] in the shader instead.");
         }
 
-        if (a is "-Zi" or "-Qembed_debug" or "-Fd")
+        if (a is "-Fd")
         {
-            throw new UsageException("option '" + a + "' is not supported: debug info is not implemented. Remove it, or use --no-names to drop names from the output.");
+            throw new UsageException("option '" + a + "' is not supported: separate debug files are not written; debug information is embedded in the output with -Zi or -fspv-debug=vulkan-with-source.");
         }
 
         if (a is "-Fh" or "-Fe" or "-Fc" or "-Fre" or "-Fsh" or "-Vn")
@@ -361,6 +392,8 @@ internal static class Cli
             SamplerHeapBinding = s.SamplerHeap,
             Optimize = s.Optimize,
             KeepNames = s.KeepNames,
+            DebugInfo = s.DebugInfo,
+            DebugSourceRoot = s.DebugRoot,
         };
 
         var result = ShaderCompiler.CompileFile(s.Input!, options);
@@ -507,6 +540,9 @@ internal static class Cli
           -fvk-bind-resource-heap <binding> <set>   where ResourceDescriptorHeap lives (default: first free binding of set 0)
           -fvk-bind-sampler-heap <binding> <set>    where SamplerDescriptorHeap lives (default: the next free binding)
           -fspv-target-env=vulkan1.2   accepted (output is valid for Vulkan 1.2 and newer)
+          -Zi                debug info: SPIR-V OpSource + OpLine, MSL #line directives
+          -fspv-debug=vulkan-with-source   SPIR-V NonSemantic.Shader.DebugInfo.100 (RenderDoc, Nsight)
+                             (also file|source|line|tool = the -Zi form; vulkan = vulkan-with-source)
           Other -fvk-* and -fspv-* options are rejected with a message.
 
         oneshader options:
@@ -515,6 +551,7 @@ internal static class Cli
           --reflect <file>   write reflection as JSON
           --depfile <file>   write a Make-style dependency file (outputs: inputs read)
           --no-names         leave source names out of the output
+          --debug-root <dir> make file paths in debug info relative to <dir> (others become bare file names)
           --version, --help
 
         Without -Fo a single output goes to standard output. Exit codes: 0 success,

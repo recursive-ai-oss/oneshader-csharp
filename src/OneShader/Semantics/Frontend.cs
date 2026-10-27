@@ -61,6 +61,34 @@ internal static class Frontend
         }
     }
 
+    /// <summary>Keeps the text of every file the wrapped resolver finds, once per path, so debug output can embed the sources.</summary>
+    private sealed class TextKeepingResolver(IIncludeResolver inner, List<IR.SourceText> texts) : IIncludeResolver
+    {
+        public SourceFile? Resolve(string name, bool isAngled, SourceFile includer, IList<string> searched)
+        {
+            var file = inner.Resolve(name, isAngled, includer, searched);
+            if (file is not null)
+            {
+                bool known = false;
+                foreach (var t in texts)
+                {
+                    if (string.Equals(t.Path, file.Path, StringComparison.Ordinal))
+                    {
+                        known = true;
+                        break;
+                    }
+                }
+
+                if (!known)
+                {
+                    texts.Add(new IR.SourceText(file.Path, file.Text));
+                }
+            }
+
+            return file;
+        }
+    }
+
     /// <summary>The resolver a compile with these options uses for <c>#include</c>: the internal override, the host's hook, or the file system.</summary>
     internal static IIncludeResolver CreateResolver(CompileOptions options)
     {
@@ -121,6 +149,13 @@ internal static class Frontend
             pp.Define(d.Key, d.Value);
         }
 
+        List<IR.SourceText>? sources = null;
+        if (options.DebugInfo != DebugInfoLevel.None)
+        {
+            sources = [new IR.SourceText(path, source)];
+            pp.IncludeResolver = new TextKeepingResolver(pp.IncludeResolver, sources);
+        }
+
         var preprocessed = Preprocessor.Preprocess(new SourceFile(path, source), pp, bag, ct);
         foreach (var d in bag.Items)
         {
@@ -156,6 +191,11 @@ internal static class Frontend
 
         var lowerer = new Lowerer(checker, bag, System.IO.Path.GetFileName(path));
         var module = lowerer.Lower();
+        if (sources is not null)
+        {
+            module.Sources.AddRange(sources);
+        }
+
         if (bag.HasErrors)
         {
             return new FrontendResult(null, null, bag);

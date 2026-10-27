@@ -45,6 +45,27 @@ public readonly record struct HeapBinding(uint Set, uint Binding);
 /// <param name="Stage">The stage to compile it for.</param>
 public readonly record struct EntryPointRequest(string Name, ShaderStage Stage);
 
+/// <summary>How much source-level debug information the output carries.</summary>
+public enum DebugInfoLevel
+{
+    /// <summary>None. The output is byte-for-byte what it is without the option.</summary>
+    None,
+
+    /// <summary>
+    /// Line tables only. SPIR-V gets <c>OpString</c>, <c>OpSource</c> (with the text of the main file and of each included file) and
+    /// <c>OpLine</c>/<c>OpNoLine</c>, which is what DXC's <c>-Zi</c> writes. MSL gets <c>#line</c> directives. WGSL is unchanged.
+    /// </summary>
+    Lines,
+
+    /// <summary>
+    /// Everything in <see cref="Lines"/> except that SPIR-V uses the <c>NonSemantic.Shader.DebugInfo.100</c> instruction set
+    /// (compilation unit, sources, functions, lexical blocks, inlined-at records, local variables, types, line records),
+    /// which Vulkan debuggers such as RenderDoc and Nsight read. This is DXC's <c>-fspv-debug=vulkan-with-source</c>.
+    /// MSL gets <c>#line</c> directives. WGSL is unchanged.
+    /// </summary>
+    Full,
+}
+
 /// <summary>Settings for <see cref="ShaderCompiler.Compile"/>. All properties have defaults.</summary>
 public sealed class CompileOptions
 {
@@ -98,6 +119,20 @@ public sealed class CompileOptions
 
     /// <summary>Where <c>SamplerDescriptorHeap</c> lives in Vulkan, as DXC's <c>-fvk-bind-sampler-heap</c>. Default null: the next free binding of set 0 after the resource heap.</summary>
     public HeapBinding? SamplerHeapBinding { get; init; }
+
+    /// <summary>
+    /// Source-level debug information in the output (see <see cref="DebugInfoLevel"/>). Default <see cref="DebugInfoLevel.None"/>, which leaves every blob
+    /// identical to a build without the option. The optimizer keeps running when this is on, and keeps the positions of the code it moves or merges;
+    /// set <see cref="Optimize"/> to false for one-to-one stepping with every local variable visible.
+    /// </summary>
+    public DebugInfoLevel DebugInfo { get; init; } = DebugInfoLevel.None;
+
+    /// <summary>
+    /// Directory that file paths in debug information are made relative to, written with <c>/</c> separators. A path outside it is reduced to its
+    /// file name, so no machine-specific path ends up in the output. Default null: a relative path keeps its spelling and an absolute path becomes its file name.
+    /// Only used when <see cref="DebugInfo"/> is not <see cref="DebugInfoLevel.None"/>.
+    /// </summary>
+    public string? DebugSourceRoot { get; init; }
 
     /// <summary>Replaces the include lookup entirely (the compile cache uses it to record what a compile read). Not part of the public API.</summary>
     internal Preprocessing.IIncludeResolver? ResolverOverride { get; init; }
@@ -358,8 +393,8 @@ public static class ShaderCompiler
             }
         }
 
-        var spirvOptions = new SpirV.SpirvOptions { KeepNames = options.KeepNames };
-        var mslOptions = new Msl.MslOptions { KeepNames = options.KeepNames };
+        var spirvOptions = new SpirV.SpirvOptions { KeepNames = options.KeepNames, DebugInfo = options.DebugInfo, DebugSourceRoot = options.DebugSourceRoot, Optimized = options.Optimize };
+        var mslOptions = new Msl.MslOptions { KeepNames = options.KeepNames, DebugInfo = options.DebugInfo, DebugSourceRoot = options.DebugSourceRoot };
         var wgslOptions = new Wgsl.WgslOptions { KeepNames = options.KeepNames };
         foreach (var entry in module.EntryPoints)
         {

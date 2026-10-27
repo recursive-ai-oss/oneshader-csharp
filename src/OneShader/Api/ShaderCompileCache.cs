@@ -287,6 +287,8 @@ public sealed class ShaderCompileCache
         Enable16BitTypes = o.Enable16BitTypes,
         Optimize = o.Optimize,
         KeepNames = o.KeepNames,
+        DebugInfo = o.DebugInfo,
+        DebugSourceRoot = o.DebugSourceRoot,
         SpecializationOverrides = o.SpecializationOverrides,
         ResourceHeapBinding = o.ResourceHeapBinding,
         SamplerHeapBinding = o.SamplerHeapBinding,
@@ -330,6 +332,8 @@ public sealed class ShaderCompileCache
         Put(h, o.Enable16BitTypes ? "16" : "32");
         Put(h, o.Optimize ? "opt" : "noopt");
         Put(h, o.KeepNames ? "names" : "nonames");
+        Put(h, ((int)o.DebugInfo).ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Put(h, o.DebugSourceRoot ?? "\u0001");
         Put(h, o.SpecializationOverrides.Count.ToString(System.Globalization.CultureInfo.InvariantCulture));
         foreach (var s in o.SpecializationOverrides)
         {

@@ -82,6 +82,15 @@ spec 6.16.4.6, Apple silicon); the backend emits exactly that for unsigned `Inte
 atomic, any use of `double`, and 64-bit integer vectors in buffers (no packed long vectors) are errors (OSH5102) at the line of the first use. Min-precision
 `RelaxedPrecision` has no MSL equivalent: values are computed in 32 bits.
 
+## Debug information
+
+With `CompileOptions.DebugInfo` set to `Lines` or `Full` the source has `#line N "file"` directives (file names as in [debugging.md](debugging.md)) before the first
+statement that comes from each HLSL line, before every function, and after every block the emitter writes out of order, so the position never carries over
+from unrelated code. Directives are always at the start of a line and never inside an expression. Metal's compiler turns them into the line table:
+`metal -gline-tables-only -frecord-sources` records the file names (`!DIFile(filename: "sprite.hlsl")`) and HLSL line numbers in the metallib, which Xcode's
+shader debugger uses. Errors the Metal compiler reports for the generated code then point at HLSL lines; compile without debug information to see them in the MSL text.
+Without the option the text has no directives.
+
 ## Not supported (errors)
 
 `double` (Metal has no 64-bit float); `SV_CullDistance`; `GetDimensions` on structured buffers (`ArrayLength`: Metal cannot
