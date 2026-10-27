@@ -64,7 +64,7 @@ void CSMain(uint3 id : SV_DispatchThreadID)
     uint zext = c.b;
     int16_t trunc16 = (int16_t)(c.count + Bias);
     float asFloat = (float)c.a * 0.5f;
-    int16_t fromFloat = (int16_t)(asFloat * 3.0f);
+    int16_t fromFloat = (int16_t)clamp(asFloat * 3.0f, -30000.0f, 30000.0f);   // in range: out-of-range float to int is undefined
 
     Cell o;
     o.a = sq + sum + sar + quot;
@@ -75,5 +75,5 @@ void CSMain(uint3 id : SV_DispatchThreadID)
     Result[id.x] = o;
 
     Wide[id.x] = int4(widened, (int)zext, (int)pick + clamped, (int)ab + (int)fromFloat);
-    Words[id.x] = trunc16 + (uint16_t)asFloat;
+    Words[id.x] = trunc16 + (uint16_t)abs(asFloat);
 }

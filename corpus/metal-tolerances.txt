@@ -29,3 +29,8 @@ ibl_prefilter image:0.3 float 3e-3
 # Linearly filtered, repeat-addressed texture reads feeding lighting (pbr_forward) or a buffer (lang_resource_arrays).
 pbr_forward target float 5e-3
 lang_resource_arrays buffer:0.4 float 5e-4
+
+# 16-bit float arithmetic: Metal rounds each half operation (and fuses multiply-adds under fast math), the reference GPUs round differently by up to 1 ulp of a half (2^-10).
+types_half_math buffer:0.2 half 1.5e-3
+types_half_math buffer:0.3 half 2e-3
+types_half_math buffer:0.4 float 2e-3

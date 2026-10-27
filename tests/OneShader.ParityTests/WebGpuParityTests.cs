@@ -114,6 +114,11 @@ public class WebGpuParityTests
             {
                 var model = Corpus.Load(name);
                 var data = CaseData.Build(model);
+                if (model.RelaxedPrecision)
+                {
+                    outcomes[name] = new Outcome(null, null, "the outputs depend on RelaxedPrecision rounding, which WGSL does not have", null);
+                    continue;
+                }
                 var modules = new List<(string Entry, ShaderStage Stage, string Wgsl)>();
                 (uint Group, uint Binding)? pushSlot = null;
                 string? skip = null;

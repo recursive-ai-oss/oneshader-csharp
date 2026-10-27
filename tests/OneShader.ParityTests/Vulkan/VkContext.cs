@@ -292,6 +292,7 @@ public sealed unsafe partial class VkContext : IDisposable
             StorageBuffer16BitAccess = v11Query.StorageBuffer16BitAccess,
             UniformAndStorageBuffer16BitAccess = v11Query.UniformAndStorageBuffer16BitAccess,
             StoragePushConstant16 = v11Query.StoragePushConstant16,
+            StorageInputOutput16 = v11Query.StorageInputOutput16,
         };
         // Descriptor arrays indexed at run time need the dynamic-indexing features; shaders that use SV_ClipDistance /
         // SV_CullDistance declare capabilities that need the clip and cull features.

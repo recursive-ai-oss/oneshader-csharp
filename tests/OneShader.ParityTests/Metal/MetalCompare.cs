@@ -8,10 +8,11 @@ using System.Text;
 namespace OneShader.ParityTests;
 
 /// <summary>One line of <c>corpus/metal-tolerances.txt</c>.</summary>
+/// <param name="IsHalf">With <paramref name="IsFloat"/>: the buffer holds 16-bit floats.</param>
 /// <param name="IsFloat">Compare a storage buffer as 32-bit floats within <paramref name="Tolerance"/> (relative) instead of exactly.</param>
 /// <param name="Tolerance">8-bit images: largest allowed difference in steps; floats: <c>|a-b| / (1+|a|)</c>.</param>
 /// <param name="MaxBad">How many values may exceed the tolerance (rasterization differences along triangle edges).</param>
-public sealed record MetalTolerance(bool IsFloat, double Tolerance, int MaxBad);
+public sealed record MetalTolerance(bool IsFloat, double Tolerance, int MaxBad, bool IsHalf = false);
 
 /// <summary>
 /// Reads what the Metal runner produced for each exported case, compares it with the reference outputs and builds a
@@ -37,14 +38,14 @@ public static class MetalCompare
             {
                 continue;
             }
-            // CASE KEY bytes|float TOLERANCE [bad=N]
+            // CASE KEY bytes|float|half TOLERANCE [bad=N]
             string[] t = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (t.Length < 4 || (t[2] != "bytes" && t[2] != "float"))
+            if (t.Length < 4 || (t[2] != "bytes" && t[2] != "float" && t[2] != "half"))
             {
-                throw new FormatException($"metal-tolerances.txt: '{line}' is not 'CASE KEY bytes|float TOLERANCE [bad=N]'");
+                throw new FormatException($"metal-tolerances.txt: '{line}' is not 'CASE KEY bytes|float|half TOLERANCE [bad=N]'");
             }
             int bad = t.Length > 4 && t[4].StartsWith("bad=", StringComparison.Ordinal) ? int.Parse(t[4][4..], CultureInfo.InvariantCulture) : 0;
-            map[(t[0], t[1])] = new MetalTolerance(t[2] == "float", double.Parse(t[3], CultureInfo.InvariantCulture), bad);
+            map[(t[0], t[1])] = new MetalTolerance(t[2] is "float" or "half", double.Parse(t[3], CultureInfo.InvariantCulture), bad, t[2] == "half");
         }
         return map;
     }
@@ -192,10 +193,11 @@ public static class MetalCompare
         {
             double worst = 0;
             int over = 0;
-            for (int i = 0; i + 4 <= want.Length; i += 4)
+            int step = tol.IsHalf ? 2 : 4;
+            for (int i = 0; i + step <= want.Length; i += step)
             {
-                float a = BitConverter.ToSingle(want, i);
-                float b = BitConverter.ToSingle(got, i);
+                float a = tol.IsHalf ? (float)BitConverter.ToHalf(want, i) : BitConverter.ToSingle(want, i);
+                float b = tol.IsHalf ? (float)BitConverter.ToHalf(got, i) : BitConverter.ToSingle(got, i);
                 if (float.IsNaN(a) && float.IsNaN(b))
                 {
                     continue;

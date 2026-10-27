@@ -2,6 +2,7 @@
 # The constant buffer is Gain, Bias, Count, pad, Pair (16-byte aligned).
 case types_min_precision
 shader types/min_precision.hlsl
+relaxed
 dispatch CSMain 1 1 1
 uniform 0 0 : 0.75 0.5 7i 0u 1.5 -0.25
 storage 0 1 : @f01(2,192)

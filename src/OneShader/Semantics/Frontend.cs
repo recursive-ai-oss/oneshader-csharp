@@ -382,6 +382,7 @@ internal sealed class Reflector
                 UsedResources = used,
                 PushConstant = pushUse,
                 SubgroupOperations = SubgroupUse.Scan(_mod.EntryPoints[i].Function, out _, out _),
+                RequiredFeatures = WideTypeUse.Scan(_mod, _mod.EntryPoints[i]).Features,
             });
         }
 

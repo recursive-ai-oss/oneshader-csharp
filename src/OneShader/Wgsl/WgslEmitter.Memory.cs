@@ -84,6 +84,11 @@ internal sealed partial class WgslEmitter
     private int ElemBytes(ScalarType s)
     {
         int b = s.StorageBytes(_m.LayoutOptions.Enable16BitTypes);
+        if (b == 2 && s.IsFloatingPoint)
+        {
+            return 2;
+        }
+
         if (b != 4)
         {
             Unsupported("A " + s + " stored in a buffer is " + Inv(b) + " bytes wide; the WGSL backend reads buffers in 32-bit words.");
@@ -488,6 +493,76 @@ internal sealed partial class WgslEmitter
         };
     }
 
+    private static bool IsHalfLeaf(ScalarType s, bool enable16) => s.IsFloatingPoint && s.StorageBytes(enable16) == 2;
+
+    /// <summary>The byte offset of the cursor as a u32 expression (constant part plus the index terms).</summary>
+    private string ByteOffsetExpr(Cur c)
+    {
+        var parts = new List<string>();
+        if (c.Offset != 0 || c.Dyn.Count == 0)
+        {
+            parts.Add(Inv(c.Offset) + "u");
+        }
+
+        foreach (var (idx, stride) in c.Dyn)
+        {
+            parts.Add(Mul(U32(idx), stride));
+        }
+
+        return string.Join(" + ", parts);
+    }
+
+    /// <summary>The slot holding the 32-bit word that contains the byte at <paramref name="bytes"/>.</summary>
+    private static string SlotAtByte(BufInfo info, string bytes) => info.Uniform
+        ? info.Name + "[(" + bytes + ") / 16u][((" + bytes + ") % 16u) / 4u]"
+        : info.Name + "[(" + bytes + ") / 4u]";
+
+    // A 16-bit float is read from, and written into, one half of a 32-bit word (WGSL 17.5: unpack2x16float / pack2x16float).
+    private string ReadHalf(BufInfo info, Cur c)
+    {
+        string bytes = ByteOffsetExpr(c);
+        bool constant = c.Dyn.Count == 0;
+        string lane = constant ? ((c.Offset & 2) == 0 ? "x" : "y") : "[((" + bytes + ") >> 1u) & 1u]";
+        string word = LoadWord(info, SlotAtByte(info, bytes));
+        return "f16(unpack2x16float(" + word + ")" + (constant ? "." + lane : lane) + ")";
+    }
+
+    private void WriteHalf(BufInfo info, Cur c, string value)
+    {
+        string bytes = ByteOffsetExpr(c);
+        string slot = SlotAtByte(info, bytes);
+        info.Written = true;
+        string bits = "(pack2x16float(vec2<f32>(f32(" + value + "), 0.0)) & 0xFFFFu)";
+        string shift = c.Dyn.Count == 0 ? ((c.Offset & 2) == 0 ? "0u" : "16u") : "(((" + bytes + ") & 2u) * 8u)";
+        string mask = c.Dyn.Count == 0 ? ((c.Offset & 2) == 0 ? "0xFFFFu" : "0xFFFF0000u") : "(0xFFFFu << " + shift + ")";
+        string shifted = c.Dyn.Count == 0 && (c.Offset & 2) == 0 ? bits : bits + " << " + shift;
+        if (!info.Atomic)
+        {
+            Put(slot + " = (" + slot + " & ~" + mask + ") | (" + shifted + ");");
+            return;
+        }
+
+        // The other half belongs to another element that another invocation may be writing: clear and set only our bits.
+        Put("_ = atomicAnd(&" + slot + ", ~" + mask + ");");
+        Put("_ = atomicOr(&" + slot + ", " + shifted + ");");
+    }
+
+    private string ReadLeaf(BufInfo info, Cur c, ScalarType s) => IsHalfLeaf(s, _m.LayoutOptions.Enable16BitTypes)
+        ? ReadHalf(info, c)
+        : ScalarFromWord(s, LoadWord(info, WordSlot(info, c)));
+
+    private void WriteLeaf(BufInfo info, Cur c, ScalarType s, string value)
+    {
+        if (IsHalfLeaf(s, _m.LayoutOptions.Enable16BitTypes))
+        {
+            WriteHalf(info, c, value);
+        }
+        else
+        {
+            StoreWord(info, c, ScalarToWord(s, value));
+        }
+    }
+
     private static string LoadWord(BufInfo info, string slot) => info.Atomic ? "atomicLoad(&" + slot + ")" : slot;
 
     private const int MaxCopiedElements = 1024;
@@ -509,7 +584,7 @@ internal sealed partial class WgslEmitter
 
         if (LeafScalar(c.Type) is { } leaf)
         {
-            return ScalarFromWord(leaf, LoadWord(info, WordSlot(info, c)));
+            return ReadLeaf(info, c, leaf);
         }
 
         switch (c.Type)
@@ -518,7 +593,7 @@ internal sealed partial class WgslEmitter
             {
                 if (v.Count == 1)
                 {
-                    return ScalarFromWord(v.Element, LoadWord(info, WordSlot(info, c)));
+                    return ReadLeaf(info, c, v.Element);
                 }
 
                 if (info.Uniform && !info.Atomic && c.CompStride == 4 && v.Element.ScalarKind != ScalarKind.Bool)
@@ -544,7 +619,7 @@ internal sealed partial class WgslEmitter
                 var comps = new string[v.Count];
                 for (int k = 0; k < comps.Length; k++)
                 {
-                    comps[k] = ScalarFromWord(v.Element, LoadWord(info, WordSlot(info, Child(c, k))));
+                    comps[k] = ReadLeaf(info, Child(c, k), v.Element);
                 }
 
                 return TypeName(v) + "(" + string.Join(", ", comps) + ")";
@@ -613,7 +688,7 @@ internal sealed partial class WgslEmitter
 
         if (LeafScalar(c.Type) is { } leaf)
         {
-            StoreWord(info, c, ScalarToWord(leaf, value));
+            WriteLeaf(info, c, leaf, value);
             return;
         }
 
@@ -623,14 +698,14 @@ internal sealed partial class WgslEmitter
             {
                 if (v.Count == 1)
                 {
-                    StoreWord(info, c, ScalarToWord(v.Element, value));
+                    WriteLeaf(info, c, v.Element, value);
                     return;
                 }
 
                 value = Simple(value);
                 for (int k = 0; k < v.Count; k++)
                 {
-                    StoreWord(info, Child(c, k), ScalarToWord(v.Element, value + "." + "xyzw"[k]));
+                    WriteLeaf(info, Child(c, k), v.Element, value + "." + "xyzw"[k]);
                 }
 
                 return;

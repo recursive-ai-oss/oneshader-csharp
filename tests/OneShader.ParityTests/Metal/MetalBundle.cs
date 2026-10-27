@@ -30,6 +30,10 @@ public static class MetalBundle
             Directory.Delete(dir, true);
         }
         Directory.CreateDirectory(Path.Combine(dir, "ref"));
+        if (model.RelaxedPrecision)
+        {
+            return "not-compiled: the outputs depend on RelaxedPrecision rounding, which Metal does not have";
+        }
         var data = CaseData.Build(model);
 
         // MSL for every entry point. A refusal by the backend is a result, not an error: the case is reported as not compiled.

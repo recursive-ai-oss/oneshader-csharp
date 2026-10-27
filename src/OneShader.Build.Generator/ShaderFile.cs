@@ -95,6 +95,7 @@ internal sealed class VariableNode
 internal sealed class EntryNode
 {
     public uint Subgroup;
+    public uint Features;
     public string Name = "";
     public string Stage = "";
     public uint X;
@@ -569,6 +570,10 @@ internal sealed class ShaderFile
             else if (c.Keyword == "subgroup")
             {
                 e.Subgroup = U(c, "ops");
+            }
+            else if (c.Keyword == "features")
+            {
+                e.Features = U(c, "bits");
             }
         }
 

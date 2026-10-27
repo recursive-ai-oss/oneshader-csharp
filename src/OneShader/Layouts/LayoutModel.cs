@@ -130,9 +130,11 @@ public sealed class EntryLayout
     /// <param name="vertex">The vertex input, for vertex entry points.</param>
     /// <param name="workgroupSize">The thread-group size for compute entry points.</param>
     /// <param name="subgroupOperations">The subgroup (wave) operations the entry point uses.</param>
-    public EntryLayout(string name, ShaderStage stage, ReadOnlySpan<ResourceLayout> resources, PushConstantLayout? pushConstant = null, VertexLayout? vertex = null, (uint X, uint Y, uint Z) workgroupSize = default, SubgroupOperations subgroupOperations = SubgroupOperations.None)
+    /// <param name="requiredFeatures">The optional device features its 16-bit and 64-bit types need.</param>
+    public EntryLayout(string name, ShaderStage stage, ReadOnlySpan<ResourceLayout> resources, PushConstantLayout? pushConstant = null, VertexLayout? vertex = null, (uint X, uint Y, uint Z) workgroupSize = default, SubgroupOperations subgroupOperations = SubgroupOperations.None, DeviceFeatures requiredFeatures = DeviceFeatures.None)
     {
         SubgroupOperations = subgroupOperations;
+        RequiredFeatures = requiredFeatures;
         ArgumentNullException.ThrowIfNull(name);
         Name = name;
         Stage = stage;
@@ -165,6 +167,12 @@ public sealed class EntryLayout
     /// <c>subgroupSupportedOperations</c>, a Metal host needs a GPU family with SIMD-group functions, a WebGPU host the <c>subgroups</c> feature.
     /// </summary>
     public SubgroupOperations SubgroupOperations { get; }
+
+    /// <summary>
+    /// The optional device features the entry point needs for 16-bit and 64-bit types. A Vulkan host enables the matching features when it
+    /// creates the device; a WebGPU host requests <c>shader-f16</c> for <see cref="DeviceFeatures.Float16"/>.
+    /// </summary>
+    public DeviceFeatures RequiredFeatures { get; }
 
     /// <summary>The <see cref="ShaderStages"/> bit of <see cref="Stage"/>.</summary>
     public ShaderStages StageFlag => StageBit(Stage);
@@ -283,7 +291,7 @@ public sealed class EntryLayout
             vertex = new VertexLayout(entry.VertexStride, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(attributes));
         }
 
-        layout = new EntryLayout(entry.Name, entry.Stage, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(resources), push, vertex, entry.WorkgroupSize, entry.SubgroupOperations);
+        layout = new EntryLayout(entry.Name, entry.Stage, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(resources), push, vertex, entry.WorkgroupSize, entry.SubgroupOperations, entry.RequiredFeatures);
         error = null;
         return true;
     }

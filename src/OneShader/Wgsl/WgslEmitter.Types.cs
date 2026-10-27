@@ -48,17 +48,12 @@ internal sealed partial class WgslEmitter
             case ScalarKind.Float or ScalarKind.LiteralFloat:
                 return "f32";
             case ScalarKind.Half or ScalarKind.Min16Float or ScalarKind.Min10Float:
-                if (_m.LayoutOptions.Enable16BitTypes)
-                {
-                    Unsupported("16-bit floating point types need WebGPU's optional f16 feature, which the WGSL backend does not use; compile without 16-bit types so half is a 32-bit float.");
-                }
-
-                return "f32";
+                return _m.LayoutOptions.Enable16BitTypes ? "f16" : "f32";
             case ScalarKind.Min16Int:
             case ScalarKind.Min16UInt:
                 if (_m.LayoutOptions.Enable16BitTypes)
                 {
-                    Unsupported("16-bit integer types are not available in WGSL; compile without 16-bit types.");
+                    Unsupported("WGSL has no 16-bit integer types. Use int or uint.");
                 }
 
                 return s.ScalarKind == ScalarKind.Min16Int ? "i32" : "u32";
@@ -246,12 +241,41 @@ internal sealed partial class WgslEmitter
                 return Inv((uint)c.Bits) + "u";
             case ScalarKind.Float or ScalarKind.LiteralFloat or ScalarKind.Half or ScalarKind.Min16Float or ScalarKind.Min10Float:
                 ScalarName(st);
-                return FloatLiteral((uint)c.Bits);
+                return st.ScalarKind != ScalarKind.Float && st.ScalarKind != ScalarKind.LiteralFloat && _m.LayoutOptions.Enable16BitTypes
+                    ? HalfLiteral((ushort)c.Bits)
+                    : FloatLiteral((uint)c.Bits);
             default:
                 ScalarName(st);
                 Unsupported("A constant of type " + st + " cannot be written in WGSL.");
                 return "0";
         }
+    }
+
+    private string HalfLiteral(ushort bits)
+    {
+        var h = BitConverter.UInt16BitsToHalf(bits);
+        if (Half.IsNaN(h) || Half.IsInfinity(h))
+        {
+            // As for f32: a constant expression cannot hold a NaN or infinity.
+            uint key = 0x80000000u | bits;
+            if (!_bitConstants.TryGetValue(key, out var name))
+            {
+                name = WgslNames.Unique(_moduleNames, "const_bits_h" + bits.ToString("x4", CultureInfo.InvariantCulture));
+                _bitConstants[key] = name;
+                _privateConstants.Add("var<private> " + name + ": u32 = 0x" + bits.ToString("x4", CultureInfo.InvariantCulture) + "u;\n");
+            }
+
+            return "bitcast<vec2<f16>>(" + name + ").x";
+        }
+
+        string s = ((float)h).ToString("R", CultureInfo.InvariantCulture);
+        if (s.IndexOf('.', StringComparison.Ordinal) < 0 && s.IndexOf('E', StringComparison.Ordinal) < 0)
+        {
+            s += ".0";
+        }
+
+        s += "h";
+        return s[0] == '-' ? "(" + s + ")" : s;
     }
 
     private string FloatLiteral(uint bits)

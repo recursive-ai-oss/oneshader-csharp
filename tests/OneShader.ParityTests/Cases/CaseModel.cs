@@ -105,6 +105,9 @@ public sealed class ResourceDecl
     /// <summary>Storage buffer outputs of 32-bit floats: largest <c>|a-b| / (1+|a|)</c> accepted when a comparison allows float tolerance. Zero means bit-exact.</summary>
     public double FloatTolerance { get; init; }
 
+    /// <summary>Storage buffer outputs of 16-bit floats: like <see cref="FloatTolerance"/>, per 16-bit value (WebGPU may round half arithmetic differently).</summary>
+    public double HalfTolerance { get; init; }
+
     /// <summary>Key identifying this resource in run outputs.</summary>
     public string OutputKey =>
         (Kind is ResourceKind.StorageImage ? "image:" : "buffer:") + Set + "." + Binding + (Element > 0 ? "[" + Element + "]" : "");
@@ -184,6 +187,12 @@ public sealed class CaseModel
     /// <summary>Data expression of the push-constant block (see <see cref="DataGen"/>); null when the shader has none.</summary>
     public string? Push { get; set; }
     public List<ExpectDecl> Expects { get; } = new();
+
+    /// <summary>
+    /// True when the case compares values that Vulkan drivers may compute at reduced precision because the SPIR-V marks them RelaxedPrecision
+    /// (min-precision types without 16-bit types). Metal and WebGPU compute them in 32 bits, so only the SPIR-V output can match bit for bit.
+    /// </summary>
+    public bool RelaxedPrecision { get; set; }
 
     public bool IsCompute => Dispatches.Count > 0;
 

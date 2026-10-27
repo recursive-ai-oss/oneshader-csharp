@@ -107,6 +107,11 @@ public static class Parity
                 CompareFloatBuffers(report, model, x, y, referenceName, candidateName, fr.FloatTolerance);
                 continue;
             }
+            if (allowFloatBufferTolerance && !x.IsImage && model.Resources.FirstOrDefault(r => r.OutputKey == x.Key) is { HalfTolerance: > 0 } hr)
+            {
+                CompareFloatBuffers(report, model, x, y, referenceName, candidateName, hr.HalfTolerance, half: true);
+                continue;
+            }
             CompareBlobs(report, model, x, y, referenceName, candidateName, x.IsImage ? tolerance : 0);
         }
         if (Environment.GetEnvironmentVariable("ONESHADER_PARITY_DUMP") == "1")
@@ -189,15 +194,17 @@ public static class Parity
     }
 
     // Float buffers: |a-b| <= tolerance * (1 + |a|) per 32-bit word, two NaNs count as equal.
-    private static void CompareFloatBuffers(ParityReport report, CaseModel model, OutputBlob a, OutputBlob b, string nameA, string nameB, double tolerance)
+    private static void CompareFloatBuffers(ParityReport report, CaseModel model, OutputBlob a, OutputBlob b, string nameA, string nameB, double tolerance, bool half = false)
     {
+        int step = half ? 2 : 4;
+        float Read(byte[] bytes, int at) => half ? (float)BitConverter.ToHalf(bytes, at) : BitConverter.ToSingle(bytes, at);
         int differing = 0;
         int first = -1;
         double worst = 0;
-        for (int i = 0; i + 4 <= a.Bytes.Length; i += 4)
+        for (int i = 0; i + step <= a.Bytes.Length; i += step)
         {
-            float fa = BitConverter.ToSingle(a.Bytes, i);
-            float fb = BitConverter.ToSingle(b.Bytes, i);
+            float fa = Read(a.Bytes, i);
+            float fb = Read(b.Bytes, i);
             if (float.IsNaN(fa) && float.IsNaN(fb))
             {
                 continue;
@@ -212,7 +219,7 @@ public static class Parity
         }
         if (differing > 0)
         {
-            report.Failures.Add($"{model.Name} {a.Key}: {nameA} and {nameB} differ in {differing} floats (largest relative error {worst:G3}, tolerance {tolerance:G3}), first at byte offset {first}: {BitConverter.ToSingle(a.Bytes, first):R} vs {BitConverter.ToSingle(b.Bytes, first):R}");
+            report.Failures.Add($"{model.Name} {a.Key}: {nameA} and {nameB} differ in {differing} floats (largest relative error {worst:G3}, tolerance {tolerance:G3}), first at byte offset {first}: {Read(a.Bytes, first):R} vs {Read(b.Bytes, first):R}");
         }
     }
 

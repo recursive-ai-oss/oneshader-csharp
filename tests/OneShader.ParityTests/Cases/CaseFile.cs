@@ -35,13 +35,15 @@ public sealed class CaseFormatException : Exception
 /// dispatch ENTRY X Y Z
 /// uniform SET BINDING [element=N] : DATA
 /// push : DATA                               (the push-constant block's bytes, pushed before every draw and dispatch)
-/// storage SET BINDING [element=N] [out] [sorted] [size=BYTES] [float=X] [: DATA]
+/// storage SET BINDING [element=N] [out] [sorted] [size=BYTES] [float=X] [half=X] [: DATA]
 ///   (float=X: an output of 32-bit floats that implementations with looser math, such as WebGPU, may reproduce within |a-b| &lt;= X * (1 + |a|))
 /// texture SET BINDING WxH[xLAYERS] FORMAT GENERATOR [mips=N] [cube] [element=N]
 /// image SET BINDING WxH FORMAT GENERATOR [out] [element=N]
 /// sampler SET BINDING linear|nearest clamp|repeat [mips] [compare] [element=N]
 /// (resources declared at one SET BINDING with element=0,1,... form a descriptor array)
+///   (half=X: the same for an output of 16-bit floats)
 /// expect NAME
+/// relaxed                                   (the outputs depend on RelaxedPrecision rounding: compared on SPIR-V only)
 /// </code>
 /// </summary>
 public static class CaseFile
@@ -93,6 +95,7 @@ public static class CaseFile
         string background = "";
         var blend = BlendMode.None;
         int tolerance = 0;
+        bool relaxed = false;
         double floatTolerance = 0;
         var targetFormat = PixelFormat.Rgba8;
         DepthDecl? depth = null;
@@ -125,6 +128,9 @@ public static class CaseFile
                     break;
                 case "shader":
                     shader = Arg(t, 1, fail);
+                    break;
+                case "relaxed":
+                    relaxed = true;
                     break;
                 case "define":
                     {
@@ -245,6 +251,7 @@ public static class CaseFile
                         Output = Array.IndexOf(t, "out") >= 0,
                         Sorted = Array.IndexOf(t, "sorted") >= 0,
                         FloatTolerance = double.Parse(OptionOrNull(t, "float") ?? "0", CultureInfo.InvariantCulture),
+                        HalfTolerance = double.Parse(OptionOrNull(t, "half") ?? "0", CultureInfo.InvariantCulture),
                         SizeBytes = int.Parse(OptionOrNull(t, "size") ?? "0", CultureInfo.InvariantCulture),
                         Data = data,
                     });
@@ -316,6 +323,7 @@ public static class CaseFile
         }
         var model = new CaseModel { Name = name, Shader = shader, FloatTolerance = floatTolerance, Push = push };
         model.Defines.AddRange(defines);
+        model.RelaxedPrecision = relaxed;
         model.Resources.AddRange(resources);
         model.Dispatches.AddRange(dispatches);
         model.Expects.AddRange(expects);

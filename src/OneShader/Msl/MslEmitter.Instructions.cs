@@ -631,10 +631,11 @@ internal sealed partial class MslEmitter
         }
 
         bool isSigned = KindOf(i.Type) == NumKind.SInt;
-        string scalar = isSigned ? "int" : "uint";
-        if (KindOf(i.Type) is not (NumKind.SInt or NumKind.UInt) || (i.Type.ScalarElement?.ScalarKind is ScalarKind.Int64 or ScalarKind.UInt64))
+        bool wide = i.Type.ScalarElement?.ScalarKind is ScalarKind.Int64 or ScalarKind.UInt64;
+        string scalar = wide ? "ulong" : isSigned ? "int" : "uint";
+        if (KindOf(i.Type) is not (NumKind.SInt or NumKind.UInt) || (wide && !WideTypeUse.IsMetalInt64Atomic(i)))
         {
-            Unsupported("Metal atomics work on 32-bit integers only.", i.Span);
+            Unsupported("Metal atomics work on 32-bit integers (and unsigned 64-bit InterlockedMax / InterlockedMin without a result).", i.Span);
             Define(i, T(i.Type) + "()");
             return;
         }
@@ -670,6 +671,13 @@ internal sealed partial class MslEmitter
         }
 
         string v = V(i.Operands[1]);
+        if (wide)
+        {
+            // MSL 6.16.4.6: the 64-bit forms are atomic_max_explicit / atomic_min_explicit, return void, and only take memory_order_relaxed.
+            W((AtomicOp)i.Immediates[0] == AtomicOp.Max ? "atomic_max_explicit(" + ptr + ", " + v + ", memory_order_relaxed);" : "atomic_min_explicit(" + ptr + ", " + v + ", memory_order_relaxed);");
+            return; // the result is not used (WideTypeUse.IsMetalInt64Atomic), so nothing is defined
+        }
+
         string fn = (AtomicOp)i.Immediates[0] switch
         {
             AtomicOp.Add => "atomic_fetch_add_explicit",

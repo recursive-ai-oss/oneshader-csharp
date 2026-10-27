@@ -44,6 +44,8 @@ public class GpuParityTests
     {
         ToolGate.RequireDxc();
         var ctx = Gpu.RequireOrSkip();
+        Assert.SkipWhen(Corpus.Load(name).RelaxedPrecision && System.Environment.GetEnvironmentVariable("ONESHADER_PARITY_TARGET") == "wgsl",
+            "the outputs depend on RelaxedPrecision rounding, which WGSL does not have");
         KnownGaps.Check(name, () =>
         {
             ParityReport report;
