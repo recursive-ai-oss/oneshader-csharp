@@ -403,6 +403,8 @@ internal sealed partial class MslEmitter
             : string.Empty;
         _fnNames[f] = _entryName;
         var head = new StringBuilder();
+        head.Append(Directive(f.Span));
+        ForgetMark();
         if (ep.Stage == ShaderStage.Compute)
         {
             var (wx, wy, wz) = ep.WorkgroupSize;

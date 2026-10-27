@@ -349,6 +349,8 @@ internal static class Inliner
 
         var hoisted = new List<Instruction>();
         var cloneList = new List<Instruction>();
+        var callSite = new InlineSite(call.Span, call.InlinedAt);
+        var rebased = new Dictionary<InlineSite, InlineSite>(ReferenceEqualityComparer.Instance);
         for (int bi = 0; bi < callee.Blocks.Count; bi++)
         {
             var ob = callee.Blocks[bi];
@@ -362,6 +364,8 @@ internal static class Inliner
                     Precise = i.Precise,
                     Span = i.Span,
                     Name = i.Name,
+                    DebugVariable = i.DebugVariable,
+                    InlinedAt = Rebase(i.InlinedAt, callSite, rebased),
                 };
                 c.Immediates.AddRange(i.Immediates);
                 foreach (var t in i.Targets)
@@ -587,5 +591,49 @@ internal static class Inliner
         var br = IrUtil.Make(from, Opcode.Branch, HlslType.Void);
         br.Targets.Add(to);
         return br;
+    }
+
+    /// <summary>
+    /// Debug info: the inline chain of a callee instruction once the callee itself is inlined at <paramref name="callSite"/>.
+    /// The outermost site of the old chain continues into the new one. Walks iteratively, so a deep chain cannot overflow the stack.
+    /// </summary>
+    private static InlineSite Rebase(InlineSite? old, InlineSite callSite, Dictionary<InlineSite, InlineSite> made)
+    {
+        if (old is null)
+        {
+            return callSite;
+        }
+
+        var chain = new List<InlineSite>();
+        for (var s = old; s is not null; s = s.Outer)
+        {
+            if (made.TryGetValue(s, out var done))
+            {
+                var result = done;
+                for (int k = chain.Count - 1; k >= 0; k--)
+                {
+                    result = Link(chain[k], result, made);
+                }
+
+                return result;
+            }
+
+            chain.Add(s);
+        }
+
+        var tail = callSite;
+        for (int k = chain.Count - 1; k >= 0; k--)
+        {
+            tail = Link(chain[k], tail, made);
+        }
+
+        return tail;
+    }
+
+    private static InlineSite Link(InlineSite old, InlineSite outer, Dictionary<InlineSite, InlineSite> made)
+    {
+        var n = new InlineSite(old.Call, outer);
+        made[old] = n;
+        return n;
     }
 }

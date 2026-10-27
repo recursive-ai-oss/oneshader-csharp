@@ -149,7 +149,7 @@ public sealed partial class ToolTests : IDisposable
     [Theory]
     [InlineData("--bogus")]
     [InlineData("-fvk-b-shift")]
-    [InlineData("-Zi")]
+    [InlineData("-Fd")]
     [InlineData("-HV")]
     public void UnknownOrUnsupportedFlagIsAUsageError(string flag)
     {
