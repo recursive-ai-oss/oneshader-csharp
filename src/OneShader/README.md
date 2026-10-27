@@ -174,6 +174,43 @@ Uint formats for `uint`, Sint formats for `int`); a different component count is
 fill components. The attribute must lie inside the stride, and its offset must be a multiple of min(4, format size). Otherwise
 `LayoutErrorKind.InvalidVertexInput`.
 
+Differences one Vulkan descriptor covers can be allowed, per union, with `UnionOptions` (both off by default):
+
+```csharp
+var opt = new UnionOptions { IgnoreTextureDimension = true, MergeStorageAccess = true };
+PipelineLayout.TryCreateUnion(allEntries, opt, out var shared, out var error);
+```
+
+- `IgnoreTextureDimension`: a `Texture2D` in one entry point and a `TextureCube` in another may share a slot (kind, count, texel type and
+  storage format must still agree). Vulkan and Metal are unaffected. WebGPU checks `viewDimension` against the shader, so `TryToWebGpu`
+  refuses such a slot (`Unsupported`, naming both types) unless `WebGpuLayoutOptions.TextureDimensions[(group, binding)]` picks one of the
+  declared dimensions; a pipeline whose shader declares the other one needs a layout with its own pick.
+- `MergeStorageAccess`: `StructuredBuffer` and `RWStructuredBuffer` (or `ByteAddressBuffer` and `RWByteAddressBuffer`) at one slot merge to
+  read-write. WebGPU's `storage` binding only fits shaders that declare the buffer read-write, so `TryToWebGpu` refuses the slot unless
+  `ReadOnlyStorageBuffers` names it (no shader writes it) or every entry point declares it `RW`.
+
+`PipelineLayout.ToBindings(BindingOptions?)` describes the layout without any API's vocabulary: per set and binding a `BindingDescription`
+with `Type` (`UniformBuffer`, `ReadOnlyStorageBuffer`, `StorageBuffer`, `SampledTexture`, `StorageTexture`, `Sampler`, texel buffers),
+`Count`, `Stages`, `IsDynamic`, the texture `Dimension` (and every `Dimensions` seen at the slot), `SampleKind` (`Float`, `Sint`, `Uint`, or
+`Depth` for names in `BindingOptions.DepthTextures`), `IsComparison`, `StorageFormat` and `MetalIndex`. Read-only against read-write comes from the
+HLSL type, which is what Vulkan's `STORAGE_BUFFER` cannot say and WebGPU needs.
+
+One entry point can read several vertex buffers, for example a per-vertex mesh stream and a per-instance stream:
+
+```csharp
+// Locations 0..1 come from a 32-byte per-vertex buffer, locations 2.. from a 64-byte per-instance buffer.
+if (!entry.Vertex!.TrySplit([new VertexStream(0, 32), new VertexStream(2, 64, VertexStepMode.Instance)], out var streams, out var error, overrides))
+    Console.WriteLine(error);   // overlapping attributes, a stride too small, a location in no stream, ...
+var vk = streams.ToVulkan();             // bindings 0 and 1, with input rates
+var mtl = streams.ToMetal(out error);    // layouts at buffer 30 and 29, with step functions
+var web = streams.ToWebGpu();            // vertex.buffers[0..1], with stepMode
+```
+
+Stream `i` covers the locations from its first location up to the next stream's. Offsets are relative to the stream: unless `overrides` gives
+one, an attribute keeps its place in the layout minus the offset of its stream's first attribute. Metal counts down from the vertex-buffer base
+(30) because the compiler puts its own resources at the low indices and Metal's last slot is 30. A stream the entry point reads nothing
+from is kept (empty), so slot numbers are the same for every entry point sharing the streams.
+
 Creating layouts allocates; do it when a shader loads, not per frame.
 
 ## What works
