@@ -775,8 +775,12 @@ internal sealed partial class Checker
                 Err(SemanticCodes.Unsupported, "The intrinsic '" + name + "' is not supported yet.", c.Span);
                 return true;
             default:
-                if (name.StartsWith("Wave", StringComparison.Ordinal) || name.StartsWith("Quad", StringComparison.Ordinal)
-                    || name.StartsWith("Interlocked", StringComparison.Ordinal))
+                if (TryWaveBuiltin(c, name, at, info, out result))
+                {
+                    return true;
+                }
+
+                if (name.StartsWith("Interlocked", StringComparison.Ordinal))
                 {
                     Err(SemanticCodes.Unsupported, "The intrinsic '" + name + "' is not supported yet.", c.Span);
                     return true;

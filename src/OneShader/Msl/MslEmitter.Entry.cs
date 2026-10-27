@@ -561,6 +561,17 @@ internal sealed partial class MslEmitter
                 type = "uint";
                 attr = "[[thread_index_in_threadgroup]]";
                 break;
+            case BuiltIn.SubgroupLocalInvocationId when stage != ShaderStage.Vertex:
+                type = "uint";
+                attr = "[[thread_index_in_simdgroup]]";
+                break;
+            case BuiltIn.SubgroupSize when stage != ShaderStage.Vertex:
+                type = "uint";
+                attr = "[[threads_per_simdgroup]]";
+                break;
+            case BuiltIn.SubgroupLocalInvocationId or BuiltIn.SubgroupSize:
+                Unsupported("The lane index and count (WaveGetLaneIndex, WaveGetLaneCount) cannot be read in a vertex shader in MSL: Metal has no SIMD-group attribute for vertex functions. Use them in a pixel or compute shader.", g.Span);
+                return;
             default:
                 Unsupported("The system value " + (g.Semantic ?? g.BuiltIn.ToString()) + " cannot be an input of a " + stage + " shader in MSL.", g.Span);
                 return;
@@ -589,6 +600,8 @@ internal sealed partial class MslEmitter
         BuiltIn.GlobalInvocationId => "thread_position_in_grid",
         BuiltIn.LocalInvocationId => "thread_position_in_threadgroup",
         BuiltIn.WorkgroupId => "threadgroup_position_in_grid",
+        BuiltIn.SubgroupLocalInvocationId => "thread_index_in_simdgroup",
+        BuiltIn.SubgroupSize => "threads_per_simdgroup",
         _ => "thread_index_in_threadgroup",
     };
 

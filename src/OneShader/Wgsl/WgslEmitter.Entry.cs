@@ -40,6 +40,13 @@ internal sealed partial class WgslEmitter
                 return ("workgroup_id", u3);
             case BuiltIn.LocalInvocationIndex:
                 return ("local_invocation_index", ScalarType.UInt);
+            case BuiltIn.SubgroupLocalInvocationId or BuiltIn.SubgroupSize when _ep.Stage == ShaderStage.Vertex:
+                Unsupported("WaveGetLaneIndex and WaveGetLaneCount are not available in a vertex shader in WGSL: WebGPU's subgroup built-ins exist only in compute and fragment shaders.", g.Span);
+                return null;
+            case BuiltIn.SubgroupLocalInvocationId:
+                return ("subgroup_invocation_id", ScalarType.UInt);
+            case BuiltIn.SubgroupSize:
+                return ("subgroup_size", ScalarType.UInt);
             case BuiltIn.ClipDistance or BuiltIn.CullDistance:
                 Unsupported("SV_ClipDistance and SV_CullDistance need WebGPU's optional clip-distances feature, which this backend does not use; clip in the pixel shader with clip() or discard instead.", g.Span);
                 return null;

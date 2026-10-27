@@ -850,7 +850,8 @@ internal sealed partial class Lowerer
                     return false;
                 }
 
-                if (bi.Kind == BuiltinKind.Intrinsic && bi.Ir is >= Intrinsic.Ddx and <= Intrinsic.Fwidth)
+                // Derivatives and wave operations depend on which invocations run them, so they must not be skipped or duplicated.
+                if (bi.Kind == BuiltinKind.Intrinsic && (bi.Ir is >= Intrinsic.Ddx and <= Intrinsic.QuadReadLaneAt or Intrinsic.WaveActiveAllEqual))
                 {
                     return false;
                 }

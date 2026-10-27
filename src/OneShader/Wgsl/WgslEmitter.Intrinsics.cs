@@ -214,10 +214,11 @@ internal sealed partial class WgslEmitter
             case Intrinsic.UnpackHalf:
                 EmitHalf(i, false);
                 break;
+            case >= Intrinsic.WaveIsFirstLane and <= Intrinsic.QuadReadLaneAt or Intrinsic.WaveActiveAllEqual:
+                EmitWave(i);
+                break;
             default:
-                Unsupported(i.Intrinsic >= Intrinsic.WaveGetLaneCount
-                    ? "Wave and quad intrinsics (" + i.Intrinsic + ") are not available in WGSL; WebGPU's subgroup feature is optional and not used by this backend."
-                    : "The intrinsic '" + i.Intrinsic + "' is not supported by the WGSL backend.", i.Span);
+                Unsupported("The intrinsic '" + i.Intrinsic + "' is not supported by the WGSL backend.", i.Span);
                 break;
         }
 

@@ -135,7 +135,7 @@ Creating layouts allocates; do it when a shader loads, not per frame.
 
 - SPIR-V, Metal (MSL) and WebGPU (WGSL) output. Limits are listed in `docs/msl-backend.md` and
   `docs/wgsl-backend.md`.
-- Unbounded resource arrays and wave intrinsics are not supported.
+- Unbounded resource arrays and `WaveMatch`/`WaveMultiPrefix*` are not supported. Wave and quad intrinsics work; a shader that uses them needs subgroup support on the device (`EntryPointInfo.SubgroupOperations`).
 
 ## License
 

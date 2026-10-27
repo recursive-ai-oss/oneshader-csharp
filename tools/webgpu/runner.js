@@ -42,6 +42,22 @@ async function init() {
   device = await adapter.requestDevice();
   device.addEventListener('uncapturederror', (e) => sink?.push('uncaptured: ' + e.error.message));
   device.lost.then((info) => sink?.push('device lost: ' + info.message));
+  plainDevice = device;
+}
+
+// A second device with the optional subgroups feature, for jobs whose WGSL enables it. Null when the adapter lacks the feature.
+let plainDevice = null;
+let subgroupDevice = null;
+async function deviceFor(job) {
+  if (!job.subgroups) return plainDevice;
+  if (!subgroupDevice && adapter.features.has('subgroups')) {
+    // An adapter makes one device, so the second device comes from a second adapter request.
+    const second = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+    subgroupDevice = await second.requestDevice({ requiredFeatures: ['subgroups'] });
+    subgroupDevice.addEventListener('uncapturederror', (e) => sink?.push('uncaptured: ' + e.error.message));
+    subgroupDevice.lost.then((info) => sink?.push('device lost: ' + info.message));
+  }
+  return subgroupDevice;
 }
 
 window.adapterInfo = async () => {
@@ -410,6 +426,12 @@ window.runJob = async (job) => {
   await init();
   const errors = [];
   sink = errors;
+  device = await deviceFor(job);
+  if (!device) {
+    device = plainDevice;
+    sink = null;
+    return { name: job.name, outputs: [], errors: ['no-subgroups: the adapter does not offer the WebGPU subgroups feature'] };
+  }
   const scopes = ['validation', 'out-of-memory', 'internal'];
   scopes.forEach((s) => device.pushErrorScope(s));
   let outputs = [];

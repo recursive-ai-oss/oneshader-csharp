@@ -495,6 +495,8 @@ internal sealed partial class Lowerer
             _b.Call(init);
         }
 
+        FillLaneGlobals(body, ep);
+
         var slots = new IrValue[bodySym.Params.Count];
         var args = new IrValue[bodySym.Params.Count];
         for (int i = 0; i < slots.Length; i++)
@@ -683,6 +685,64 @@ internal sealed partial class Lowerer
         }
 
         return v.Type is ScalarType ? parts[0] : _b.Construct(v.Type, parts);
+    }
+
+    private GlobalVariable? _laneIndexGlobal;
+    private GlobalVariable? _laneCountGlobal;
+
+    /// <summary>The private global that holds the subgroup lane index (or size), created on first use.</summary>
+    private GlobalVariable LaneGlobal(bool count)
+    {
+        var existing = count ? _laneCountGlobal : _laneIndexGlobal;
+        if (existing is not null)
+        {
+            return existing;
+        }
+
+        var g = new GlobalVariable(count ? SubgroupUse.LaneCountName : SubgroupUse.LaneIndexName, GlobalKind.Private, AddressSpace.Private, ScalarType.UInt)
+        {
+            Initializer = Constant.Zero(ScalarType.UInt),
+        };
+        _mod.Globals.Add(g);
+        if (count)
+        {
+            _laneCountGlobal = g;
+        }
+        else
+        {
+            _laneIndexGlobal = g;
+        }
+
+        return g;
+    }
+
+    /// <summary>When the entry point's call tree reads the lane index or count, reads the built-in input once and stores it into the private copy.</summary>
+    private void FillLaneGlobals(IrFunction body, EntryPoint ep)
+    {
+        if (_laneIndexGlobal is null && _laneCountGlobal is null)
+        {
+            return;
+        }
+
+        SubgroupUse.Scan(body, out bool index, out bool count);
+        for (int k = 0; k < 2; k++)
+        {
+            bool isCount = k == 1;
+            var priv = isCount ? _laneCountGlobal : _laneIndexGlobal;
+            if (priv is null || !(isCount ? count : index))
+            {
+                continue;
+            }
+
+            var input = new GlobalVariable(ep.Function.Name + (isCount ? ".SubgroupSize" : ".SubgroupLocalInvocationId"), GlobalKind.Input, AddressSpace.Input, ScalarType.UInt)
+            {
+                BuiltIn = isCount ? BuiltIn.SubgroupSize : BuiltIn.SubgroupLocalInvocationId,
+                Interpolation = Interpolation.Flat,
+            };
+            _mod.Globals.Add(input);
+            ep.Inputs.Add(input);
+            _b.Store(priv, _b.Load(input));
+        }
     }
 
     private GlobalVariable MakeInterfaceGlobal(EntryInfo e, InterfaceVar v, GlobalKind kind, AddressSpace space)

@@ -32,7 +32,14 @@ internal static class Op
         FwidthCoarse = 215, ControlBarrier = 224, MemoryBarrier = 225, AtomicExchange = 229, AtomicCompareExchange = 230,
         AtomicIAdd = 234, AtomicSMin = 236, AtomicUMin = 237, AtomicSMax = 238, AtomicUMax = 239, AtomicAnd = 240,
         AtomicOr = 241, AtomicXor = 242, Phi = 245, LoopMerge = 246, SelectionMerge = 247, Label = 248, Branch = 249,
-        BranchConditional = 250, Switch = 251, Kill = 252, Return = 253, ReturnValue = 254, Unreachable = 255;
+        BranchConditional = 250, Switch = 251, Kill = 252, Return = 253, ReturnValue = 254, Unreachable = 255,
+        GroupNonUniformElect = 333, GroupNonUniformAll = 334, GroupNonUniformAny = 335, GroupNonUniformAllEqual = 336,
+        GroupNonUniformBroadcastFirst = 338, GroupNonUniformBallot = 339, GroupNonUniformBallotBitCount = 342,
+        GroupNonUniformShuffle = 345, GroupNonUniformIAdd = 349, GroupNonUniformFAdd = 350, GroupNonUniformIMul = 351,
+        GroupNonUniformFMul = 352, GroupNonUniformSMin = 353, GroupNonUniformUMin = 354, GroupNonUniformFMin = 355,
+        GroupNonUniformSMax = 356, GroupNonUniformUMax = 357, GroupNonUniformFMax = 358, GroupNonUniformBitwiseAnd = 359,
+        GroupNonUniformBitwiseOr = 360, GroupNonUniformBitwiseXor = 361, GroupNonUniformQuadBroadcast = 365,
+        GroupNonUniformQuadSwap = 366;
 }
 
 /// <summary>GLSL.std.450 extended instructions.</summary>
@@ -53,7 +60,9 @@ internal static class Cap
     public const uint Matrix = 0, Shader = 1, Geometry = 2, Float16 = 9, Float64 = 10, Int64 = 11, Int16 = 22, ClipDistance = 32, CullDistance = 33,
         ImageCubeArray = 34, SampleRateShading = 35, Sampled1D = 43, Image1D = 44, SampledCubeArray = 45,
         SampledBuffer = 46, ImageBuffer = 47, ImageMSArray = 48, StorageImageExtendedFormat = 49, ImageQuery = 50, DerivativeControl = 51,
-        StorageImageReadWithoutFormat = 55, StorageImageWriteWithoutFormat = 56, ShaderLayer = 69, ShaderViewportIndex = 70;
+        StorageImageReadWithoutFormat = 55, StorageImageWriteWithoutFormat = 56, ShaderLayer = 69, ShaderViewportIndex = 70,
+        GroupNonUniform = 61, GroupNonUniformVote = 62, GroupNonUniformArithmetic = 63, GroupNonUniformBallot = 64,
+        GroupNonUniformShuffle = 65, GroupNonUniformQuad = 68;
 }
 
 /// <summary>Decorations.</summary>
@@ -69,7 +78,8 @@ internal static class Bi
 {
     public const uint Position = 0, ClipDistance = 3, CullDistance = 4, PrimitiveId = 7, Layer = 9, ViewportIndex = 10,
         FragCoord = 15, FrontFacing = 17, SampleId = 18, SampleMask = 20, FragDepth = 22, WorkgroupId = 26,
-        LocalInvocationId = 27, GlobalInvocationId = 28, LocalInvocationIndex = 29, VertexIndex = 42, InstanceIndex = 43;
+        LocalInvocationId = 27, GlobalInvocationId = 28, LocalInvocationIndex = 29, SubgroupSize = 36, SubgroupLocalInvocationId = 41,
+        VertexIndex = 42, InstanceIndex = 43;
 }
 
 /// <summary>Storage classes.</summary>

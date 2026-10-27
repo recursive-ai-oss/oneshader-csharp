@@ -46,7 +46,17 @@ options always give the same bytes. Code is in `src/OneShader/SpirV/`.
 - **Shifts** mask the count to the operand width, as HLSL does. `Ne` on floats is unordered (true for NaN).
   `precise` becomes `NoContraction`.
 
+## Wave and quad intrinsics
+
+`GroupNonUniform*` instructions with Subgroup scope, chosen as DXC's output chooses them: `WaveReadLaneAt` is `OpGroupNonUniformShuffle`,
+`WaveActiveCountBits`/`WavePrefixCountBits` are `OpGroupNonUniformBallotBitCount` (Reduce / ExclusiveScan) of a ballot, the prefix functions are
+exclusive scans, `QuadReadAcross*` is `OpGroupNonUniformQuadSwap` and `QuadReadLaneAt` is `OpGroupNonUniformQuadBroadcast`. The lane index and
+count are the `SubgroupLocalInvocationId` and `SubgroupSize` input variables. The capabilities (`GroupNonUniform`, `Vote`, `Arithmetic`, `Ballot`,
+`Shuffle`, `Quad`) are added only for what the entry point uses; reflection lists the same classes (`EntryPointInfo.SubgroupOperations`, values equal
+to Vulkan's `VkSubgroupFeatureFlagBits`) so a host can check `subgroupSupportedOperations` before creating the pipeline.
+`WaveMatch` and `WaveMultiPrefix*` are front-end errors (OSH0350): partitioned operations exist in Vulkan only as a vendor extension.
+
 ## Not supported yet (reported as OSH5002)
 
-16-bit floating point, wave and quad intrinsics, unbounded resource arrays (rejected by the front end),
+16-bit floating point, unbounded resource arrays (rejected by the front end),
 comparison or bit-casting of whole matrices, bool matrices, products involving one-row/column matrices.

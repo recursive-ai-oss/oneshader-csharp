@@ -18,9 +18,9 @@ public class CaseTests
             "clustered_lights", "color_grade", "cull_instances", "depth_bounds", "histogram", "ibl_gold",
             "ibl_plastic", "ibl_prefilter", "ibl_sky", "image_filter", "lang_inheritance", "lang_members",
             "lang_operators", "lang_precise_math", "lang_resource_arrays", "lang_resource_locals", "lang_sizeof_static", "lang_statics_and_literals", "lang_switch_flow", "lang_templates", "light_cull", "msdf_text", "particles",
-            "pbr_forward", "prefix_sum", "push_kernel", "push_lit", "quad_blur", "quad_grade", "quad_sprite", "sdf_text",
+            "pbr_forward", "prefix_sum", "push_kernel", "push_lit", "quad_blur", "quad_grade", "quad_ops", "quad_sprite", "sdf_text",
             "shadow_cascades", "shadow_cascades_poisson", "shadow_depth", "skinned", "sprite", "ssao", "stage_io", "stage_layouts", "stage_layouts_off",
-            "tile_flat", "tile_ids", "tilemap", "tonemap_aces", "tonemap_reinhard", "ui", "ui_rect",
+            "tile_flat", "tile_ids", "tilemap", "tonemap_aces", "tonemap_reinhard", "ui", "ui_rect", "wave_ballot", "wave_reduce", "wave_scan_compact",
         ];
         Assert.Equal(expected, Corpus.CaseNames);
     }

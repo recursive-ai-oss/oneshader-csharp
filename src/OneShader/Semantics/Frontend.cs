@@ -378,6 +378,7 @@ internal sealed class Reflector
                 VertexStride = e.Stage == ShaderStage.Vertex ? e.VertexStride : 0,
                 UsedResources = used,
                 PushConstant = pushUse,
+                SubgroupOperations = SubgroupUse.Scan(_mod.EntryPoints[i].Function, out _, out _),
             });
         }
 

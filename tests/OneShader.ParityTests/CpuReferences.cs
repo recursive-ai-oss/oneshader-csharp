@@ -39,6 +39,9 @@ public static class CpuReferences
         "cluster_build" => ClusterBuild(model, data),
         "light_cull" => LightCull(model, data),
         "depth_bounds" => DepthBounds(model, data),
+        "wave_scan_compact" => WaveScanCompact(model, data),
+        "wave_reduce" => WaveReduce(model, data),
+        "wave_ballot" => WaveBallot(model, data),
         _ => throw new ArgumentException($"unknown CPU reference '{name}'"),
     };
 
@@ -436,5 +439,104 @@ public static class CpuReferences
         byte[] bytes = new byte[result.Length * 4];
         Buffer.BlockCopy(result, 0, bytes, 0, bytes.Length);
         return [new Expectation(Key(m, bounds), bytes, ExpectKind.Exact, 0)];
+    }
+
+    // Exclusive scan and sums per group of 256, and the values divisible by 3 packed in order at the start of each group's region.
+    private static IReadOnlyList<Expectation> WaveScanCompact(CaseModel m, CaseData d)
+    {
+        uint[] values = Words(d.Buffers[Find(m, ResourceKind.Storage, 0, 0)]);
+        int scanIndex = Find(m, ResourceKind.Storage, 0, 1);
+        int sumsIndex = Find(m, ResourceKind.Storage, 0, 2);
+        int compactedIndex = Find(m, ResourceKind.Storage, 0, 3);
+        int keptIndex = Find(m, ResourceKind.Storage, 0, 4);
+        int groups = m.Dispatches[0].X;
+        uint[] scan = new uint[values.Length];
+        uint[] sums = new uint[groups];
+        uint[] compacted = new uint[values.Length];
+        uint[] kept = new uint[groups];
+        for (int g = 0; g < groups; g++)
+        {
+            uint running = 0;
+            for (int i = g * 256; i < (g + 1) * 256; i++)
+            {
+                scan[i] = running;
+                running += values[i];
+                if (values[i] % 3 == 0)
+                {
+                    compacted[(g * 256) + kept[g]++] = values[i];
+                }
+            }
+            sums[g] = running;
+        }
+        return
+        [
+            new Expectation(Key(m, scanIndex), Bytes(scan, d.Buffers[scanIndex].Length), ExpectKind.Exact, 0),
+            new Expectation(Key(m, sumsIndex), Bytes(sums, d.Buffers[sumsIndex].Length), ExpectKind.Exact, 0),
+            new Expectation(Key(m, compactedIndex), Bytes(compacted, d.Buffers[compactedIndex].Length), ExpectKind.Exact, 0),
+            new Expectation(Key(m, keptIndex), Bytes(kept, d.Buffers[keptIndex].Length), ExpectKind.Exact, 0),
+        ];
+    }
+
+    // Sixteen reductions per group of 256 (see the shader for the meaning of each word); integers wrap and floats are exact.
+    private static IReadOnlyList<Expectation> WaveReduce(CaseModel m, CaseData d)
+    {
+        uint[] values = Words(d.Buffers[Find(m, ResourceKind.Storage, 0, 0)]);
+        int resultIndex = Find(m, ResourceKind.Storage, 0, 1);
+        int groups = m.Dispatches[0].X;
+        uint[] r = new uint[groups * 16];
+        for (int g = 0; g < groups; g++)
+        {
+            uint sum = 0, min = uint.MaxValue, max = 0, and = uint.MaxValue, or = 0, xor = 0, product = 1, sumLow = 0, odd = 0;
+            int smin = int.MaxValue, smax = int.MinValue;
+            float fmin = 1.0e30f, fmax = -1.0e30f, fsum = 0, vmax = -1.0e30f;
+            for (int i = g * 256; i < (g + 1) * 256; i++)
+            {
+                uint v = values[i];
+                int s = (int)v - 500;
+                sum += v;
+                min = Math.Min(min, v);
+                max = Math.Max(max, v);
+                and &= (v << 20) | 0x0F0F0000u;
+                or |= v;
+                xor ^= v;
+                product *= v | 1u;
+                smin = Math.Min(smin, s);
+                smax = Math.Max(smax, s);
+                fmin = Math.Min(fmin, s);
+                fmax = Math.Max(fmax, s);
+                fsum += v & 255u;
+                sumLow += v & 7u;
+                vmax = Math.Max(vmax, 2.0f * v);
+                odd += v & 1u;
+            }
+            uint F(float x) => BitConverter.SingleToUInt32Bits(x);
+            uint[] row = [sum, min, max, and, or, xor, product, F(fmin), F(fmax), F(fsum), (uint)smin, (uint)smax, sum, sumLow, F(vmax), odd];
+            Array.Copy(row, 0, r, g * 16, 16);
+        }
+        return [new Expectation(Key(m, resultIndex), Bytes(r, d.Buffers[resultIndex].Length), ExpectKind.Exact, 0)];
+    }
+
+    // Eight totals per group that hold for any subgroup size of at most 128 lanes (see the shader).
+    private static IReadOnlyList<Expectation> WaveBallot(CaseModel m, CaseData d)
+    {
+        uint[] values = Words(d.Buffers[Find(m, ResourceKind.Storage, 0, 0)]);
+        int totalsIndex = Find(m, ResourceKind.Storage, 0, 1);
+        int groups = m.Dispatches[0].X;
+        uint[] t = new uint[groups * 8];
+        for (int g = 0; g < groups; g++)
+        {
+            uint count = 0;
+            for (int i = g * 256; i < (g + 1) * 256; i++)
+            {
+                if (values[i] % 5 == 0)
+                {
+                    count++;
+                }
+            }
+            uint below = 128u * (uint)(g % 3);
+            uint[] row = [count, below, below, 256, 256, 256, count, 256];
+            Array.Copy(row, 0, t, g * 8, 8);
+        }
+        return [new Expectation(Key(m, totalsIndex), Bytes(t, d.Buffers[totalsIndex].Length), ExpectKind.Exact, 0)];
     }
 }

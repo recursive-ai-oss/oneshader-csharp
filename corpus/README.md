@@ -5,7 +5,8 @@ Every file here was written for this repository and is licensed `MIT OR Apache-2
 starts with an `SPDX-License-Identifier` line. No third-party shader is included. A third-party
 sample may only be added with a permissive licence (MIT, Apache-2.0, BSD or CC0) recorded in this file.
 
-The shaders are modern HLSL in the subset every target can express (no wave operations), compile
+The shaders are modern HLSL in the subset every target can express (the wave and quad cases below need the
+target's subgroup support; their checked results do not depend on the subgroup size), compile
 with `dxc -spirv -fspv-target-env=vulkan1.2`, and give every resource an explicit
 `[[vk::binding(binding, set)]]`.
 
@@ -41,6 +42,10 @@ with `dxc -spirv -fspv-target-env=vulkan1.2`, and give every resource an explici
 | `compute/ibl_prefilter.hlsl` | GGX importance-sampled prefilter of a cube map into a layered `RWTexture2DArray`, Hammersley sequence via `reversebits`, density-based mip selection | written for this repository | MIT OR Apache-2.0 |
 | `compute/light_cull.hlsl` | Assigns point lights to clusters (sphere against box) into fixed-size per-cluster lists | written for this repository | MIT OR Apache-2.0 |
 | `compute/depth_bounds.hlsl` | Per-tile minimum and maximum depth with group-shared integer atomics on the float bits and `Texture2D.Load` | written for this repository | MIT OR Apache-2.0 |
+| `compute/wave_scan_compact.hlsl` | Group-wide exclusive scan and stream compaction from `WavePrefixSum`, `WavePrefixCountBits`, `WaveActiveSum`, `WaveActiveCountBits` and `WaveReadLaneFirst`; wave totals combine through group-shared memory, so the result is the same for any subgroup size | written for this repository | MIT OR Apache-2.0 |
+| `compute/wave_reduce.hlsl` | Sixteen group reductions from `WaveActiveSum`/`Product`/`Min`/`Max`/`BitAnd`/`BitOr`/`BitXor` on uint, int, float and vector values | written for this repository | MIT OR Apache-2.0 |
+| `compute/wave_ballot.hlsl` | `WaveActiveBallot`, `AnyTrue`, `AllTrue`, `AllEqual`, `CountBits`, lane index and count, `WaveIsFirstLane`, `WaveReadLaneAt`: size-independent totals plus a per-lane record compared with DXC | written for this repository | MIT OR Apache-2.0 |
+| `2d/quad_ops.hlsl` | `QuadReadAcrossX`/`Y`/`Diagonal` and `QuadReadLaneAt` in a pixel shader, checked against `ddx_fine`/`ddy_fine` | written for this repository | MIT OR Apache-2.0 |
 | `compute/prefix_sum.hlsl` | Block-wise exclusive scan in group-shared memory with barriers | written for this repository | MIT OR Apache-2.0 |
 | `compute/stage_layouts.hlsl` | Constant-buffer `bool` members, `StructuredBuffer<float3>` elements, `f32tof16`/`f16tof32`, `faceforward` and `log10` in one kernel (run with the flags on and off) | written for this repository | MIT OR Apache-2.0 |
 | `compute/histogram.hlsl` | Luminance histogram with group-shared atomics into a read-write buffer | written for this repository | MIT OR Apache-2.0 |
@@ -98,6 +103,10 @@ written for this repository and licensed `MIT OR Apache-2.0`.
 | `light_cull` | `compute/light_cull.hlsl` | dispatch, 512 clusters, 40 lights | buffers exact, CPU result |
 | `depth_bounds` | `compute/depth_bounds.hlsl` | dispatch, 64 tiles | buffer exact, CPU result |
 | `prefix_sum` | `compute/prefix_sum.hlsl` | dispatch | buffers exact, CPU result |
+| `wave_scan_compact` | `compute/wave_scan_compact.hlsl` | dispatch, 4 groups of 256 | buffers exact, CPU result (any subgroup size) |
+| `wave_reduce` | `compute/wave_reduce.hlsl` | dispatch, 4 groups of 256 | buffer exact, CPU result (any subgroup size) |
+| `wave_ballot` | `compute/wave_ballot.hlsl` | dispatch, 4 groups of 256 | totals buffer exact vs CPU (any subgroup size up to 128 lanes); per-lane buffer exact vs DXC on the same device |
+| `quad_ops` | `2d/quad_ops.hlsl` | fullscreen triangle, 64x64 | image, tolerance 2 |
 | `histogram` | `compute/histogram.hlsl` | dispatch | buffer exact, CPU result |
 | `image_filter` | `compute/image_filter.hlsl` | dispatch | image, CPU result within one 8-bit step |
 | `particles` | `compute/particles.hlsl` | 3 dispatches | buffer bit-exact between compilers, CPU result within 1e-4 relative |

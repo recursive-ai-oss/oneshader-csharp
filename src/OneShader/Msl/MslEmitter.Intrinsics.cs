@@ -198,8 +198,11 @@ internal sealed partial class MslEmitter
                 break;
             }
 
+            case >= Intrinsic.WaveIsFirstLane and <= Intrinsic.QuadReadLaneAt or Intrinsic.WaveActiveAllEqual:
+                EmitWave(i);
+                break;
             default:
-                Unsupported("The intrinsic '" + i.Intrinsic + "' is not supported by the MSL backend: wave and quad operations are not part of the portable subset.", i.Span);
+                Unsupported("The intrinsic '" + i.Intrinsic + "' is not supported by the MSL backend.", i.Span);
                 if (!i.IsVoid)
                 {
                     Define(i, T(i.Type) + "()");

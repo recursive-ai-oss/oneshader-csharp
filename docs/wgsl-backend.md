@@ -35,9 +35,20 @@ Code is in `src/OneShader/Wgsl/`; naga validates every corpus entry point (`test
 - **Derivatives:** pixel shaders that sample or take derivatives start with `diagnostic(off, derivative_uniformity);`, since HLSL allows
   them under non-uniform control flow.
 
+## Wave and quad intrinsics
+
+WebGPU's optional `subgroups` feature. A module that uses any wave or quad intrinsic starts with `enable subgroups;` and
+`diagnostic(off, subgroup_uniformity);` (HLSL does not require wave operations to run in uniform control flow), and the lane index and count are the
+`subgroup_invocation_id` and `subgroup_size` built-ins. The host must create the device with the `subgroups` feature: reflection
+(`ShaderReflection.UsesSubgroups`, `EntryPointInfo.SubgroupOperations`) and `PipelineLayout.TryToWebGpu` (`RequiredFeatures`) say so. Mapping:
+`subgroupAdd`/`Mul`/`Min`/`Max`/`And`/`Or`/`Xor`, `subgroupExclusiveAdd`/`Mul` for the prefix functions, `subgroupBallot`, `subgroupAny`/`All`,
+`subgroupElect`, `subgroupShuffle`, `subgroupBroadcastFirst`, `quadSwapX`/`Y`/`Diagonal`, `quadBroadcast`; `WaveActiveAllEqual` compares with
+`subgroupBroadcastFirst` and the count-bits functions add `u32(condition)`. naga's WGSL reader does not parse the subgroups extension yet, so
+these modules are validated by the browser's compiler (Tint) in the WebGPU parity run instead.
+
 ## Not available (diagnostic OSH5202)
 
-clip and cull distances (optional WebGPU feature); `CalculateLevelOfDetail`; wave and quad intrinsics; resource arrays (WebGPU has no
+clip and cull distances (optional WebGPU feature); `CalculateLevelOfDetail`; wave and quad intrinsics in vertex shaders (WebGPU's subgroup functions and built-ins exist only in compute and fragment shaders); resource arrays (WebGPU has no
 binding arrays: one error per array, which suggests separate resources or a `Texture2DArray`; `NonUniformResourceIndex` is just its
 index);
 `Buffer<T>`/`RWBuffer<T>`; append and consume buffers; atomics on textures; `double`, 64-bit and 16-bit types; integer and bool
