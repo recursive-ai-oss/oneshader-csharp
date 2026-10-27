@@ -73,10 +73,17 @@ For the compiler itself, for hot reload and tools:
 dotnet add package RecursiveAI.OneShader
 ```
 
+From a command line or another build system (CMake, Make, scripts), with a DXC-style interface:
+
+```sh
+dotnet tool install -g RecursiveAI.OneShader.Tool   # then: oneshader -T ps_6_0 -E PSMain -spirv shader.hlsl -Fo shader.spv
+```
+
 Target framework `net10.0`. Build with the .NET SDK (`dotnet build`); Visual
 Studio's .NET Framework MSBuild cannot load the build task. Package guides:
-[RecursiveAI.OneShader.Build](src/OneShader.Build/README.md) and
-[RecursiveAI.OneShader](src/OneShader/README.md).
+[RecursiveAI.OneShader.Build](src/OneShader.Build/README.md),
+[RecursiveAI.OneShader](src/OneShader/README.md) and
+[RecursiveAI.OneShader.Tool](src/OneShader.Tool/README.md).
 
 ## Quick start
 

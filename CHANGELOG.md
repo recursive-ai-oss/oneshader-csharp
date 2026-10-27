@@ -1,9 +1,11 @@
 # Changelog
 
-All notable changes to the packages `RecursiveAI.OneShader` and `RecursiveAI.OneShader.Build`.
+All notable changes to the packages `RecursiveAI.OneShader`, `RecursiveAI.OneShader.Build` and `RecursiveAI.OneShader.Tool`.
 Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+
+- New package `RecursiveAI.OneShader.Tool`: the `oneshader` command-line compiler (a .NET tool, and a NativeAOT single-file binary with `dotnet publish -r <rid>`). It takes DXC's core flags (`-T`, `-E`, `-D`, `-I`, `-Fo`, `-spirv`, `-O0`..`-O3`, `-Zpr`/`-Zpc`, `-HV 2021`, `-WX`) plus `--target spirv|msl|wgsl` (repeatable), `--all-entries`, `--reflect <file.json>` and `--depfile <file>`. Diagnostics print as `file(line,col): error OSHnnnn: message`; exit code 0, 1 for compile errors, 2 for command-line errors.
 
 ## [1.0.0]
 

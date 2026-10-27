@@ -4,6 +4,7 @@
     <OneShaderVersion>1.0.0</OneShaderVersion>
     <OneShaderLibraryPackageId>RecursiveAI.OneShader</OneShaderLibraryPackageId>
     <OneShaderBuildPackageId>RecursiveAI.OneShader.Build</OneShaderBuildPackageId>
+    <OneShaderToolPackageId>RecursiveAI.OneShader.Tool</OneShaderToolPackageId>
     <RootNamespace>OneShader</RootNamespace>
     <Version>$(OneShaderVersion)</Version>
     <Authors>Recursive AI, LLC</Authors>

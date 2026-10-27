@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The command-line compiler: a .NET tool package, and a NativeAOT single-file binary when published with
+       `dotnet publish -r <rid>`. Same compiler library as the other packages; the library is compiled in, not shipped. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Not "oneshader": assembly names compare case-insensitively and would clash with OneShader.dll. The command is oneshader. -->
+    <AssemblyName>OneShader.Tool</AssemblyName>
+    <PackageId>$(OneShaderToolPackageId)</PackageId>
+    <Description>The oneshader command line: compiles HLSL vertex, pixel and compute shaders to SPIR-V, MSL and WGSL with a DXC-compatible set of core flags, writes reflection as JSON and Make-style dependency files.</Description>
+    <PackageTags>hlsl;shader;shaders;spirv;msl;wgsl;compiler;cli;dotnet-tool</PackageTags>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>oneshader</ToolCommandName>
+    <IsPackable>true</IsPackable>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="/" />
+    <InternalsVisibleTo Include="OneShader.Tool.Tests" />
+    <ProjectReference Include="../OneShader/OneShader.csproj" />
+  </ItemGroup>
+  <!-- The NativeAOT binary is named after the assembly (OneShader.Tool); the published command is `oneshader`. -->
+  <Target Name="NameTheNativeCommand" AfterTargets="CopyNativeBinary" Condition="'$(PublishAot)' == 'true' and '$(_IsPublishing)' == 'true'">
+    <PropertyGroup>
+      <_NativeExe>$(PublishDir)OneShader.Tool$(NativeBinaryExt)</_NativeExe>
+    </PropertyGroup>
+    <Move SourceFiles="$(_NativeExe)" DestinationFiles="$(PublishDir)oneshader$(NativeBinaryExt)" Condition="Exists('$(_NativeExe)')" />
+  </Target>
+</Project>
