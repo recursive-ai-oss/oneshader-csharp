@@ -27,6 +27,9 @@ public class LayoutGeneratorTests
         { "3d/pbr_forward.hlsl", "PbrForward", CompileTargetSet.All },
         { "lang/resource_arrays.hlsl", "ResourceArrays", CompileTargetSet.NoWgsl },
         { "compute/histogram.hlsl", "Histogram", CompileTargetSet.All },
+        { "lang/bindless_textures.hlsl", "BindlessTextures", CompileTargetSet.NoWgsl },
+        { "lang/bindless_buffers.hlsl", "BindlessBuffers", CompileTargetSet.NoWgsl },
+        { "lang/bindless_heap.hlsl", "BindlessHeap", CompileTargetSet.NoWgsl },
         { "compute/append_consume.hlsl", "AppendConsume", CompileTargetSet.SpirVOnly },
     };
 
@@ -41,7 +44,8 @@ public class LayoutGeneratorTests
     private static string Describe(EntryLayout e)
     {
         var parts = new List<string> { e.Name + " " + e.Stage + " " + e.WorkgroupSize };
-        parts.AddRange(e.Resources.Select(r => r.ToString()));
+        // The heap kinds are a list on one side and an array on the other: compare their contents, not their type names.
+        parts.AddRange(e.Resources.Select(r => (r with { HeapKinds = [] }).ToString() + " kinds=" + string.Join(",", r.HeapKinds)));
         parts.Add(e.PushConstant?.ToString() ?? "no push");
         parts.Add(e.Vertex is { } v ? "vertex " + v.Stride + " " + string.Join(";", v.Attributes.ToArray().Select(a => a.ToString())) : "no vertex");
         return string.Join("\n", parts);
@@ -115,6 +119,32 @@ public class LayoutGeneratorTests
         finally
         {
             ctx.Unload();
+        }
+    }
+
+    [Fact]
+    public void GeneratedBindingsMarkUnboundedArraysAndHeaps()
+    {
+        foreach (var (rel, className, resource, heap) in new[] { ("lang/bindless_textures.hlsl", "BindlessTextures", "Textures", ""), ("lang/bindless_heap.hlsl", "BindlessHeap", "ResourceDescriptorHeap", "Resource") })
+        {
+            string path = Path.Combine(Harness.RepoRoot, "corpus", rel);
+            var result = ShaderCompiler.Compile(File.ReadAllText(path), Path.GetFileName(path), new CompileOptions { Targets = NoWgsl }, TestContext.Current.CancellationToken);
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+            string text = CompileShaders.Render(result.Reflection!, result.Blobs, "/unused/" + className + ".hlsl", result.Reflection!.SourceName, "Probe.Shaders", className, "0", new SortedSet<string>(StringComparer.Ordinal), [], "/unused");
+            var (sources, diagnostics) = Harness.Generate(("obj/oneshader/" + className + ".oneshader", text));
+            Assert.Empty(diagnostics);
+            var asm = Harness.Compile(sources.Select(s => s.Text), out var ctx);
+            try
+            {
+                var bindings = asm.GetType("Probe.Shaders." + className + "+Bindings+" + resource)!;
+                Assert.Equal(0u, (uint)bindings.GetField("Count")!.GetValue(null)!);
+                Assert.True((bool)bindings.GetField("IsUnbounded")!.GetValue(null)!);
+                Assert.Equal(heap.Length > 0, bindings.GetField("Heap") is not null);
+            }
+            finally
+            {
+                ctx.Unload();
+            }
         }
     }
 

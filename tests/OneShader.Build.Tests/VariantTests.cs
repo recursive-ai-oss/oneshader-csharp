@@ -214,6 +214,53 @@ public sealed class VariantTests : IDisposable
     }
 
     [Fact]
+    public void UnboundedArraysAndHeapsWorkInVariants()
+    {
+        const string source = """
+            [[vk::binding(0, 0)]] Texture2D<float4> Tex[] : register(t0);
+            [[vk::binding(1, 0)]] SamplerState Smp : register(s0);
+            [[vk::binding(2, 0)]] RWStructuredBuffer<float4> Out : register(u0);
+            [shader("compute")] [numthreads(4,1,1)]
+            void CSMain(uint3 id : SV_DispatchThreadID)
+            {
+            #ifdef HEAP
+                Texture2D<float4> t = ResourceDescriptorHeap[NonUniformResourceIndex(id.x)];
+            #else
+                Texture2D<float4> t = Tex[NonUniformResourceIndex(id.x)];
+            #endif
+                Out[id.x] = t.SampleLevel(Smp, float2(0.5, 0.5), 0);
+            }
+            """;
+        var r = Run(source, "HEAP", "SpirV;Msl", name: "Bindless");
+        Assert.True(r.Ok, Describe(r.Engine));
+        string generated = Generate(r);
+        const string probeSource = """
+            using System.Linq;
+            namespace Probe;
+            public static class Bindless
+            {
+                public static string Describe(bool heap)
+                {
+                    var v = T.Shaders.Bindless.Variants.Get(new T.Shaders.Bindless.Key(heap));
+                    return string.Join(";", v.Bindings.ToArray().Select(b => b.Name + "=" + b.Count + (b.IsUnbounded ? "u" : "")));
+                }
+            }
+            """;
+        var asm = Harness.Compile([generated, probeSource], out var ctx);
+        try
+        {
+            var probe = asm.GetType("Probe.Bindless")!;
+            string Call(bool heap) => (string)probe.GetMethod("Describe")!.Invoke(null, [heap])!;
+            Assert.Equal("Tex=0u;Smp=1;Out=1", Call(false));
+            Assert.Equal("Tex=0u;Smp=1;Out=1;ResourceDescriptorHeap=0u", Call(true));
+        }
+        finally
+        {
+            ctx.Unload();
+        }
+    }
+
+    [Fact]
     public void AnErrorInOneVariantIsReportedOnceOnItsLineNamingTheVariant()
     {
         string source = MaterialShader.Replace("    return c;", "#if ALPHA_TEST && LIGHTING_PBR\n    c = missing;\n#endif\n    return c;", StringComparison.Ordinal);
