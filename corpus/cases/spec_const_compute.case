@@ -1,0 +1,7 @@
+# Specialization constants left at their defaults: no VkSpecializationInfo effect (Rounds 4, Mask 0xFF, Scale 0.5, UseOffset false).
+case spec_const_compute
+shader compute/spec_const_compute.hlsl
+dispatch CSMain 2 1 1
+storage 0 0 out size=128
+storage 0 1 out size=128
+expect spec_const_compute

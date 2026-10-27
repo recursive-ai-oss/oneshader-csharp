@@ -44,7 +44,7 @@ internal sealed class CSharpWriter
     // Names an entry-point class declares itself; a class cannot share its name with a member.
     private static readonly HashSet<string> EntryMembers = new HashSet<string>(StringComparer.Ordinal)
     {
-        "Stage", "EntryPoint", "SpirV", "Msl", "MslFunctionName", "MslVertexBufferIndex", "Wgsl", "WgslEntryPoint", "Vertex", "Stride", "Inputs", "ThreadGroupSizeX", "ThreadGroupSizeY", "ThreadGroupSizeZ", "SubgroupOperations",
+        "Stage", "EntryPoint", "SpirV", "Msl", "MslFunctionName", "MslVertexBufferIndex", "Wgsl", "WgslEntryPoint", "Vertex", "Stride", "Inputs", "ThreadGroupSizeX", "ThreadGroupSizeY", "ThreadGroupSizeZ", "SubgroupOperations", "SpecConstantIds",
     };
 
     private readonly ShaderFile _file;
@@ -197,6 +197,13 @@ internal sealed class CSharpWriter
         _topNames.Add("Bindings");
         _topNames.Add("Reflection");
         _topNames.Add("ReflectionData");
+        if (f.Specs.Count > 0)
+        {
+            _topNames.Add("SpecializationConstants");
+            _topNames.Add("Specialization");
+            CheckSpecNames();
+        }
+
         _topNames.Add(_className);
         foreach (var e in f.Entries)
         {
@@ -286,6 +293,12 @@ internal sealed class CSharpWriter
             EmitStruct(_structQueue[i].Key, _structQueue[i].Value);
         }
 
+        if (f.Specs.Count > 0)
+        {
+            Separator(ref first);
+            EmitSpecializationConstants();
+        }
+
         Separator(ref first);
         EmitBindings(pushNames);
         foreach (var e in f.Entries)
@@ -300,6 +313,200 @@ internal sealed class CSharpWriter
         _indent--;
         Line("}");
         return _sb.ToString();
+    }
+
+    // ---- specialization constants ----
+
+    private static readonly HashSet<string> SpecializationMembers = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "Size", "Count", "Defaults", "ToValues", "ToVulkan", "ToMetal", "ToWebGpu", "Equals", "GetHashCode", "ToString", "GetType",
+    };
+
+    private SpecNode? FindSpec(string name)
+    {
+        foreach (var s in _file.Specs)
+        {
+            if (s.Name == name)
+            {
+                return s;
+            }
+        }
+
+        return null;
+    }
+
+    private void CheckSpecNames()
+    {
+        var classes = new HashSet<string>(StringComparer.Ordinal);
+        var fields = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var s in _file.Specs)
+        {
+            if (!classes.Add(TypeName(s.Name)) || !fields.Add(Sanitize(s.Name)) || SpecializationMembers.Contains(Sanitize(s.Name)))
+            {
+                Problem(Codes.NameClash, "The specialization constant '" + s.Name + "' in " + _file.Source + " clashes with another generated name (another constant spelled alike, or a member of 'Specialization' such as Size or Defaults). Rename the constant.");
+            }
+        }
+    }
+
+    private static string FloatLiteral(uint bits)
+    {
+        float v = BitConverter.ToSingle(BitConverter.GetBytes(bits), 0);
+        if (float.IsNaN(v))
+        {
+            return "float.NaN";
+        }
+
+        if (float.IsPositiveInfinity(v))
+        {
+            return "float.PositiveInfinity";
+        }
+
+        if (float.IsNegativeInfinity(v))
+        {
+            return "float.NegativeInfinity";
+        }
+
+        return v.ToString("R", CultureInfo.InvariantCulture) + "f";
+    }
+
+    // The value of the constant's default as a C# constant expression of the constant's own type.
+    private static string DefaultLiteral(SpecNode s)
+    {
+        switch (s.Scalar)
+        {
+            case "Bool":
+                return s.DefaultBits != 0 ? "true" : "false";
+            case "Int":
+                return unchecked((int)s.DefaultBits).ToString(CultureInfo.InvariantCulture);
+            case "UInt":
+                return Num(s.DefaultBits);
+            default:
+                return FloatLiteral(s.DefaultBits);
+        }
+    }
+
+    private static string SpecCsType(SpecNode s) => s.Scalar == "Bool" ? "bool" : s.Scalar == "Int" ? "int" : s.Scalar == "UInt" ? "uint" : "float";
+
+    // The ids and defaults as constants, and one blittable struct with a field per constant for filling the specialization data.
+    private void EmitSpecializationConstants()
+    {
+        Line("/// <summary>The specialization constants of this shader: <c>Id</c> is the <c>[[vk::constant_id]]</c> number (SPIR-V <c>SpecId</c>, Metal function-constant index, WebGPU <c>@id</c>), <c>Default</c> the value used when the host sets nothing.</summary>");
+        Line("public static class SpecializationConstants");
+        Line("{");
+        _indent++;
+        bool firstConst = true;
+        foreach (var s in _file.Specs)
+        {
+            if (!firstConst)
+            {
+                Line("");
+            }
+
+            firstConst = false;
+            Line("public static class " + TypeName(s.Name));
+            Line("{");
+            _indent++;
+            Line("public const uint Id = " + Num(s.Id) + ";");
+            Line("public const " + SpecCsType(s) + " Default = " + DefaultLiteral(s) + ";");
+            _indent--;
+            Line("}");
+        }
+
+        _indent--;
+        Line("}");
+        Line("");
+
+        uint size = (uint)_file.Specs.Count * 4;
+        Line("/// <summary>");
+        Line("/// Values for the specialization constants, one 4-byte field per constant in declaration order (a bool is a 0 or 1 in a <c>uint</c>, like <c>VkBool32</c>).");
+        Line("/// Start from <see cref=\"Defaults\"/>, change fields, then convert with <c>ToVulkan</c>, <c>ToMetal</c> or <c>ToWebGpu</c>, passing the entry point's <c>SpecConstantIds</c> so the pipeline gets only the constants that entry point reads.");
+        Line("/// </summary>");
+        Line("[global::System.Runtime.InteropServices.StructLayout(global::System.Runtime.InteropServices.LayoutKind.Explicit, Size = " + Lit(size) + ")]");
+        Line("public struct Specialization");
+        Line("{");
+        _indent++;
+        uint offset = 0;
+        foreach (var s in _file.Specs)
+        {
+            string cs = s.Scalar == "Bool" ? "uint" : SpecCsType(s);
+            Line(Fo + Lit(offset) + ")] public " + cs + " " + Esc(Sanitize(s.Name)) + ";");
+            offset += 4;
+        }
+
+        Line("");
+        Line("/// <summary>Number of bytes of the struct.</summary>");
+        Line("public const uint Size = " + Num(size) + ";");
+        Line("");
+        Line("/// <summary>Every constant at its default.</summary>");
+        var inits = new List<string>();
+        foreach (var s in _file.Specs)
+        {
+            inits.Add(Esc(Sanitize(s.Name)) + " = " + (s.Scalar == "Bool" ? (s.DefaultBits != 0 ? "1u" : "0u") : DefaultLiteral(s)));
+        }
+
+        Line("public static Specialization Defaults => new Specialization { " + string.Join(", ", inits) + " };");
+        Line("");
+        Line("/// <summary>The values as the runtime layout type; <paramref name=\"ids\"/> limits them to those <c>constant_id</c>s (empty: all).</summary>");
+        Line("public global::OneShader.Layouts.SpecializationValues ToValues(global::System.ReadOnlySpan<uint> ids = default)");
+        Line("{");
+        _indent++;
+        Line("var all = new global::OneShader.Layouts.SpecConstantLayout[]");
+        Line("{");
+        _indent++;
+        foreach (var s in _file.Specs)
+        {
+            Line("new global::OneShader.Layouts.SpecConstantLayout(" + Str(s.Name) + ", " + Num(s.Id) + ", global::OneShader.Types.ScalarKind." + s.Scalar + ", " + Num(s.DefaultBits) + "),");
+        }
+
+        _indent--;
+        Line("};");
+        Line("var wanted = new global::System.Collections.Generic.List<global::OneShader.Layouts.SpecConstantLayout>();");
+        Line("foreach (var c in all)");
+        Line("{");
+        _indent++;
+        Line("if (ids.IsEmpty || global::System.MemoryExtensions.Contains(ids, c.Id))");
+        Line("{");
+        _indent++;
+        Line("wanted.Add(c);");
+        _indent--;
+        Line("}");
+        _indent--;
+        Line("}");
+        Line("");
+        Line("var values = new global::OneShader.Layouts.SpecializationValues(wanted);");
+        Line("foreach (var c in wanted)");
+        Line("{");
+        _indent++;
+        Line("switch (c.Id)");
+        Line("{");
+        _indent++;
+        foreach (var s in _file.Specs)
+        {
+            string field = Esc(Sanitize(s.Name));
+            string arg = s.Scalar == "Bool" ? field + " != 0u" : field;
+            Line("case " + Num(s.Id) + ": values.Set(" + Str(s.Name) + ", " + arg + "); break;");
+        }
+
+        Line("default: break;");
+        _indent--;
+        Line("}");
+        _indent--;
+        Line("}");
+        Line("");
+        Line("return values;");
+        _indent--;
+        Line("}");
+        Line("");
+        Line("/// <summary>Vulkan: map entries and data for a stage's <c>VkSpecializationInfo</c>.</summary>");
+        Line("public global::OneShader.Layouts.Vulkan.SpecializationInfo ToVulkan(global::System.ReadOnlySpan<uint> ids = default) => ToValues(ids).ToVulkan();");
+        Line("");
+        Line("/// <summary>Metal: values for <c>MTLFunctionConstantValues</c>.</summary>");
+        Line("public global::System.Collections.Generic.IReadOnlyList<global::OneShader.Layouts.Metal.FunctionConstantValue> ToMetal(global::System.ReadOnlySpan<uint> ids = default) => ToValues(ids).ToMetal();");
+        Line("");
+        Line("/// <summary>WebGPU: the <c>constants</c> record of a programmable stage, keyed by decimal id.</summary>");
+        Line("public global::System.Collections.Generic.IReadOnlyDictionary<string, double> ToWebGpu(global::System.ReadOnlySpan<uint> ids = default) => ToValues(ids).ToWebGpu();");
+        _indent--;
+        Line("}");
     }
 
     // The reflection the C# above was generated from, as data in the assembly (no I/O). A program that recompiles the shader
@@ -855,6 +1062,23 @@ internal sealed class CSharpWriter
             Line("public const uint ThreadGroupSizeX = " + Num(e.X) + ", ThreadGroupSizeY = " + Num(e.Y) + ", ThreadGroupSizeZ = " + Num(e.Z) + ";");
         }
 
+        if (e.SpecUses.Count > 0)
+        {
+            var ids = new List<string>();
+            foreach (string u in e.SpecUses)
+            {
+                var sc = FindSpec(u);
+                if (sc != null)
+                {
+                    ids.Add(Num(sc.Id));
+                }
+            }
+
+            Line("");
+            Line("/// <summary>The <c>constant_id</c>s of the specialization constants this entry point reads; pass them to the <c>To...</c> methods of <c>Specialization</c> so a pipeline gets only its own.</summary>");
+            Line("public static global::System.ReadOnlySpan<uint> SpecConstantIds => new uint[] { " + string.Join(", ", ids) + " };");
+        }
+
         if (e.Subgroup != 0)
         {
             Line("");
@@ -973,7 +1197,23 @@ internal sealed class CSharpWriter
 
         string vertex = e.Stage == "Vertex" ? "new global::OneShader.Layouts.VertexLayout(Stride, s_inputs)" : "null";
         string group = e.Stage == "Compute" ? "(ThreadGroupSizeX, ThreadGroupSizeY, ThreadGroupSizeZ)" : "default";
-        Line("return new global::OneShader.Layouts.EntryLayout(EntryPoint, Stage, resources, " + push + ", " + vertex + ", " + group + (e.Subgroup == 0 ? "" : ", SubgroupOperations") + ");");
+        string specs = "";
+        if (e.SpecUses.Count > 0)
+        {
+            var items = new List<string>();
+            foreach (string u in e.SpecUses)
+            {
+                var sc = FindSpec(u);
+                if (sc != null)
+                {
+                    items.Add("new global::OneShader.Layouts.SpecConstantLayout(" + Str(sc.Name) + ", " + Num(sc.Id) + ", global::OneShader.Types.ScalarKind." + sc.Scalar + ", " + Num(sc.DefaultBits) + ")");
+                }
+            }
+
+            specs = ", specConstants: new global::OneShader.Layouts.SpecConstantLayout[] { " + string.Join(", ", items) + " }";
+        }
+
+        Line("return new global::OneShader.Layouts.EntryLayout(EntryPoint, Stage, resources, " + push + ", " + vertex + ", " + group + (e.Subgroup == 0 ? "" : ", SubgroupOperations") + specs + ");");
         _indent--;
         Line("}");
     }

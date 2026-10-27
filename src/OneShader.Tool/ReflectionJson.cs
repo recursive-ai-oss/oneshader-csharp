@@ -70,6 +70,34 @@ internal static class ReflectionJson
 
             w.WriteEndArray();
 
+            // Written only when the shader has specialization constants, so other shaders' files stay as they were.
+            if (r.SpecConstants.Count > 0)
+            {
+                w.WriteStartArray("specConstants");
+                foreach (var sc in r.SpecConstants)
+                {
+                    w.WriteStartObject();
+                    w.WriteString("name", sc.Name);
+                    w.WriteNumber("id", sc.Id);
+                    w.WriteString("type", sc.Scalar.ToString());
+                    w.WriteNumber("defaultBits", sc.DefaultBits);
+                    w.WriteStartArray("slots");
+                    foreach (var s in sc.Slots)
+                    {
+                        w.WriteStartObject();
+                        w.WriteString("target", s.Target.ToString());
+                        w.WriteNumber("index", s.Index);
+                        w.WriteString("name", s.Name);
+                        w.WriteEndObject();
+                    }
+
+                    w.WriteEndArray();
+                    w.WriteEndObject();
+                }
+
+                w.WriteEndArray();
+            }
+
             w.WriteStartArray("entryPoints");
             foreach (var e in r.EntryPoints)
             {
@@ -102,6 +130,17 @@ internal static class ReflectionJson
                 if (e.PushConstant is not null)
                 {
                     w.WriteString("pushConstant", e.PushConstant);
+                }
+
+                if (e.UsedSpecConstants.Count > 0)
+                {
+                    w.WriteStartArray("usedSpecConstants");
+                    foreach (string u in e.UsedSpecConstants)
+                    {
+                        w.WriteStringValue(u);
+                    }
+
+                    w.WriteEndArray();
                 }
 
                 w.WriteEndObject();

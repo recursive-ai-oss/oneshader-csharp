@@ -127,6 +127,9 @@ public sealed class IrModule
     /// <summary>Module-scope variables in declaration order.</summary>
     public List<GlobalVariable> Globals { get; } = [];
 
+    /// <summary>Specialization constants in declaration order.</summary>
+    public List<SpecConstant> SpecConstants { get; } = [];
+
     /// <summary>Functions in declaration order; callees need not precede callers.</summary>
     public List<IrFunction> Functions { get; } = [];
 

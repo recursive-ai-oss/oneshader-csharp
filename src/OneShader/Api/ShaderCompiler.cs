@@ -76,6 +76,14 @@ public sealed class CompileOptions
 
     /// <summary>Keep source-level names in the output where the target allows (SPIR-V debug names, MSL/WGSL identifiers). Default true.</summary>
     public bool KeepNames { get; init; } = true;
+
+    /// <summary>
+    /// Specialization constants to fix at compile time, by HLSL name. A named constant becomes an ordinary constant (so the optimizer
+    /// folds with it), is no longer a pipeline input, and is left out of the reflection. Booleans are 0 or 1; integers must be whole
+    /// numbers in range. Default empty: every <c>[[vk::constant_id]]</c> constant stays a pipeline-time input with its declared default.
+    /// A value that does not fit the constant's type is error OSH0335; a name the shader does not declare is warning OSH0335.
+    /// </summary>
+    public IReadOnlyList<KeyValuePair<string, double>> SpecializationOverrides { get; init; } = [];
 }
 
 /// <summary>The compiled code of one entry point for one target.</summary>
@@ -296,6 +304,7 @@ public static class ShaderCompiler
     {
         var result = Semantics.Frontend.Run(source, path, options, includesRead, cancellationToken);
         var diagnostics = result.Diagnostics;
+        var reflection = result.Reflection;
         var blobs = new List<ShaderBlob>();
         if (diagnostics.HasErrors || result.Module is not { } module)
         {
@@ -320,6 +329,8 @@ public static class ShaderCompiler
                 module = fresh.Module;
             }
         }
+
+        reflection = Semantics.SpecBaker.RefreshSpecUse(reflection, module);
 
         var targets = options.Targets.Count == 0 ? [CompileTarget.SpirV] : options.Targets;
         foreach (var requested in targets)
@@ -378,7 +389,7 @@ public static class ShaderCompiler
             return new CompileResult(diagnostics.Items, [], null);
         }
 
-        return new CompileResult(diagnostics.Items, blobs, result.Reflection);
+        return new CompileResult(diagnostics.Items, blobs, reflection);
     }
 
     private static bool Wants(IReadOnlyList<CompileTarget> targets, CompileTarget target)

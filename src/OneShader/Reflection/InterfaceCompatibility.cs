@@ -23,6 +23,9 @@ public enum InterfaceDifferenceKind
 
     /// <summary>A compute entry point's thread-group size changed.</summary>
     WorkgroupSize,
+
+    /// <summary>A specialization constant was removed, or its id or type changed. Added constants and changed defaults are compatible.</summary>
+    SpecConstant,
 }
 
 /// <summary>One specific way a recompiled shader no longer matches the interface the application was built with.</summary>
@@ -89,6 +92,7 @@ public static class InterfaceCompatibility
         var diffs = new List<InterfaceDifference>();
         CompareResources(builtWith, recompiled, diffs);
         ComparePushConstants(builtWith, recompiled, diffs);
+        CompareSpecConstants(builtWith, recompiled, diffs);
         CompareEntryPoints(builtWith, recompiled, diffs);
         return new CompatibilityReport(diffs);
     }
@@ -97,6 +101,37 @@ public static class InterfaceCompatibility
         diffs.Add(new InterfaceDifference(kind, message));
 
     private static string U(uint v) => v.ToString(CultureInfo.InvariantCulture);
+
+    // ---- specialization constants ----
+
+    private static void CompareSpecConstants(ShaderReflection a, ShaderReflection b, List<InterfaceDifference> diffs)
+    {
+        foreach (var old in a.SpecConstants)
+        {
+            SpecConstantInfo? now = null;
+            foreach (var c in b.SpecConstants)
+            {
+                if (c.Name == old.Name)
+                {
+                    now = c;
+                    break;
+                }
+            }
+
+            if (now is null)
+            {
+                Add(diffs, InterfaceDifferenceKind.SpecConstant, "Specialization constant " + old.Name + " was removed");
+            }
+            else if (now.Id != old.Id)
+            {
+                Add(diffs, InterfaceDifferenceKind.SpecConstant, "Specialization constant " + old.Name + " changed id from " + U(old.Id) + " to " + U(now.Id));
+            }
+            else if (now.Scalar != old.Scalar)
+            {
+                Add(diffs, InterfaceDifferenceKind.SpecConstant, "Specialization constant " + old.Name + " changed type from " + old.Scalar + " to " + now.Scalar);
+            }
+        }
+    }
 
     // ---- resources ----
 

@@ -46,6 +46,14 @@ WebGPU's optional `subgroups` feature. A module that uses any wave or quad intri
 `subgroupBroadcastFirst` and the count-bits functions add `u32(condition)`. naga's WGSL reader does not parse the subgroups extension yet, so
 these modules are validated by the browser's compiler (Tint) in the WebGPU parity run instead.
 
+## Specialization constants
+
+A constant is `@id(N) override Name: T = default;` (WGSL section 7.3; N is the HLSL `constant_id`, which must be at most 65535 here, otherwise
+OSH5202). Only the constants an entry point reads are declared. The pipeline's `constants` record is keyed by the decimal id, which is also the key when an
+override has a name: `SpecializationValues.ToWebGpu()` builds it, with a bool as 0 or 1. WebGPU rejects a key the shader does not declare, so use the
+constants of the entry point you are building (`EntryLayout.SpecConstants`, or the generated `SpecConstantIds`). The `naga` command-line tool writes
+overrides into SPIR-V as plain constants at their defaults, so overrides are verified in the browser run rather than through naga.
+
 ## Not available (diagnostic OSH5202)
 
 clip and cull distances (optional WebGPU feature); `CalculateLevelOfDetail`; wave and quad intrinsics in vertex shaders (WebGPU's subgroup functions and built-ins exist only in compute and fragment shaders); resource arrays (WebGPU has no

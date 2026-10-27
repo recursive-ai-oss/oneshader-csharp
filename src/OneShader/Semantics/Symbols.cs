@@ -80,6 +80,9 @@ public static class SemanticCodes
     /// <summary>A push-constant block is larger than the 128 bytes every Vulkan device guarantees.</summary>
     public const string PushConstantSize = "OSH0334";
 
+    /// <summary>A <c>[[vk::constant_id]]</c> specialization constant is declared in a way that cannot work.</summary>
+    public const string BadSpecConstant = "OSH0335";
+
     /// <summary>An attribute is unknown or misused.</summary>
     public const string BadAttribute = "OSH0340";
 
@@ -123,6 +126,9 @@ internal enum VarKind
     GroupShared,
     Resource,
     CBufferMember,
+
+    /// <summary>A <c>[[vk::constant_id]]</c> specialization constant: a value the host sets at pipeline creation.</summary>
+    Spec,
 }
 
 internal sealed class VariableSymbol : Symbol
@@ -146,6 +152,12 @@ internal sealed class VariableSymbol : Symbol
     public bool IsStatic => (Mods & Modifiers.Static) != 0;
 
     public ConstValue? Const { get; set; }
+
+    /// <summary>For <see cref="VarKind.Spec"/>: the <c>constant_id</c> number.</summary>
+    public uint SpecId { get; set; }
+
+    /// <summary>For <see cref="VarKind.Spec"/>: the default value, converted to the declared type.</summary>
+    public ConstValue SpecDefault { get; set; }
 
     public Declarator? Declarator { get; set; }
 

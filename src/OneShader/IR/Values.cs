@@ -191,6 +191,32 @@ public sealed class Constant : IrValue
     }
 }
 
+/// <summary>
+/// A specialization constant: a scalar the host sets when it creates the pipeline. It is a value like a constant, but never a
+/// <see cref="Constant"/>, so no pass folds it to its default; the backends declare it in their target's native form.
+/// </summary>
+public sealed class SpecConstant : IrValue
+{
+    /// <summary>Creates a specialization constant.</summary>
+    public SpecConstant(string name, uint id, Constant defaultValue)
+        : base(defaultValue?.Type ?? throw new ArgumentNullException(nameof(defaultValue)))
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        Name = name;
+        Id = id;
+        Default = defaultValue;
+    }
+
+    /// <summary>The <c>[[vk::constant_id]]</c> number: SPIR-V <c>SpecId</c>, Metal function-constant index and WGSL <c>@id</c>.</summary>
+    public uint Id { get; }
+
+    /// <summary>The value used when the host sets nothing.</summary>
+    public Constant Default { get; }
+
+    /// <summary>Where it was declared.</summary>
+    public SourceSpan Span { get; set; }
+}
+
 /// <summary>A function parameter. Out and inout parameters have pointer type.</summary>
 public sealed class Argument : IrValue
 {

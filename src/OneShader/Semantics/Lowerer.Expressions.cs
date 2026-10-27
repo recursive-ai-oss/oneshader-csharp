@@ -282,6 +282,8 @@ internal sealed partial class Lowerer
 
             case VarKind.Resource:
                 return v.Resource?.Global ?? v.Ir;
+            case VarKind.Spec:
+                return null;
             default:
                 return v.Ir;
         }
@@ -460,6 +462,11 @@ internal sealed partial class Lowerer
                 return _b.Load(VarPointer(thisVar)!);
             case NameExpression n:
             {
+                if (n.Info?.Symbol is VariableSymbol { Kind: VarKind.Spec, Ir: IrValue specValue })
+                {
+                    return specValue;
+                }
+
                 if (n.Info?.Symbol is VariableSymbol v)
                 {
                     var ptr = VarPointer(v);

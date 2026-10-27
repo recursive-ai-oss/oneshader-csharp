@@ -42,6 +42,7 @@ public static class CpuReferences
         "wave_scan_compact" => WaveScanCompact(model, data),
         "wave_reduce" => WaveReduce(model, data),
         "wave_ballot" => WaveBallot(model, data),
+        "spec_const_compute" => SpecConstCompute(model, data),
         _ => throw new ArgumentException($"unknown CPU reference '{name}'"),
     };
 
@@ -69,6 +70,45 @@ public static class CpuReferences
     }
 
     private static string Key(CaseModel m, int index) => m.Resources[index].OutputKey;
+
+    // The specialization-constant kernel: the case's 'spec' lines override the defaults the shader declares.
+    private static IReadOnlyList<Expectation> SpecConstCompute(CaseModel m, CaseData d)
+    {
+        string? Override(string name) => m.Specs.Where(s => s.Key == name).Select(s => s.Value).FirstOrDefault();
+        bool useOffset = Override("UseOffset") is { } uo ? uo == "true" : false;
+        int rounds = Override("Rounds") is { } r ? int.Parse(r, System.Globalization.CultureInfo.InvariantCulture) : 4;
+        uint mask = Override("Mask") is { } mk ? uint.Parse(mk, System.Globalization.CultureInfo.InvariantCulture) : 0xFFu;
+        float scale = Override("Scale") is { } sc ? float.Parse(sc, System.Globalization.CultureInfo.InvariantCulture) : 0.5f;
+        int bias = rounds * 3 + 1;
+        float shift = scale * 8.0f;
+        int ints = Find(m, ResourceKind.Storage, 0, 0);
+        int floats = Find(m, ResourceKind.Storage, 0, 1);
+        uint[] outInts = new uint[32];
+        byte[] outFloats = new byte[d.Buffers[floats].Length];
+        for (uint id = 0; id < 32; id++)
+        {
+            uint acc = 0;
+            for (int i = 0; i < rounds; i++)
+            {
+                acc += (id + (uint)i) & mask;
+            }
+
+            if (useOffset)
+            {
+                acc += 1000u;
+            }
+
+            outInts[id] = acc + (uint)bias;
+            float f = useOffset ? (id * scale) + shift : (id * scale) - shift;
+            BinaryPrimitives.WriteSingleLittleEndian(outFloats.AsSpan((int)id * 4), f);
+        }
+
+        return
+        [
+            new Expectation(Key(m, ints), Bytes(outInts, d.Buffers[ints].Length), ExpectKind.Exact, 0),
+            new Expectation(Key(m, floats), outFloats, ExpectKind.Exact, 0),
+        ];
+    }
 
     // Exclusive scan per 256-element block, and the sum of each block.
     private static IReadOnlyList<Expectation> PrefixSum(CaseModel m, CaseData d)

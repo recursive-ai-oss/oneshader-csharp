@@ -164,6 +164,27 @@ The support types (`ShaderStage`, `ResourceKind`, `VertexFormat`, `VertexAttribu
 rendering layer in another assembly can accept them. When only these types are used, trimming
 removes the compiler from a NativeAOT app.
 
+## Specialization constants
+
+A file that declares `[[vk::constant_id(N)]] const T Name = default;` constants gets, next to the bindings:
+
+```csharp
+public static class SpecializationConstants { public static class Rounds { public const uint Id = 1u; public const int Default = 4; } /* ... */ }
+public struct Specialization { public uint UseOffset; public int Rounds; public uint Mask; public float Scale;   // 4 bytes each, declaration order; a bool is 0 or 1
+    public static Specialization Defaults { get; }
+    public SpecializationInfo ToVulkan(ReadOnlySpan<uint> ids = default);     // map entries + data for VkSpecializationInfo
+    public IReadOnlyList<FunctionConstantValue> ToMetal(ReadOnlySpan<uint> ids = default);
+    public IReadOnlyDictionary<string, double> ToWebGpu(ReadOnlySpan<uint> ids = default); }   // keys: decimal ids
+public static class CSMain { public static ReadOnlySpan<uint> SpecConstantIds { get; } /* ids this entry point reads */ }
+```
+
+Pass the entry point's `SpecConstantIds` to the `To...` methods so a pipeline gets only the constants its entry point reads (WebGPU rejects others; Vulkan and
+Metal ignore them). `CSMain.Layout.SpecConstants` lists them with names, types and defaults, and `SpecializationValues.For(CSMain.Layout)` is the same data
+driven by names (`Set("Rounds", 7)`) instead of struct fields. Entry points that read no constant have no `SpecConstantIds`. Names that would clash with a
+member of `Specialization` (`Size`, `Count`, `Defaults`, ...) are reported by the generator. Metal hosts: a function with function constants must be created with
+`makeFunction(name:constantValues:)` even to get the defaults (see the MSL backend notes). `CompileOptions.SpecializationOverrides` (runtime compiler API) fixes
+constants at compile time instead.
+
 ## Pipeline layouts
 
 Each entry-point class has `Layout`, an `OneShader.Layouts.EntryLayout` with the resources that entry point uses (with its own stage

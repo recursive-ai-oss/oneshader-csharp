@@ -82,6 +82,8 @@ One static class per HLSL file (named after the file, in PascalCase), containing
 - per entry point: `Layout`, its resources, push-constant block and vertex input as plain data, and per file `Pipeline` (vertex + pixel
   or one compute entry point) with `ToVulkan()`, `TryToMetal()` and `TryToWebGpu()` giving descriptor set layouts, push-constant
   ranges, Metal argument indices and WebGPU bind group layouts (see the `RecursiveAI.OneShader` readme, "Pipeline layouts");
+- for `[[vk::constant_id]]` specialization constants: `SpecializationConstants.<Name>.Id`/`Default`, a blittable `Specialization` struct with
+  `Defaults` and `ToVulkan()`, `ToMetal()` and `ToWebGpu()`, and `SpecConstantIds` on the entry points that read them (see docs/generated-bindings.md);
 - per entry point: stage, entry name, the SPIR-V bytes; for vertex shaders a `Vertex` struct,
   `Stride` and `Inputs`; for compute shaders the thread-group size. Entry points also carry the
   MSL and WGSL sources when those targets are selected (next section).

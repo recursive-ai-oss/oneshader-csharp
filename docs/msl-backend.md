@@ -54,6 +54,15 @@ The same module and options always give the same text. Unsupported constructs ar
 
 SIMD-group and quad-group functions (Metal 2.1 and later): `simd_sum`, `simd_product`, `simd_min`/`max`, `simd_and`/`or`/`xor`, `simd_prefix_exclusive_sum`/`product`, `simd_any`/`all`, `simd_ballot` (the 64-bit vote is split into the `uint4` HLSL returns), `simd_is_first`, `simd_shuffle` (`WaveReadLaneAt`), `simd_broadcast_first`, `quad_shuffle_xor` (`QuadReadAcross*`) and `quad_shuffle` (`QuadReadLaneAt`). `WaveGetLaneIndex` and `WaveGetLaneCount` read the `[[thread_index_in_simdgroup]]` and `[[threads_per_simdgroup]]` entry arguments once; helper functions get them as lifted parameters. `WaveActiveAllEqual` compares with `simd_broadcast_first`; the count-bits functions sum or scan `uint(condition)`.
 
+## Specialization constants
+
+A constant is declared at file scope as `constant T Name [[function_constant(N)]];` (N is the HLSL `constant_id`, MSL 2.4 section 5.8.1) and read through
+`constant T Name_value = is_function_constant_defined(Name) ? Name : default;`, so a host that sets nothing gets the HLSL default. A function that declares
+function constants cannot build a pipeline state as it is, even when every default is wanted: create it with
+`makeFunction(name:constantValues:)`, using an empty `MTLFunctionConstantValues` for the defaults. `SpecializationValues.ToMetal()` gives index, `MTLDataType`
+number (float 3, int 29, uint 33, bool 53) and the 32-bit pattern for `setConstantValue(_:type:index:)`; a Metal bool is one byte. Only the constants an
+entry point reads are declared.
+
 ## Not supported (errors)
 
 `double` and 64-bit float; `SV_CullDistance`; `GetDimensions` on structured buffers (`ArrayLength`: Metal cannot
