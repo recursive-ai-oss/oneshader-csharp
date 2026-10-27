@@ -29,7 +29,10 @@ public partial class ReflectionVsDxcTests
 
     public static IEnumerable<object[]> Files() => CorpusFiles.Graphics().Concat(CorpusFiles.Shaders("compute")).Select(p => new object[] { p });
 
-    private static string Profile(ShaderStage s) => s switch { ShaderStage.Vertex => "vs_6_0", ShaderStage.Pixel => "ps_6_0", _ => "cs_6_0" };
+    // ResourceDescriptorHeap and SamplerDescriptorHeap exist from Shader Model 6.6.
+    private static string Profile(ShaderStage s, bool heaps) => heaps
+        ? s switch { ShaderStage.Vertex => "vs_6_6", ShaderStage.Pixel => "ps_6_6", _ => "cs_6_6" }
+        : s switch { ShaderStage.Vertex => "vs_6_0", ShaderStage.Pixel => "ps_6_0", _ => "cs_6_0" };
 
     [Theory]
     [MemberData(nameof(Files))]
@@ -47,7 +50,7 @@ public partial class ReflectionVsDxcTests
             foreach (var ep in r.Reflection!.EntryPoints)
             {
                 string spv = Path.Combine(dir, ep.Name + ".spv");
-                var (code, outp) = Oracles.Run(dxc!, ["-spirv", "-fspv-target-env=vulkan1.2", "-T", Profile(ep.Stage), "-E", ep.Name, path, "-Fo", spv], dir);
+                var (code, outp) = Oracles.Run(dxc!, ["-spirv", "-fspv-target-env=vulkan1.2", "-T", Profile(ep.Stage, File.ReadAllText(path).Contains("DescriptorHeap", StringComparison.Ordinal)), "-E", ep.Name, path, "-Fo", spv], dir);
                 Assert.True(code == 0, outp);
                 var (_, text) = Oracles.Run(dis!, [spv], dir);
                 if (ep.Stage == ShaderStage.Compute)
