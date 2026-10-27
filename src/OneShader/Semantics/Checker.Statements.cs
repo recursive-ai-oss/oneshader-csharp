@@ -515,6 +515,12 @@ internal sealed partial class Checker
             return;
         }
 
+        if (t is DescriptorHeapType)
+        {
+            Err(SemanticCodes.BadDescriptorHeap, "A function cannot return a descriptor read from a heap, because a resource is not a value that can be returned. Return the index instead and read the heap where the resource is used, for example 'Texture2D<float4> t = ResourceDescriptorHeap[index];'.", r.Value.Span);
+            return;
+        }
+
         if (!t.IsError)
         {
             CheckConvertible(r.Value, _fn.ReturnType);
