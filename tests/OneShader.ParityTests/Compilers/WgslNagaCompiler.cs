@@ -64,7 +64,7 @@ public static class WgslNagaCompiler
                 + string.Join('\n', result.Diagnostics.Select(d => d.ToString())));
         }
 
-        if (blob.AsText().StartsWith("enable subgroups;", StringComparison.Ordinal))
+        if (blob.AsText().Contains("enable subgroups;", StringComparison.Ordinal))
         {
             // naga's WGSL reader rejects the subgroups extension and its functions; the browser run covers these cases.
             throw new UnsupportedOnTargetException("naga cannot read WGSL that uses the subgroups extension (" + request.Entry + " in " + request.SourcePath + ")");
