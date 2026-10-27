@@ -66,7 +66,9 @@ to round exactly as Vulkan does, so results can differ in the last bit of a half
 
 clip and cull distances (optional WebGPU feature); `CalculateLevelOfDetail`; wave and quad intrinsics in vertex shaders (WebGPU's subgroup functions and built-ins exist only in compute and fragment shaders); resource arrays (WebGPU has no
 binding arrays: one error per array, which suggests separate resources or a `Texture2DArray`; `NonUniformResourceIndex` is just its
-index);
+index), unbounded arrays (`Texture2D t[]`) and the SM 6.6 heaps `ResourceDescriptorHeap` / `SamplerDescriptorHeap` (WebGPU has no
+descriptor indexing: one error per unbounded array at its declaration and one per heap at its first use, each naming the line and what to do;
+only when WGSL is a selected target);
 `Buffer<T>`/`RWBuffer<T>`; append and consume buffers; atomics on textures; `double`, 64-bit integers and 16-bit integers (each reported at the line of its first use); integer and bool
 matrices; `PrimitiveID`, layer and viewport index; recursion; storage textures without a format or read-written in a format other than
 r32float/r32uint/r32sint; bool stage variables; texel offsets on cube textures; control flow that is not structured.

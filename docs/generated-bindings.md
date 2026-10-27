@@ -109,8 +109,17 @@ Run-time indices need the Vulkan device features `shaderSampledImageArrayDynamic
 `shaderStorageBufferArrayDynamicIndexing`, `shaderUniformBufferArrayDynamicIndexing` and
 `shaderStorageImageArrayDynamicIndexing` (the compiled shader declares the matching capability for the kinds it
 indexes), and `shaderSampledImageArrayNonUniformIndexing` / `shaderStorageBufferArrayNonUniformIndexing` for
-non-uniform indices. Unbounded arrays (`Tex[]`) are an error (`OSH0350`); multi-dimensional resource arrays are
-an error too.
+non-uniform indices. Multi-dimensional resource arrays are an error.
+
+### Unbounded arrays and descriptor heaps
+
+`Texture2D Tex[]` (also samplers and buffers) and the SM 6.6 heaps are bindless: the shader leaves the size open. The generated
+`Bindings.Tex` has `Count = 0` and `public const bool IsUnbounded = true;` (`ResourceBinding.IsUnbounded` on the `All` entry), and a heap's class
+also has `Heap` (`DescriptorHeaps.Resource` or `Sampler`). All resources read from `ResourceDescriptorHeap` are one binding named after the heap;
+its `Layout` resource carries `Heap` and `HeapKinds` (more than one kind: a mutable descriptor binding on Vulkan). `Layout`/`Pipeline.ToVulkan()` gives the
+binding a variable-count, partially bound descriptor array (see `VulkanLayoutOptions`), `TryToMetal` an argument buffer and `TryToWebGpu` a `LayoutError`;
+`RequiredFeatures` lists `RuntimeDescriptorArray`, `NonUniformIndexing` and `MutableDescriptorType` as the shader needs. Variants work as for any binding.
+WebGPU cannot express them: building WGSL for such a shader is OSH5202.
 
 ### Append and consume buffers
 
