@@ -124,6 +124,13 @@ internal sealed partial class Lowerer
             _mod.Globals.Add(g);
         }
 
+        foreach (var v in _ck.SpecConstants)
+        {
+            var sc = new SpecConstant(v.Name, v.SpecId, Constant.FromBits((ScalarType)v.Type, v.SpecDefault.Bits())) { Span = v.Span };
+            v.Ir = sc;
+            _mod.SpecConstants.Add(sc);
+        }
+
         foreach (var v in _ck.PrivateGlobals)
         {
             var g = new GlobalVariable(v.IrName ?? v.Name, GlobalKind.Private, AddressSpace.Private, v.Type) { Span = v.Span };

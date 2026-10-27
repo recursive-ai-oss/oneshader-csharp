@@ -10,6 +10,7 @@ internal static class Op
         EntryPoint = 15, ExecutionMode = 16, Capability = 17, TypeVoid = 19, TypeBool = 20, TypeInt = 21, TypeFloat = 22,
         TypeVector = 23, TypeMatrix = 24, TypeImage = 25, TypeSampler = 26, TypeSampledImage = 27, TypeArray = 28,
         TypeRuntimeArray = 29, TypeStruct = 30, TypePointer = 32, TypeFunction = 33, ConstantTrue = 41, ConstantFalse = 42,
+        SpecConstantTrue = 48, SpecConstantFalse = 49, SpecConstant = 50,
         Constant = 43, ConstantComposite = 44, ConstantNull = 46, Function = 54, FunctionParameter = 55, FunctionEnd = 56,
         FunctionCall = 57, Variable = 59, ImageTexelPointer = 60, Load = 61, Store = 62, AccessChain = 65, ArrayLength = 68, Decorate = 71,
         MemberDecorate = 72, VectorExtractDynamic = 77, VectorInsertDynamic = 78, VectorShuffle = 79,
@@ -69,7 +70,7 @@ internal static class Cap
 /// <summary>Decorations.</summary>
 internal static class Dec
 {
-    public const uint RelaxedPrecision = 0, Block = 2, RowMajor = 4, ColMajor = 5, ArrayStride = 6, MatrixStride = 7, BuiltIn = 11,
+    public const uint RelaxedPrecision = 0, SpecId = 1, Block = 2, RowMajor = 4, ColMajor = 5, ArrayStride = 6, MatrixStride = 7, BuiltIn = 11,
         NoPerspective = 13, Flat = 14, Centroid = 16, Sample = 17, NonWritable = 24, Location = 30, Binding = 33,
         DescriptorSet = 34, Offset = 35, NoContraction = 42, NonUniform = 5300;
 }

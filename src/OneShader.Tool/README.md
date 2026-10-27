@@ -77,9 +77,10 @@ break readers raise `schemaVersion`.
   "resources": [ { "name", "kind", "hlslType", "resourceType", "count", "stages": ["Vertex"|"Pixel"|"Compute"],
                    "slots": [ { "target", "set", "binding" } ], "counterSlots": [ ... ], "layout": <type> } ],
   "pushConstants": [ { "name", "stages", "slots", "layout": <type> } ],
+  "specConstants": [ { "name", "id", "type": "Bool"|"Int"|"UInt"|"Float", "defaultBits", "slots": [ { "target", "index", "name" } ] } ]  (only when the shader has some),
   "entryPoints": [ { "name", "stage", "workgroupSize": [x, y, z] (compute), "vertexStride" (vertex),
                      "inputs": [ <variable> ], "outputs": [ <variable> ], "usedResources": [ names ],
-                     "pushConstant": name (optional) } ] }
+                     "pushConstant": name (optional), "usedSpecConstants": [ names ] (optional) } ] }
 
 <variable> = { "name", "semantic", "semanticIndex", "location" (optional), "builtIn", "scalar", "components",
                "format" (optional), "offset", "interpolation" }

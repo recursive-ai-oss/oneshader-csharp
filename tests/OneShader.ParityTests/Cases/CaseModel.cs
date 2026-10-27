@@ -177,6 +177,9 @@ public sealed class CaseModel
     /// <summary>Shader path relative to the corpus directory.</summary>
     public string Shader { get; init; } = "";
     public List<KeyValuePair<string, string>> Defines { get; } = new();
+
+    /// <summary>Specialization constant overrides (HLSL name, value text) applied to every entry point that reads the constant; the rest keep their defaults.</summary>
+    public List<KeyValuePair<string, string>> Specs { get; } = new();
     public GraphicsDecl? Graphics { get; set; }
     public List<DispatchDecl> Dispatches { get; } = new();
 

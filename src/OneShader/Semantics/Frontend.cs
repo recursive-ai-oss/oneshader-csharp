@@ -4,10 +4,12 @@ using System.Threading;
 using OneShader.Diagnostics;
 using OneShader.IR;
 using OneShader.Lexing;
+using OneShader.Msl;
 using OneShader.Preprocessing;
 using OneShader.Reflection;
 using OneShader.Syntax;
 using OneShader.Types;
+using OneShader.Wgsl;
 
 namespace OneShader.Semantics;
 
@@ -157,6 +159,15 @@ internal static class Frontend
         if (bag.HasErrors)
         {
             return new FrontendResult(null, null, bag);
+        }
+
+        if (options.SpecializationOverrides.Count > 0)
+        {
+            SpecBaker.Bake(module, options.SpecializationOverrides, bag, path);
+            if (bag.HasErrors)
+            {
+                return new FrontendResult(null, null, bag);
+            }
         }
 
         var reflector = new Reflector(checker, module, targets, path);
@@ -350,6 +361,31 @@ internal sealed class Reflector
             });
         }
 
+        var specs = new List<SpecConstantInfo>();
+        foreach (var sc in _mod.SpecConstants)
+        {
+            var specSlots = new List<SpecConstantSlot>();
+            foreach (var t in _targets)
+            {
+                string tn = t switch
+                {
+                    CompileTarget.Msl => MslBackend.SpecConstantName(_mod, sc),
+                    CompileTarget.Wgsl => WgslBackend.SpecConstantName(_mod, sc),
+                    _ => sc.Name!,
+                };
+                specSlots.Add(new SpecConstantSlot(t, sc.Id, tn));
+            }
+
+            specs.Add(new SpecConstantInfo
+            {
+                Name = sc.Name!,
+                Id = sc.Id,
+                Scalar = ((ScalarType)sc.Type).ScalarKind,
+                DefaultBits = (uint)sc.Default.Bits,
+                Slots = specSlots,
+            });
+        }
+
         var entries = new List<EntryPointInfo>();
         for (int i = 0; i < _ck.Entries.Count; i++)
         {
@@ -381,12 +417,24 @@ internal sealed class Reflector
                 VertexStride = e.Stage == ShaderStage.Vertex ? e.VertexStride : 0,
                 UsedResources = used,
                 PushConstant = pushUse,
+                UsedSpecConstants = SpecNames(SpecUse.Scan(_mod, _mod.EntryPoints[i].Function)),
                 SubgroupOperations = SubgroupUse.Scan(_mod.EntryPoints[i].Function, out _, out _),
                 RequiredFeatures = WideTypeUse.Scan(_mod, _mod.EntryPoints[i]).Features,
             });
         }
 
-        return new ShaderReflection { SourceName = _path, Targets = _targets, Resources = resources, PushConstants = pushes, EntryPoints = entries };
+        return new ShaderReflection { SourceName = _path, Targets = _targets, Resources = resources, PushConstants = pushes, SpecConstants = specs, EntryPoints = entries };
+    }
+
+    private static List<string> SpecNames(List<SpecConstant> used)
+    {
+        var names = new List<string>(used.Count);
+        foreach (var sc in used)
+        {
+            names.Add(sc.Name!);
+        }
+
+        return names;
     }
 
     private static List<StageVariable> Vars(List<InterfaceVar> vars, bool vertexInput)

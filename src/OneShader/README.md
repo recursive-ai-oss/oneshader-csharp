@@ -114,6 +114,11 @@ if (!PipelineLayout.TryCreate([Quad.VSMain.Layout, Quad.PSBlur.Layout], out var 
 EntryLayout.TryCreate(result.Reflection!, "PSMain", out var ps, out _);
 ```
 
+Specialization constants (`[[vk::constant_id(N)]] const T Name = default;`) are pipeline-time inputs on every target. `SpecializationValues.For(entryLayout)`
+holds one value per constant the entry point reads (defaults until you `Set` them) and converts to `VkSpecializationInfo` contents (`ToVulkan()`), Metal
+function-constant values (`ToMetal()`) and WebGPU's `constants` record (`ToWebGpu()`); the generated `Specialization` struct does the same by field. To fix
+values at compile time instead, pass `CompileOptions.SpecializationOverrides`.
+
 `PipelineLayout.TryCreate` merges entry points that run together: bindings at the same set and binding must agree on kind, count
 and type and get the union of their stages; push-constant blocks of the same name and size are shared. It returns a
 `LayoutError` (`ResourceConflict`, `DuplicateStage`, ...) with the message to show, never an exception. The three conversions:

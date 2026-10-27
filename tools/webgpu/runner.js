@@ -234,6 +234,12 @@ function blendState(mode) {
   return { color, alpha };
 }
 
+// Pipeline-overridable constants for one entry point (job.constants[entry] maps decimal ids to numbers), as the stage's `constants` member.
+function stageConstants(job, entry) {
+  const c = job.constants && job.constants[entry];
+  return c ? { constants: c } : {};
+}
+
 async function execute(job, errors) {
   const stageBits = job.kind === 'compute' ? GPUShaderStage.COMPUTE : ALL_STAGES;
 
@@ -324,7 +330,7 @@ async function execute(job, errors) {
     const pipelines = new Map();
     for (const d of job.dispatches) {
       if (!pipelines.has(d.entry)) {
-        pipelines.set(d.entry, device.createComputePipeline({ layout: pipelineLayout, compute: { module: modules[d.entry], entryPoint: d.entry } }));
+        pipelines.set(d.entry, device.createComputePipeline({ layout: pipelineLayout, compute: { module: modules[d.entry], entryPoint: d.entry, ...stageConstants(job, d.entry) } }));
       }
     }
     for (const d of job.dispatches) {
@@ -376,14 +382,14 @@ async function execute(job, errors) {
 
     const desc = {
       layout: pipelineLayout,
-      vertex: { module: modules[g.vertexEntry], entryPoint: g.vertexEntry, buffers: vbLayouts },
+      vertex: { module: modules[g.vertexEntry], entryPoint: g.vertexEntry, buffers: vbLayouts, ...stageConstants(job, g.vertexEntry) },
       primitive: { topology: 'triangle-list', frontFace: 'cw', cullMode: { none: 'none', back: 'back', front: 'front' }[g.cull] },
     };
     if (g.pixelEntry) {
       const t = { format: g.targetFormat };
       const b = blendState(g.blend);
       if (b) t.blend = b;
-      desc.fragment = { module: modules[g.pixelEntry], entryPoint: g.pixelEntry, targets: [t] };
+      desc.fragment = { module: modules[g.pixelEntry], entryPoint: g.pixelEntry, targets: [t], ...stageConstants(job, g.pixelEntry) };
     }
     if (depth) desc.depthStencil = { format: 'depth32float', depthWriteEnabled: true, depthCompare: g.depth.test ? 'less' : 'always' };
     const pipeline = device.createRenderPipeline(desc);

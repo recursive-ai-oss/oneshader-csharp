@@ -238,6 +238,40 @@ internal sealed partial class SpirvEmitter
         }
     }
 
+    /// <summary>
+    /// A specialization constant: <c>OpSpecConstantTrue/False</c> or <c>OpSpecConstant</c> with its default and a <c>SpecId</c>.
+    /// Declared on first use, so an entry point carries only the constants it reaches.
+    /// </summary>
+    private uint SpecId(SpecConstant sc)
+    {
+        if (_specIds.TryGetValue(sc, out var id))
+        {
+            return id;
+        }
+
+        uint type = TypeId(sc.Type);
+        id = _s.NewId();
+        if (((ScalarType)sc.Type).ScalarKind == ScalarKind.Bool)
+        {
+            SpirvModule.Put(_s.Types, sc.Default.Bits != 0 ? Op.SpecConstantTrue : Op.SpecConstantFalse, type, id);
+        }
+        else
+        {
+            SpirvModule.Put(_s.Types, Op.SpecConstant, type, id, (uint)sc.Default.Bits);
+        }
+
+        _s.Decorate(id, Dec.SpecId, sc.Id);
+        if (_o.KeepNames)
+        {
+            _s.Name(id, sc.Name!);
+        }
+
+        _specIds[sc] = id;
+        return id;
+    }
+
+    private readonly Dictionary<SpecConstant, uint> _specIds = new(ReferenceEqualityComparer.Instance);
+
     private uint ScalarConst(Constant c, uint type)
     {
         var st = (ScalarType)c.Type;

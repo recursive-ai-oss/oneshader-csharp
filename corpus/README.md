@@ -62,6 +62,8 @@ with `dxc -spirv -fspv-target-env=vulkan1.2`, and give every resource an explici
 | `lang/sizeof_static.hlsl` | sizeof constants and non-const static locals | written for this repository | MIT OR Apache-2.0 |
 | `lang/resource_arrays.hlsl` | Bounded resource arrays: textures and samplers chosen at run time, elements passed to functions, non-uniform index, arrays of read-only buffers and constant buffers | written for this repository | MIT OR Apache-2.0 |
 | `lang/statics_and_literals.hlsl` | Static struct members, member functions defined after the struct, template deduction through `Box<T>`, a cbuffer named like its member, `S s = cb;`, wide literal arithmetic | written for this repository | MIT OR Apache-2.0 |
+| `compute/spec_const_compute.hlsl` | Specialization constants: a bool, an int loop bound, a uint mask and a float scale, with `static const` values derived from them | written for this repository | MIT OR Apache-2.0 |
+| `2d/spec_const_pixel.hlsl` | Fullscreen triangle whose pixel shader branches on a bool specialization constant and quantizes with an int one | written for this repository | MIT OR Apache-2.0 |
 | `compute/append_consume.hlsl` | Work list drained with `ConsumeStructuredBuffer` into an `AppendStructuredBuffer`, explicit counter bindings | written for this repository | MIT OR Apache-2.0 |
 | `lang/resource_locals.hlsl` | Resource-typed locals and parameters resolved at compile time | written for this repository | MIT OR Apache-2.0 |
 
@@ -103,6 +105,8 @@ written for this repository and licensed `MIT OR Apache-2.0`.
 | `light_cull` | `compute/light_cull.hlsl` | dispatch, 512 clusters, 40 lights | buffers exact, CPU result |
 | `depth_bounds` | `compute/depth_bounds.hlsl` | dispatch, 64 tiles | buffer exact, CPU result |
 | `prefix_sum` | `compute/prefix_sum.hlsl` | dispatch | buffers exact, CPU result |
+| `spec_const_compute`, `spec_const_compute_set` | `compute/spec_const_compute.hlsl` | dispatch, 2 groups of 16; the second sets every constant with `spec NAME : VALUE` lines | buffers exact vs DXC and vs the CPU result |
+| `spec_const_pixel`, `spec_const_pixel_set` | `2d/spec_const_pixel.hlsl` | draw; the second overrides all three constants | image, tolerance 1 |
 | `wave_scan_compact` | `compute/wave_scan_compact.hlsl` | dispatch, 4 groups of 256 | buffers exact, CPU result (any subgroup size) |
 | `wave_reduce` | `compute/wave_reduce.hlsl` | dispatch, 4 groups of 256 | buffer exact, CPU result (any subgroup size) |
 | `wave_ballot` | `compute/wave_ballot.hlsl` | dispatch, 4 groups of 256 | totals buffer exact vs CPU (any subgroup size up to 128 lanes); per-lane buffer exact vs DXC on the same device |

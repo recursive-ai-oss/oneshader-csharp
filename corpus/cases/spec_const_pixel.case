@@ -1,0 +1,7 @@
+# Pixel shader with its specialization constants at the defaults (Swap false, Strength 0.25, Bands 4).
+case spec_const_pixel
+shader 2d/spec_const_pixel.hlsl
+graphics vs=VSMain ps=PSMain
+target 32 32
+tolerance 1
+draw vertices=3

@@ -47,6 +47,9 @@ entry name="VSMain" stage=Vertex workgroup=0,0,0 stride=32
   children for the targets that deliver it as a bound buffer: `Msl` (`binding` is the `[[buffer(n)]]` index, `set` 0) and
   `Wgsl` (`set` is the bind group, `binding` the binding). SPIR-V has no slot. An `entry` names the block it reads with a
   `pushuse name=...` child.
+- `spec`: a specialization constant: `name`, `id` (the `constant_id`), `scalar` (`Bool`, `Int`, `UInt` or `Float`) and `default` (the 32-bit pattern, as a number).
+  Child `slot` records (`target`, `index`, `name`) give the SPIR-V `SpecId`, the Metal function-constant index and variable, and the WGSL `@id` and override
+  name per target. Written only for files that have constants; it follows the `push` records. An `entry` lists the constants it reads with `specuse name=...` children.
 - `type`: `kind` is `Scalar`, `Vector`, `Matrix`, `Array` or `Struct`. `rows` is the vector component
   count or matrix rows; `cols` matrix columns; `size`, `align` in bytes; `length`/`stride` for
   arrays (length 0 = unsized); `mstride`/`packing` for matrices (the stride is between stored

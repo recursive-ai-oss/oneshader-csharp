@@ -92,10 +92,23 @@ internal sealed class VariableNode
     public uint Offset;
 }
 
+/// <summary>A specialization constant: <c>[[vk::constant_id]]</c> number, scalar type and default bits.</summary>
+internal sealed class SpecNode
+{
+    public string Name = "";
+    public uint Id;
+    public string Scalar = "";
+    public uint DefaultBits;
+}
+
 internal sealed class EntryNode
 {
     public uint Subgroup;
     public uint Features;
+
+    /// <summary>Names of the specialization constants the entry point reads, in declaration order.</summary>
+    public List<string> SpecUses = new List<string>();
+
     public string Name = "";
     public string Stage = "";
     public uint X;
@@ -155,6 +168,7 @@ internal sealed class ShaderFile
     public List<ResourceNode> Resources = new List<ResourceNode>();
     public List<EntryNode> Entries = new List<EntryNode>();
     public List<PushNode> Pushes = new List<PushNode>();
+    public List<SpecNode> Specs = new List<SpecNode>();
 
     /// <summary>
     /// The reflection records of the file as written (header line included, build bookkeeping excluded). Generated code embeds it so a
@@ -231,7 +245,7 @@ internal sealed class ShaderFile
             if (rec.Depth == 0)
             {
                 // Records the compiler's reflection writer produces; the rest is build bookkeeping.
-                inReflection = rec.Keyword == "source" || rec.Keyword == "targets" || rec.Keyword == "resource" || rec.Keyword == "push" || rec.Keyword == "entry";
+                inReflection = rec.Keyword == "source" || rec.Keyword == "targets" || rec.Keyword == "resource" || rec.Keyword == "push" || rec.Keyword == "spec" || rec.Keyword == "entry";
             }
 
             if (inReflection)
@@ -288,6 +302,14 @@ internal sealed class ShaderFile
                     break;
                 case "push":
                     pos = ReadPush(recs, pos, r);
+                    break;
+                case "spec":
+                    Specs.Add(new SpecNode { Name = Str(r, "name"), Id = U(r, "id"), Scalar = Str(r, "scalar"), DefaultBits = U(r, "default") });
+                    while (pos < recs.Count && recs[pos].Depth > 0)
+                    {
+                        pos++; // the per-target slots: the generated code needs only ids and defaults
+                    }
+
                     break;
                 case "entry":
                     pos = ReadEntry(recs, pos, r);
@@ -566,6 +588,10 @@ internal sealed class ShaderFile
             else if (c.Keyword == "pushuse")
             {
                 e.PushUse = Str(c, "name");
+            }
+            else if (c.Keyword == "specuse")
+            {
+                e.SpecUses.Add(Str(c, "name"));
             }
             else if (c.Keyword == "subgroup")
             {

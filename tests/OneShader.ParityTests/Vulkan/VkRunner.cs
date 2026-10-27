@@ -65,10 +65,11 @@ public static unsafe class VkRunner
     /// With <paramref name="yUp"/> the draw uses a negative-height viewport and clockwise front faces, which puts clip-space
     /// y up the way D3D, Metal and WebGPU do; the default keeps Vulkan's native y-down orientation.
     /// </summary>
-    public static RunResult Run(VkContext ctx, CaseModel model, CaseData data, Func<string, ShaderStage, byte[]> spirv, bool yUp = false)
+    public static RunResult Run(VkContext ctx, CaseModel model, CaseData data, Func<string, ShaderStage, byte[]> spirv, bool yUp = false,
+        Func<string, global::OneShader.Layouts.Vulkan.SpecializationInfo?>? specialization = null)
     {
         ctx.DrainMessages();
-        using var run = new RunState(ctx, model, data, spirv) { YUp = yUp };
+        using var run = new RunState(ctx, model, data, spirv) { YUp = yUp, Specialization = specialization };
         var outputs = run.Execute();
         ctx.Api.DeviceWaitIdle(ctx.Device);
         return new RunResult(outputs, ctx.DrainMessages());
@@ -121,6 +122,39 @@ public static unsafe class VkRunner
         private readonly List<Action> cleanup = new();
 
         public bool YUp { get; init; }
+
+        /// <summary>Specialization data per entry point name (null: none); built with the library's layout helpers, so the bytes are what a host passes.</summary>
+        public Func<string, global::OneShader.Layouts.Vulkan.SpecializationInfo?>? Specialization { get; init; }
+
+        /// <summary>A <c>VkSpecializationInfo</c> for the entry point, freed with the run; null when it has no specialization constants.</summary>
+        private SpecializationInfo* SpecInfoFor(string entry)
+        {
+            var info = Specialization?.Invoke(entry);
+            if (info is null || info.MapEntries.Count == 0)
+            {
+                return null;
+            }
+
+            int n = info.MapEntries.Count;
+            var entries = (SpecializationMapEntry*)Marshal.AllocHGlobal(n * sizeof(SpecializationMapEntry));
+            for (int i = 0; i < n; i++)
+            {
+                var e = info.MapEntries[i];
+                entries[i] = new SpecializationMapEntry { ConstantID = e.ConstantId, Offset = e.Offset, Size = e.Size };
+            }
+
+            nint payload = Marshal.AllocHGlobal(Math.Max(1, info.Data.Length));
+            Marshal.Copy(info.Data, 0, payload, info.Data.Length);
+            var si = (SpecializationInfo*)Marshal.AllocHGlobal(sizeof(SpecializationInfo));
+            *si = new SpecializationInfo { MapEntryCount = (uint)n, PMapEntries = entries, DataSize = (nuint)info.Data.Length, PData = (void*)payload };
+            cleanup.Add(() =>
+            {
+                Marshal.FreeHGlobal((nint)entries);
+                Marshal.FreeHGlobal(payload);
+                Marshal.FreeHGlobal((nint)si);
+            });
+            return si;
+        }
         private readonly Dictionary<int, (VkBuffer Buffer, nint Map, int Size)> buffers = new();
         private readonly Dictionary<int, (VkImage Image, ImageView View, int Layers)> images = new();
         private readonly Dictionary<int, VkSampler> samplers = new();
@@ -737,6 +771,7 @@ public static unsafe class VkRunner
                         Stage = ShaderStageFlags.ComputeBit,
                         Module = module,
                         PName = (byte*)name,
+                        PSpecializationInfo = SpecInfoFor(entry),
                     },
                 };
                 Check(vk.CreateComputePipelines(dev, default, 1, &ci, null, out Pipeline pipeline), "vkCreateComputePipelines");
@@ -867,8 +902,8 @@ public static unsafe class VkRunner
             nint psName = hasPixel ? Marshal.StringToHGlobalAnsi(EntryPointName(psCode)) : 0;
             var stages = stackalloc PipelineShaderStageCreateInfo[]
             {
-                new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.VertexBit, Module = vsModule, PName = (byte*)vsName },
-                new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.FragmentBit, Module = psModule, PName = (byte*)psName },
+                new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.VertexBit, Module = vsModule, PName = (byte*)vsName, PSpecializationInfo = SpecInfoFor(g.VertexEntry) },
+                new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.FragmentBit, Module = psModule, PName = (byte*)psName, PSpecializationInfo = hasPixel ? SpecInfoFor(g.PixelEntry) : null },
             };
 
             // Fixed-function state.

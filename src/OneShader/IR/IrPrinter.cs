@@ -19,6 +19,11 @@ public static class IrPrinter
         ArgumentNullException.ThrowIfNull(module);
         var sb = new StringBuilder();
         sb.Append("module ").Append(module.Name).Append('\n');
+        foreach (var sc in module.SpecConstants)
+        {
+            sb.Append("spec ").Append(sc.Id.ToString(CultureInfo.InvariantCulture)).Append(' ').Append(sc.Name).Append(" = ").Append(Const(sc.Default)).Append('\n');
+        }
+
         foreach (var g in module.Globals)
         {
             PrintGlobal(sb, g);
@@ -249,6 +254,7 @@ public static class IrPrinter
     {
         Constant c => Const(c),
         GlobalVariable g => "@" + g.Name,
+        SpecConstant sc => "spec(" + sc.Id.ToString(CultureInfo.InvariantCulture) + " " + sc.Name + ")",
         _ => names.TryGetValue(v, out var n) ? n : "%<unnamed>",
     };
 

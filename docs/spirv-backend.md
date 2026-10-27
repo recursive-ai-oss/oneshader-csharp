@@ -56,6 +56,15 @@ count are the `SubgroupLocalInvocationId` and `SubgroupSize` input variables. Th
 to Vulkan's `VkSubgroupFeatureFlagBits`) so a host can check `subgroupSupportedOperations` before creating the pipeline.
 `WaveMatch` and `WaveMultiPrefix*` are front-end errors (OSH0350): partitioned operations exist in Vulkan only as a vendor extension.
 
+## Specialization constants
+
+`[[vk::constant_id(N)]] const bool|int|uint|float Name = default;` is `OpSpecConstantTrue`/`OpSpecConstantFalse` (bool) or `OpSpecConstant` (the default's
+bits) with `OpDecorate SpecId N` and an `OpName`, written where it is first used, so an entry point carries only the constants it reaches. The ids are DXC's
+(a test compares the decorations with DXC's output for the corpus shaders). Expressions on constants are ordinary instructions; DXC emits
+`OpSpecConstantOp` for the initializer of a `static const` that depends on one, and the result is the same for every pipeline. The optimizer treats a
+constant as an unknown value, so branches on it stay. Pass the values in `VkSpecializationInfo` (`SpecializationValues.ToVulkan()`): every constant is a
+4-byte value, a bool is a `VkBool32`.
+
 ## Not supported yet (reported as OSH5002)
 
 16-bit floating point, unbounded resource arrays (rejected by the front end),

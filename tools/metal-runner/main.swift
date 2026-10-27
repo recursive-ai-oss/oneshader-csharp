@@ -90,6 +90,8 @@ func textureType(_ s: String) -> MTLTextureType {
 let mathMode: MTLMathMode = ProcessInfo.processInfo.environment["ONESHADER_METAL_MATH"] == "safe" ? .safe : .fast
 
 var libraries: [String: MTLLibrary] = [:]
+// spec FUNCTION INDEX TYPE BITS MTLDATATYPE lines of the manifest, by function name.
+var specs: [String: [(index: Int, type: String, bits: UInt32, raw: UInt32)]] = [:]
 func function(file: String, name: String) -> MTLFunction {
     let library: MTLLibrary
     if let cached = libraries[file] {
@@ -106,8 +108,34 @@ func function(file: String, name: String) -> MTLFunction {
         }
         libraries[file] = library
     }
-    guard let f = library.makeFunction(name: name) else { die(3, "\(file) has no function \(name)") }
-    return f
+    guard let plain = library.makeFunction(name: name) else { die(3, "\(file) has no function \(name)") }
+    // A function with function constants cannot build a pipeline state as it is, even when the host wants every default:
+    // it must be specialized, with whatever values the case sets (possibly none).
+    if !plain.functionConstantsDictionary.isEmpty {
+        // Function constants (MSL 2.4 5.8.1): the values a host sets when it builds the pipeline.
+        let values = MTLFunctionConstantValues()
+        for (index, type, bits, rawType) in specs[name] ?? [] {
+            var word = bits
+            switch type {
+            case "bool":
+                var b = bits != 0
+                values.setConstantValue(&b, type: .bool, index: index)
+            case "int":
+                var i = Int32(bitPattern: word)
+                values.setConstantValue(&i, type: .int, index: index)
+            case "uint":
+                values.setConstantValue(&word, type: .uint, index: index)
+            default:
+                var f = Float(bitPattern: word)
+                values.setConstantValue(&f, type: .float, index: index)
+            }
+            // The library states MTLDataType numbers; check them against the real enum.
+            let expected: MTLDataType = type == "bool" ? .bool : type == "int" ? .int : type == "uint" ? .uint : .float
+            if expected.rawValue != UInt(rawType) { die(2, "MTLDataType \(type) is \(expected.rawValue), not \(rawType)") }
+        }
+        do { return try library.makeFunction(name: name, constantValues: values) } catch { die(3, "\(file): function \(name) with constants: \(error)") }
+    }
+    return plain
 }
 
 // --- manifest -------------------------------------------------------------------------------------------
@@ -190,6 +218,9 @@ for t in manifest {
         if t[5] == "1" { d.compareFunction = .lessEqual }
         guard let s = device.makeSamplerState(descriptor: d) else { die(4, "sampler creation failed") }
         samplers.append((Int(t[1])!, s))
+    case "spec":
+        // spec FUNCTION INDEX TYPE BITS MTLDATATYPE
+        specs[t[1], default: []].append((Int(t[2])!, t[3], UInt32(t[4])!, UInt32(t[5])!))
     case "compute":
         // compute FILE FUNCTION GX GY GZ TX TY TZ
         dispatches.append((t[1], t[2], [Int(t[3])!, Int(t[4])!, Int(t[5])!], [Int(t[6])!, Int(t[7])!, Int(t[8])!]))

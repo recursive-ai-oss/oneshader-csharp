@@ -57,6 +57,14 @@ public static class WgslBackend
         ArgumentNullException.ThrowIfNull(hlslName);
         return WgslNames.Sanitize(hlslName, "main");
     }
+
+    /// <summary>The identifier of a specialization constant's <c>override</c> declaration in the WGSL source.</summary>
+    internal static string SpecConstantName(IrModule module, SpecConstant constant)
+    {
+        var names = new Dictionary<SpecConstant, string>(ReferenceEqualityComparer.Instance);
+        WgslEmitter.ClaimSpecNames(module, new HashSet<string>(StringComparer.Ordinal), names);
+        return names.TryGetValue(constant, out var n) ? n : constant.Name ?? "spec";
+    }
 }
 
 internal sealed partial class WgslEmitter
@@ -367,10 +375,27 @@ internal sealed partial class WgslEmitter
 
     private HashSet<GlobalVariable> PendingAtomicBuffers { get; } = [];
 
+    /// <summary>Claims the names of every specialization constant first, in declaration order, so reflection can state them without running the emitter.</summary>
+    internal static void ClaimSpecNames(IrModule m, HashSet<string> used, Dictionary<SpecConstant, string> names)
+    {
+        foreach (var sc in m.SpecConstants)
+        {
+            names[sc] = WgslNames.Unique(used, WgslNames.Sanitize(sc.Name, "spec"));
+        }
+    }
+
+    /// <summary>WGSL 7.3: <c>@id</c> takes a value from 0 to 65535.</summary>
+    private const uint MaxOverrideId = 65535;
+
     // ---- names and types -------------------------------------------------------------------------------------
+
+    private readonly Dictionary<SpecConstant, string> _specNames = new(ReferenceEqualityComparer.Instance);
+    private List<SpecConstant> _specs = [];
 
     private void RegisterNames()
     {
+        _specs = SpecUse.Scan(_m, _ep.Function);
+        ClaimSpecNames(_m, _moduleNames, _specNames);
         _fnNames[_ep.Function] = WgslNames.Unique(_moduleNames, WgslBackend.EntryFunctionName(_ep.Function.Name));
         foreach (var g in _m.Globals)
         {
@@ -378,6 +403,16 @@ internal sealed partial class WgslEmitter
             {
                 _globalNames[g] = WgslNames.Unique(_moduleNames, WgslNames.Sanitize(g.Name, "g"));
             }
+        }
+
+        foreach (var sc in _specs)
+        {
+            if (sc.Id > MaxOverrideId)
+            {
+                Unsupported("The specialization constant '" + sc.Name + "' has constant_id " + sc.Id.ToString(CultureInfo.InvariantCulture)
+                    + ", but WGSL override ids stop at " + MaxOverrideId.ToString(CultureInfo.InvariantCulture) + ". Use a smaller id.", sc.Span);
+            }
+
         }
 
         foreach (var g in _ep.Inputs)
@@ -584,6 +619,18 @@ internal sealed partial class WgslEmitter
         foreach (string s in _structDecls)
         {
             sb.Append(s).Append('\n');
+        }
+
+        // WGSL 7.3: a pipeline-overridable constant; the pipeline's constants map is keyed by the decimal id.
+        foreach (var sc in _specs)
+        {
+            sb.Append("@id(").Append(sc.Id.ToString(CultureInfo.InvariantCulture)).Append(") override ").Append(_specNames[sc]).Append(": ")
+              .Append(TypeName(sc.Type, false)).Append(" = ").Append(ConstExpr(sc.Default)).Append(";\n");
+        }
+
+        if (_specs.Count > 0)
+        {
+            sb.Append('\n');
         }
 
         foreach (string s in _privateConstants)

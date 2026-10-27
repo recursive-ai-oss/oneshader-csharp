@@ -90,6 +90,15 @@ public static class ReflectionFormat
             WriteType(sb, p.Layout, 2, 0);
         }
 
+        foreach (var sc in model.SpecConstants)
+        {
+            Line(sb, 0, "spec", ("name", Q(sc.Name)), ("id", N(sc.Id)), ("scalar", sc.Scalar.ToString()), ("default", N(sc.DefaultBits)));
+            foreach (var s in sc.Slots)
+            {
+                Line(sb, 1, "slot", ("target", s.Target.ToString()), ("index", N(s.Index)), ("name", Q(s.Name)));
+            }
+        }
+
         foreach (var e in model.EntryPoints)
         {
             Line(
@@ -118,6 +127,11 @@ public static class ReflectionFormat
             if (e.PushConstant is not null)
             {
                 Line(sb, 1, "pushuse", ("name", Q(e.PushConstant)));
+            }
+
+            foreach (var u in e.UsedSpecConstants)
+            {
+                Line(sb, 1, "specuse", ("name", Q(u)));
             }
 
             if (e.SubgroupOperations != SubgroupOperations.None)
@@ -330,6 +344,7 @@ public static class ReflectionFormat
             var resources = new List<ResourceInfo>();
             var entries = new List<EntryPointInfo>();
             var pushes = new List<PushConstantInfo>();
+            var specs = new List<SpecConstantInfo>();
             while (_pos < _nodes.Count)
             {
                 var n = _nodes[_pos];
@@ -351,12 +366,40 @@ public static class ReflectionFormat
                         break;
                     case "resource": resources.Add(ReadResource(n)); break;
                     case "push": pushes.Add(ReadPush(n)); break;
+                    case "spec": specs.Add(ReadSpec(n)); break;
                     case "entry": entries.Add(ReadEntry(n)); break;
                     default: break; // Unknown top-level records are ignored so newer writers stay readable.
                 }
             }
 
-            return new ShaderReflection { SourceName = source, Targets = targets, Resources = resources, PushConstants = pushes, EntryPoints = entries };
+            return new ShaderReflection { SourceName = source, Targets = targets, Resources = resources, PushConstants = pushes, SpecConstants = specs, EntryPoints = entries };
+        }
+
+        private SpecConstantInfo ReadSpec(Node n)
+        {
+            var slots = new List<SpecConstantSlot>();
+            while (_pos < _nodes.Count && _nodes[_pos].Depth > 0)
+            {
+                var c = _nodes[_pos++];
+                if (c.Depth != 1)
+                {
+                    throw Err(c, "unexpected indentation");
+                }
+
+                if (c.Keyword == "slot")
+                {
+                    slots.Add(new SpecConstantSlot(Enm<CompileTarget>(c, Str(c, "target")), U(c, "index"), Str(c, "name")));
+                }
+            }
+
+            return new SpecConstantInfo
+            {
+                Name = Str(n, "name"),
+                Id = U(n, "id"),
+                Scalar = Enm<ScalarKind>(n, Str(n, "scalar")),
+                DefaultBits = U(n, "default"),
+                Slots = slots,
+            };
         }
 
         private PushConstantInfo ReadPush(Node n)
@@ -491,6 +534,7 @@ public static class ReflectionFormat
             string? push = null;
             var subgroup = SubgroupOperations.None;
             var features = DeviceFeatures.None;
+            var specUses = new List<string>();
             while (_pos < _nodes.Count && _nodes[_pos].Depth > 0)
             {
                 var c = _nodes[_pos++];
@@ -500,6 +544,7 @@ public static class ReflectionFormat
                     case "output": outputs.Add(ReadVariable(c)); break;
                     case "uses": uses.Add(Str(c, "name")); break;
                     case "pushuse": push = Str(c, "name"); break;
+                    case "specuse": specUses.Add(Str(c, "name")); break;
                     case "subgroup": subgroup = (SubgroupOperations)U(c, "ops"); break;
                     case "features": features = (DeviceFeatures)U(c, "bits"); break;
                     default: break;
@@ -522,6 +567,7 @@ public static class ReflectionFormat
                 Outputs = outputs,
                 UsedResources = uses,
                 PushConstant = push,
+                UsedSpecConstants = specUses,
                 SubgroupOperations = subgroup,
                 RequiredFeatures = features,
             };

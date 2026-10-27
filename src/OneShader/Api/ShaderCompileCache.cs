@@ -193,6 +193,7 @@ public sealed class ShaderCompileCache
         Enable16BitTypes = o.Enable16BitTypes,
         Optimize = o.Optimize,
         KeepNames = o.KeepNames,
+        SpecializationOverrides = o.SpecializationOverrides,
         ResolverOverride = resolver,
     };
 
@@ -233,6 +234,13 @@ public sealed class ShaderCompileCache
         Put(h, o.Enable16BitTypes ? "16" : "32");
         Put(h, o.Optimize ? "opt" : "noopt");
         Put(h, o.KeepNames ? "names" : "nonames");
+        Put(h, o.SpecializationOverrides.Count.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        foreach (var s in o.SpecializationOverrides)
+        {
+            Put(h, s.Key);
+            Put(h, BitConverter.DoubleToInt64Bits(s.Value).ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
         return Convert.ToHexString(h.GetHashAndReset());
     }
 

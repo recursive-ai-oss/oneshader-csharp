@@ -24,6 +24,12 @@ public static class Parity
     public static RunResult Run(VkContext ctx, CaseModel model, CaseData data, ParityCompiler compiler, bool yUp = false)
     {
         string source = Path.Combine(Tools.CorpusDir, model.Shader);
+        if (model.Specs.Count > 0 && compiler.Name.EndsWith("wgsl", StringComparison.Ordinal))
+        {
+            // The naga command-line tool writes pipeline-overridable constants into SPIR-V as plain constants at their defaults; the browser run covers overrides.
+            throw new UnsupportedOnTargetException("naga's SPIR-V output fixes overridable constants at their defaults");
+        }
+
         if (data.Push is not null && compiler.Name.EndsWith("wgsl", StringComparison.Ordinal))
         {
             // WebGPU has no push constants: the WGSL carries the block as a uniform buffer, so the run binds the bytes there.
@@ -32,7 +38,7 @@ public static class Parity
         }
 
         return VkRunner.Run(ctx, model, data, (entry, stage) =>
-            compiler.Compile(new ShaderRequest(source, entry, stage, model.Defines)), yUp);
+            compiler.Compile(new ShaderRequest(source, entry, stage, model.Defines)), yUp, SpecOverrides.VulkanFor(model, source));
     }
 
     /// <summary>A copy of <paramref name="model"/> whose push-constant bytes are an ordinary uniform buffer at the slot the WGSL backend reports.</summary>
@@ -52,6 +58,7 @@ public static class Parity
         var slot = push.Slots.First(s => s.Target == CompileTarget.Wgsl);
         var copy = new CaseModel { Name = model.Name, Shader = model.Shader, FloatTolerance = model.FloatTolerance, Graphics = model.Graphics };
         copy.Defines.AddRange(model.Defines);
+        copy.Specs.AddRange(model.Specs);
         copy.Dispatches.AddRange(model.Dispatches);
         copy.Expects.AddRange(model.Expects);
         copy.Resources.AddRange(model.Resources);

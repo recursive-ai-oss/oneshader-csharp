@@ -21,6 +21,24 @@ public static class MetalBundle
     /// <summary>Names a readback file from its output key (<c>buffer:0.2</c> becomes <c>buffer_0.2.bin</c>).</summary>
     public static string FileFor(string key) => key.Replace(':', '_').Replace('[', '_').Replace("]", string.Empty, StringComparison.Ordinal) + ".bin";
 
+    /// <summary><c>spec FUNCTION INDEX TYPE BITS</c> manifest lines for one entry point (empty when the case sets no constant it reads).</summary>
+    private static IEnumerable<string> SpecLines(CaseModel model, OneShader.Reflection.ShaderReflection reflection, string entry)
+    {
+        if (SpecOverrides.For(model, reflection, entry) is not { } values)
+        {
+            yield break;
+        }
+
+        foreach (var v in values.ToMetal())
+        {
+            uint type = v.Type.DataType;
+            string name = type == OneShader.Layouts.Metal.FunctionConstantType.Bool.DataType ? "bool"
+                : type == OneShader.Layouts.Metal.FunctionConstantType.Int.DataType ? "int"
+                : type == OneShader.Layouts.Metal.FunctionConstantType.UInt.DataType ? "uint" : "float";
+            yield return $"spec {OneShader.Msl.MslBackend.EntryFunctionName(entry)} {v.Index} {name} {v.Bits} {type}";
+        }
+    }
+
     /// <summary>Exports <paramref name="model"/>; returns "ok" or a one-line reason when nothing could be exported.</summary>
     public static string Export(string bundleDir, CaseModel model, VkContext ctx)
     {
@@ -40,6 +58,7 @@ public static class MetalBundle
         string source = Path.Combine(Tools.CorpusDir, model.Shader);
         var files = new Dictionary<string, string>();
         var groups = new Dictionary<string, (uint X, uint Y, uint Z)>();
+        var specLines = new List<string>();
         OneShader.Reflection.ShaderReflection? reflection = null;
         foreach (var (entry, stage) in ParityCompilers.Entries(model))
         {
@@ -71,6 +90,7 @@ public static class MetalBundle
             }
             files[entry] = entry + ".metal";
             reflection = result.Reflection;
+            specLines.AddRange(SpecLines(model, reflection, entry));
             groups[entry] = reflection.EntryPoints.First(e => e.Name == entry).WorkgroupSize;
         }
 
@@ -123,6 +143,12 @@ public static class MetalBundle
             // The Metal host delivers the block with setBytes at the index reflection records.
             File.WriteAllBytes(Path.Combine(dir, "push.bin"), push);
             sb.Line($"push {reflection.PushConstants[0].Slots.Single(s => s.Target == CompileTarget.Msl).Binding} push.bin\n");
+        }
+
+        // Function constants, per Metal function: the values the library builds from the same case lines the Vulkan runs use.
+        foreach (string line in specLines)
+        {
+            sb.Line(line + "\n");
         }
 
         foreach (var d in model.Dispatches)

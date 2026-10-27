@@ -131,10 +131,12 @@ public sealed class EntryLayout
     /// <param name="workgroupSize">The thread-group size for compute entry points.</param>
     /// <param name="subgroupOperations">The subgroup (wave) operations the entry point uses.</param>
     /// <param name="requiredFeatures">The optional device features its 16-bit and 64-bit types need.</param>
-    public EntryLayout(string name, ShaderStage stage, ReadOnlySpan<ResourceLayout> resources, PushConstantLayout? pushConstant = null, VertexLayout? vertex = null, (uint X, uint Y, uint Z) workgroupSize = default, SubgroupOperations subgroupOperations = SubgroupOperations.None, DeviceFeatures requiredFeatures = DeviceFeatures.None)
+    /// <param name="specConstants">The specialization constants the entry point reads.</param>
+    public EntryLayout(string name, ShaderStage stage, ReadOnlySpan<ResourceLayout> resources, PushConstantLayout? pushConstant = null, VertexLayout? vertex = null, (uint X, uint Y, uint Z) workgroupSize = default, SubgroupOperations subgroupOperations = SubgroupOperations.None, ReadOnlySpan<SpecConstantLayout> specConstants = default, DeviceFeatures requiredFeatures = DeviceFeatures.None)
     {
         SubgroupOperations = subgroupOperations;
         RequiredFeatures = requiredFeatures;
+        SpecConstants = specConstants.ToArray();
         ArgumentNullException.ThrowIfNull(name);
         Name = name;
         Stage = stage;
@@ -173,6 +175,12 @@ public sealed class EntryLayout
     /// creates the device; a WebGPU host requests <c>shader-f16</c> for <see cref="DeviceFeatures.Float16"/>.
     /// </summary>
     public DeviceFeatures RequiredFeatures { get; }
+
+    /// <summary>
+    /// The specialization constants the entry point reads, in declaration order. Give them values with <see cref="SpecializationValues.For"/>;
+    /// a constant the entry point does not read is not part of its pipeline (WebGPU rejects unknown keys).
+    /// </summary>
+    public IReadOnlyList<SpecConstantLayout> SpecConstants { get; }
 
     /// <summary>The <see cref="ShaderStages"/> bit of <see cref="Stage"/>.</summary>
     public ShaderStages StageFlag => StageBit(Stage);
@@ -291,7 +299,29 @@ public sealed class EntryLayout
             vertex = new VertexLayout(entry.VertexStride, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(attributes));
         }
 
-        layout = new EntryLayout(entry.Name, entry.Stage, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(resources), push, vertex, entry.WorkgroupSize, entry.SubgroupOperations, entry.RequiredFeatures);
+        var specs = new List<SpecConstantLayout>();
+        foreach (var used in entry.UsedSpecConstants)
+        {
+            SpecConstantInfo? sc = null;
+            foreach (var candidate in reflection.SpecConstants)
+            {
+                if (candidate.Name == used)
+                {
+                    sc = candidate;
+                    break;
+                }
+            }
+
+            if (sc is null)
+            {
+                error = new LayoutError(LayoutErrorKind.IncompleteReflection, "The entry point '" + entryPoint + "' uses the specialization constant '" + used + "', which the reflection does not list.");
+                return false;
+            }
+
+            specs.Add(new SpecConstantLayout(sc.Name, sc.Id, sc.Scalar, sc.DefaultBits));
+        }
+
+        layout = new EntryLayout(entry.Name, entry.Stage, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(resources), push, vertex, entry.WorkgroupSize, entry.SubgroupOperations, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(specs), entry.RequiredFeatures);
         error = null;
         return true;
     }

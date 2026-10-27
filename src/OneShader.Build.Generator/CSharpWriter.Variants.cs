@@ -624,6 +624,13 @@ internal sealed partial class CSharpWriter
             Line("public global::OneShader.Reflection.DeviceFeatures RequiredFeatures { get; }");
         }
 
+        if (Any(variants, (f, e) => e.SpecUses.Count > 0))
+        {
+            Line("");
+            Line("/// <summary>The <c>constant_id</c>s of the specialization constants this entry point reads in this variant; empty when it reads none.</summary>");
+            Line("public global::System.ReadOnlySpan<uint> SpecConstantIds => Lookup.SpecConstantIds(_id);");
+        }
+
         if (layout)
         {
             Line("");
@@ -732,6 +739,11 @@ internal sealed partial class CSharpWriter
         EmitSpanSwitch("Wgsl", "byte", variants, union, (f, e) => f.Wgsl.ContainsKey(e.Name), "Wgsl");
         Line("");
         EmitSpanSwitch("Inputs", "global::OneShader.VertexAttribute", variants, union, (f, e) => e.Stage == "Vertex", "Inputs");
+        if (Any(variants, (f, e) => e.SpecUses.Count > 0))
+        {
+            Line("");
+            EmitSpanSwitch("SpecConstantIds", "uint", variants, union, (f, e) => e.SpecUses.Count > 0, "SpecConstantIds");
+        }
         if (HasLayout(union))
         {
             Line("");
@@ -997,6 +1009,13 @@ internal sealed partial class CSharpWriter
         _file = v.File;
         _topNames = new HashSet<string>(_fileNames!, StringComparer.Ordinal);
         var f = v.File;
+        if (f.Specs.Count > 0)
+        {
+            _topNames.Add("SpecializationConstants");
+            _topNames.Add("Specialization");
+            CheckSpecNames();
+        }
+
         foreach (var e in f.Entries)
         {
             string name = TypeName(e.Name);
@@ -1080,6 +1099,12 @@ internal sealed partial class CSharpWriter
         }
 
         // Vertex structs that differ between variants stay with their entry point (see EmitVertex).
+        if (f.Specs.Count > 0)
+        {
+            Separator(ref first);
+            EmitSpecializationConstants();
+        }
+
         Separator(ref first);
         EmitBindings(pushNames);
         foreach (var e in f.Entries)

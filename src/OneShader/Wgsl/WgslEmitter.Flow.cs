@@ -182,6 +182,8 @@ internal sealed partial class WgslEmitter
         {
             case Constant c:
                 return ConstExpr(c);
+            case SpecConstant sc:
+                return _specNames.TryGetValue(sc, out var specName) ? specName : "0";
             case GlobalVariable g:
                 if (_globalNames.TryGetValue(g, out var gn))
                 {

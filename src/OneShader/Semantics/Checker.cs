@@ -85,6 +85,9 @@ internal sealed partial class Checker
 
     public List<VariableSymbol> PrivateGlobals { get; } = [];
 
+    /// <summary>The <c>[[vk::constant_id]]</c> constants in declaration order.</summary>
+    public List<VariableSymbol> SpecConstants { get; } = [];
+
     public List<VariableSymbol> GroupSharedGlobals { get; } = [];
 
     public List<FunctionSymbol> Functions { get; } = [];
@@ -99,10 +102,31 @@ internal sealed partial class Checker
 
     private void Err(string code, string message, SourceSpan span)
     {
+        if (code == SemanticCodes.NotConstant && UsesSpecConstant(span))
+        {
+            message += " It uses a specialization constant, whose value is only known when the pipeline is created: use a literal or a 'static const' there, or choose the value with a #define.";
+        }
+
         if (!_diag.IsFull)
         {
             _diag.Error(code, message, span);
         }
+    }
+
+    // Where specialization constants were named, so a "must be constant" error can say why such a name does not count.
+    private readonly List<SourceSpan> _specRefs = [];
+
+    private bool UsesSpecConstant(SourceSpan span)
+    {
+        foreach (var r in _specRefs)
+        {
+            if (r.Path == span.Path && r.Offset >= span.Offset && r.Offset < span.Offset + Math.Max(1, span.Length))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void Warn(string code, string message, SourceSpan span) => _diag.Warning(code, message, span);
@@ -368,7 +392,7 @@ internal sealed partial class Checker
                 continue;
             }
 
-            if (n is "vk::push_constant" or "vk::constant_id" or "vk::builtin" or "vk::input_attachment_index")
+            if (n is "vk::push_constant" or "vk::builtin" or "vk::input_attachment_index")
             {
                 Err(SemanticCodes.Unsupported, "The attribute '" + n + "' is not supported yet.", a.Span);
                 continue;
@@ -957,7 +981,7 @@ internal sealed partial class Checker
 
     private void DeclareGlobalVariable(VariableDeclaration v, Scope scope)
     {
-        CheckAttributes(v.Attributes, "vk::binding", "vk::counter_binding", "vk::offset", "vk::push_constant");
+        CheckAttributes(v.Attributes, "vk::binding", "vk::counter_binding", "vk::offset", "vk::push_constant", "vk::constant_id");
         var baseType = ResolveType(v.Type);
         foreach (var d in v.Declarators)
         {
@@ -1011,6 +1035,12 @@ internal sealed partial class Checker
 
             d.Type = block;
             DeclareResourceVariable(v, d, block, scope, true);
+            return;
+        }
+
+        if (FindAttribute(v.Attributes, "vk::constant_id") is { } specAttr)
+        {
+            DeclareSpecConstant(v, d, type, scope, specAttr);
             return;
         }
 
@@ -1082,6 +1112,85 @@ internal sealed partial class Checker
             _uniformGlobals.Add(us);
         }
     }
+
+    /// <summary>
+    /// <c>[[vk::constant_id(N)]] const T Name = default;</c>: a scalar the host sets when it creates the pipeline. The same rules as DXC:
+    /// bool, int, uint or float, not static, with a default that is a constant expression.
+    /// </summary>
+    private void DeclareSpecConstant(VariableDeclaration v, Declarator d, HlslType type, Scope scope, AttributeSyntax attr)
+    {
+        var name = d.Name;
+        if (type is not ScalarType { ScalarKind: ScalarKind.Bool or ScalarKind.Int or ScalarKind.UInt or ScalarKind.Float } st)
+        {
+            Err(SemanticCodes.BadSpecConstant, "[[vk::constant_id]] applies to a scalar bool, int, uint or float; '" + name.Text + "' has type '" + type + "'. Declare one constant per component, or pass the value in a constant buffer.", attr.Span);
+            Define(scope, new VariableSymbol(name.Text, name.Span, VarKind.Global, HlslType.Error, v.Modifiers));
+            return;
+        }
+
+        if ((v.Modifiers & Modifiers.Static) != 0)
+        {
+            Err(SemanticCodes.BadSpecConstant, "A specialization constant must be visible to the host: remove 'static' from '" + name.Text + "'.", attr.Span);
+            Define(scope, new VariableSymbol(name.Text, name.Span, VarKind.Global, HlslType.Error, v.Modifiers));
+            return;
+        }
+
+        long id = -1;
+        if (IntAttributeArg(attr, 0) is { } rawId)
+        {
+            id = (uint)rawId;
+            if (rawId < 0)
+            {
+                Err(SemanticCodes.BadSpecConstant, "The id of '" + name.Text + "' must not be negative: write [[vk::constant_id(0)]] or a larger number.", attr.Arguments[0].Span);
+                id = -1;
+            }
+        }
+
+        bool ok = id >= 0;
+        if (ok && _specIds.TryGetValue((uint)id, out var other))
+        {
+            Err(SemanticCodes.BadSpecConstant, "constant_id " + id.ToString(CultureInfo.InvariantCulture) + " is already used by '" + other + "'. Give '" + name.Text + "' a different number: every specialization constant needs its own id.", attr.Span);
+            ok = false;
+        }
+
+        ConstValue? def = null;
+        if (d.Initializer is null)
+        {
+            Err(SemanticCodes.BadSpecConstant, "The specialization constant '" + name.Text + "' needs a default value: write '= value' after the name.", name.Span);
+            ok = false;
+        }
+        else
+        {
+            CheckInitializer(d.Initializer, type, true);
+            if (d.Initializer.Info?.Const is { } cv)
+            {
+                def = cv.ConvertTo(st);
+            }
+            else
+            {
+                if (d.Initializer.Type is { IsError: false })
+                {
+                    Err(SemanticCodes.BadSpecConstant, "The default of the specialization constant '" + name.Text + "' must be a literal or a constant expression of literals and 'static const' values; it cannot depend on another specialization constant or a variable.", d.Initializer.Span);
+                }
+
+                ok = false;
+            }
+        }
+
+        if (!ok || def is null)
+        {
+            Define(scope, new VariableSymbol(name.Text, name.Span, VarKind.Global, HlslType.Error, v.Modifiers));
+            return;
+        }
+
+        _specIds[(uint)id] = name.Text;
+        var sym = new VariableSymbol(name.Text, name.Span, VarKind.Spec, type, v.Modifiers | Modifiers.Const) { Declarator = d, SpecId = (uint)id, SpecDefault = def.Value };
+        if (Define(scope, sym))
+        {
+            SpecConstants.Add(sym);
+        }
+    }
+
+    private readonly Dictionary<uint, string> _specIds = [];
 
     private void DeclareResourceVariable(VariableDeclaration v, Declarator d, HlslType type, Scope scope, bool push = false)
     {

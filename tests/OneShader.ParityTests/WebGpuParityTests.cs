@@ -121,16 +121,21 @@ public class WebGpuParityTests
                 }
                 var modules = new List<(string Entry, ShaderStage Stage, string Wgsl)>();
                 (uint Group, uint Binding)? pushSlot = null;
+                var constants = new Dictionary<string, IReadOnlyDictionary<string, double>>(StringComparer.Ordinal);
                 string? skip = null;
                 foreach (var (entry, stage) in ParityCompilers.Entries(model))
                 {
-                    var wgsl = CompileWgsl(model, entry, stage, out string? diag, out pushSlot);
+                    var wgsl = CompileWgsl(model, entry, stage, out string? diag, out pushSlot, out var entryConstants);
                     if (wgsl is null)
                     {
                         skip = diag;
                         break;
                     }
                     modules.Add((entry, stage, wgsl));
+                    if (entryConstants is not null)
+                    {
+                        constants[entry] = entryConstants;
+                    }
                 }
                 if (skip is not null)
                 {
@@ -143,7 +148,7 @@ public class WebGpuParityTests
                     outcomes[name] = new Outcome(null, null, null, "the Vulkan reference run printed validation messages: " + reference.ValidationMessages[0]);
                     continue;
                 }
-                File.WriteAllText(Path.Combine(jobs, name + ".json"), BuildJob(model, data, modules, pushSlot).ToJsonString());
+                File.WriteAllText(Path.Combine(jobs, name + ".json"), BuildJob(model, data, modules, pushSlot, constants).ToJsonString());
                 outcomes[name] = new Outcome(reference, null, null, null);
                 pending.Add(name);
             }
@@ -177,9 +182,10 @@ public class WebGpuParityTests
     }
 
     /// <summary>The WGSL for one entry point, or null with the diagnostics when the backend reports the feature as unavailable.</summary>
-    private static string? CompileWgsl(CaseModel model, string entry, ShaderStage stage, out string? diagnostics, out (uint Group, uint Binding)? pushSlot)
+    private static string? CompileWgsl(CaseModel model, string entry, ShaderStage stage, out string? diagnostics, out (uint Group, uint Binding)? pushSlot, out IReadOnlyDictionary<string, double>? constants)
     {
         pushSlot = null;
+        constants = null;
         string source = Path.Combine(Tools.CorpusDir, model.Shader);
         var options = new CompileOptions
         {
@@ -212,6 +218,8 @@ public class WebGpuParityTests
                 pushSlot = (slot.Set, slot.Binding);
             }
 
+            // Pipeline-overridable constants: the record the case's 'spec' lines give this entry point, keyed by id as WebGPU wants.
+            constants = SpecOverrides.For(model, result.Reflection, entry)?.ToWebGpu();
             diagnostics = null;
             return blob.AsText();
         }
@@ -237,7 +245,7 @@ public class WebGpuParityTests
         _ => "depth32float",
     };
 
-    private static JsonObject BuildJob(CaseModel model, CaseData data, List<(string Entry, ShaderStage Stage, string Wgsl)> modules, (uint Group, uint Binding)? pushSlot)
+    private static JsonObject BuildJob(CaseModel model, CaseData data, List<(string Entry, ShaderStage Stage, string Wgsl)> modules, (uint Group, uint Binding)? pushSlot, Dictionary<string, IReadOnlyDictionary<string, double>> constants)
     {
         var job = new JsonObject
         {
@@ -252,6 +260,23 @@ public class WebGpuParityTests
                 ["wgsl"] = m.Wgsl,
             }).ToArray()),
         };
+
+        if (constants.Count > 0)
+        {
+            var byEntry = new JsonObject();
+            foreach (var (entry, map) in constants)
+            {
+                var o = new JsonObject();
+                foreach (var (key, value) in map)
+                {
+                    o[key] = value;
+                }
+
+                byEntry[entry] = o;
+            }
+
+            job["constants"] = byEntry;
+        }
 
         var resources = new JsonArray();
         for (int i = 0; i < model.Resources.Count; i++)
