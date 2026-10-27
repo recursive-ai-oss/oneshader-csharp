@@ -201,6 +201,23 @@ public partial class BindlessTests
         Assert.Contains("-fvk-bind-resource-heap", e[0], StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void OutputIsDeterministic()
+    {
+        foreach (string text in new[] { Textures, Heap })
+        {
+            var a = Compile(text, CompileTarget.SpirV, CompileTarget.Msl);
+            var b = Compile(text, CompileTarget.SpirV, CompileTarget.Msl);
+            Assert.Equal(a.Blobs.Count, b.Blobs.Count);
+            for (int i = 0; i < a.Blobs.Count; i++)
+            {
+                Assert.True(a.Blobs[i].Data.SequenceEqual(b.Blobs[i].Data), a.Blobs[i].Target + " blob " + i);
+            }
+
+            Assert.Equal(ReflectionFormat.Write(a.Reflection!), ReflectionFormat.Write(b.Reflection!));
+        }
+    }
+
     // ---- WGSL and Metal ----
 
     [Fact]

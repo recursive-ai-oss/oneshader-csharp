@@ -191,6 +191,12 @@ Creating layouts allocates; do it when a shader loads, not per frame.
   DXC's offsets, a `constant T&` argument in MSL, a uniform buffer in WGSL; `ShaderReflection.PushConstants` lists the
   layout, the stages and where each target takes the bytes.
 
+- Bindless resources: unbounded arrays (`Texture2D Tex[]`) and the SM 6.6 heaps (`ResourceDescriptorHeap[i]`, `SamplerDescriptorHeap[i]`) on SPIR-V
+  (descriptor indexing, DXC's heap mapping) and Metal (one argument buffer of 8-byte descriptors each). `ResourceInfo.IsUnbounded`, `Heap` and
+  `HeapKinds` describe them; `DeviceFeatures.RuntimeDescriptorArray`, `NonUniformIndexing` and `MutableDescriptorType` say what the device needs. The layout helpers
+  give Vulkan a variable-count, partially bound binding (`VulkanLayoutOptions.UnboundedMaxCount`, `PartiallyBound`, `VariableDescriptorCount`, `UpdateAfterBind`),
+  Metal a `MetalArgument` with `IsArgumentBuffer` and `DescriptorStride`, and refuse WebGPU.
+
 ## Known limits
 
 - SPIR-V, Metal (MSL) and WebGPU (WGSL) output. Limits are listed in `docs/msl-backend.md` and
