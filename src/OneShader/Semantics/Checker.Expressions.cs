@@ -181,6 +181,11 @@ internal sealed partial class Checker
             case VariableSymbol v:
                 info.IsLValue = true;
                 info.Const = v.Const;
+                if (v.Kind == VarKind.Spec)
+                {
+                    _specRefs.Add(n.Span);
+                }
+
                 return v.Type;
             case EnumeratorSymbol en:
                 info.Const = ConstValue.FromInt(en.Type.Underlying, en.Value);

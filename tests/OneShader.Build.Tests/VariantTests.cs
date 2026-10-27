@@ -373,6 +373,59 @@ public sealed class VariantTests : IDisposable
     }
 
     [Fact]
+    public void SpecializationConstantsAreGeneratedPerVariantAndEqualReflection()
+    {
+        const string source = "[[vk::constant_id(3)]] const float Gain = 2.0;\n"
+            + "#if WIDE\n[[vk::constant_id(5)]] const int Bias = 7;\n#endif\n"
+            + "cbuffer P : register(b0) { float4 Tint; };\n"
+            + "[shader(\"pixel\")] float4 PS() : SV_Target {\n#if WIDE\n return Tint * Gain + Bias;\n#else\n return Tint * Gain;\n#endif\n}\n";
+        var r = Run(source, "WIDE", AllTargets, name: "Spec");
+        Assert.True(r.Ok, Describe(r.Engine));
+        string generated = Generate(r);
+        const string probe = """
+            namespace Probe;
+            public static class Spec
+            {
+                public static uint[] Ids(bool wide) => T.Shaders.Spec.Variants.Get(new T.Shaders.Spec.Key(wide)).PS.SpecConstantIds.ToArray();
+                public static uint GainId(bool wide) => wide ? T.Shaders.Spec.Variants.WideOn.SpecializationConstants.Gain.Id : T.Shaders.Spec.Variants.WideOff.SpecializationConstants.Gain.Id;
+                public static float GainDefault(bool wide) => wide ? T.Shaders.Spec.Variants.WideOn.SpecializationConstants.Gain.Default : T.Shaders.Spec.Variants.WideOff.SpecializationConstants.Gain.Default;
+                public static uint BiasId => T.Shaders.Spec.Variants.WideOn.SpecializationConstants.Bias.Id;
+                public static int BiasDefault => T.Shaders.Spec.Variants.WideOn.SpecializationConstants.Bias.Default;
+                public static uint SizeOn => T.Shaders.Spec.Variants.WideOn.Specialization.Size;
+                public static uint SizeOff => T.Shaders.Spec.Variants.WideOff.Specialization.Size;
+            }
+            """;
+        var asm = Harness.Compile([generated, probe], out var ctx);
+        try
+        {
+            var type = asm.GetType("Probe.Spec")!;
+            T Get<T>(string member, params object[] args) => (T)(args.Length == 0 && type.GetProperty(member) is { } p ? p.GetValue(null)! : type.GetMethod(member)!.Invoke(null, args)!);
+            foreach (bool wide in new[] { false, true })
+            {
+                var defines = wide ? new[] { new KeyValuePair<string, string?>("WIDE", "1") } : Array.Empty<KeyValuePair<string, string?>>();
+                var compiled = ShaderCompiler.Compile(source, "Shaders/Spec.hlsl", new CompileOptions { Defines = defines }, TestContext.Current.CancellationToken);
+                var specs = compiled.Reflection!.SpecConstants;
+                Assert.Equal(wide ? 2 : 1, specs.Count);
+                Assert.Equal(specs.Select(s => s.Id).ToArray(), Get<uint[]>("Ids", wide));
+                var gain = specs.Single(s => s.Name == "Gain");
+                Assert.Equal(gain.Id, Get<uint>("GainId", wide));
+                Assert.Equal(gain.DefaultValue, Get<float>("GainDefault", wide));
+                Assert.Equal((uint)specs.Count * 4, Get<uint>(wide ? "SizeOn" : "SizeOff"));
+                if (wide)
+                {
+                    var bias = specs.Single(s => s.Name == "Bias");
+                    Assert.Equal(bias.Id, Get<uint>("BiasId"));
+                    Assert.Equal(bias.DefaultValue, Get<int>("BiasDefault"));
+                }
+            }
+        }
+        finally
+        {
+            ctx.Unload();
+        }
+    }
+
+    [Fact]
     public void ABufferThatDiffersBetweenVariantsGetsATypePerVariant()
     {
         const string source = "cbuffer Params : register(b0) {\n#if WIDE\n float4 A; float4 B;\n#else\n float4 A;\n#endif\n};\n"

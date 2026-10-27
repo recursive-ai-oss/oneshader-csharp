@@ -67,6 +67,8 @@ public sealed class ShaderCompileCacheTests : IDisposable
             new() { Enable16BitTypes = true },
             new() { Optimize = false },
             new() { KeepNames = false },
+            new() { SpecializationOverrides = [new("A", 1)] },
+            new() { SpecializationOverrides = [new("A", 2)] },
         };
         foreach (var o in variants)
         {
@@ -86,7 +88,7 @@ public sealed class ShaderCompileCacheTests : IDisposable
     public void ANewOptionOnCompileOptionsMustBeAddedToTheKey()
     {
         // The cache copies and hashes each option by name. If this list changes, update ShaderCompileCache.KeyOf and WithResolver, then this list.
-        string[] known = ["DefaultMatrixPacking", "Defines", "Enable16BitTypes", "EntryPoints", "IncludeDirectories", "IncludeResolver", "KeepNames", "Optimize", "Targets"];
+        string[] known = ["DefaultMatrixPacking", "Defines", "Enable16BitTypes", "EntryPoints", "IncludeDirectories", "IncludeResolver", "KeepNames", "Optimize", "SpecializationOverrides", "Targets"];
         string[] actual = typeof(CompileOptions).GetProperties(BindingFlags.Public | BindingFlags.Instance).Select(p => p.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray();
         Assert.Equal(known, actual);
     }

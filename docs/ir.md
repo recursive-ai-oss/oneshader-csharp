@@ -44,6 +44,10 @@ Access chains into `ConstantBuffer<T>` start inside `T` (the first index selects
 chains into `StructuredBuffer<T>` start with the element index, then continue inside `T`; a chain
 with one index into a byte-address buffer addresses a 32-bit word (used for atomics).
 
+A `SpecConstant` is a scalar value like a `Constant` (it can be an operand anywhere a scalar is) with an id and a default, listed in
+`IrModule.SpecConstants`. It is deliberately not a `Constant`: no pass folds it, so code that depends on it survives the optimizer. The dump prints
+`spec ID NAME = default` lines and `spec(ID NAME)` operands. `CompileOptions.SpecializationOverrides` replaces chosen ones by real constants after lowering.
+
 ## Opcode conventions
 
 Arithmetic and comparisons are component-wise and typed by their operands; signedness and

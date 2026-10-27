@@ -41,6 +41,7 @@ public sealed class CaseFormatException : Exception
 /// image SET BINDING WxH FORMAT GENERATOR [out] [element=N]
 /// sampler SET BINDING linear|nearest clamp|repeat [mips] [compare] [element=N]
 /// (resources declared at one SET BINDING with element=0,1,... form a descriptor array)
+/// spec NAME : VALUE                         (overrides a specialization constant of every entry point that reads it: true/false, an integer or a float)
 /// expect NAME
 /// </code>
 /// </summary>
@@ -100,6 +101,7 @@ public static class CaseFile
         var vertexBuffers = new List<VertexBufferDecl>();
         var attributes = new List<VertexInputAttr>();
         string? push = null;
+        var specs = new List<KeyValuePair<string, string>>();
         string? indexData = null;
         bool index16 = false;
         int drawCount = 0;
@@ -298,6 +300,9 @@ public static class CaseFile
                         Compare = Array.IndexOf(t, "compare") >= 0,
                     });
                     break;
+                case "spec":
+                    specs.Add(new KeyValuePair<string, string>(Arg(t, 1, fail), data ?? throw fail("spec needs ': value'")));
+                    break;
                 case "expect":
                     expects.Add(new ExpectDecl(Arg(t, 1, fail)));
                     break;
@@ -316,6 +321,7 @@ public static class CaseFile
         }
         var model = new CaseModel { Name = name, Shader = shader, FloatTolerance = floatTolerance, Push = push };
         model.Defines.AddRange(defines);
+        model.Specs.AddRange(specs);
         model.Resources.AddRange(resources);
         model.Dispatches.AddRange(dispatches);
         model.Expects.AddRange(expects);

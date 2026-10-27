@@ -1,0 +1,10 @@
+# The same pixel shader with the bool switched on and the other constants overridden at pipeline creation.
+case spec_const_pixel_set
+shader 2d/spec_const_pixel.hlsl
+graphics vs=VSMain ps=PSMain
+target 32 32
+tolerance 1
+draw vertices=3
+spec Swap : true
+spec Strength : 0.75
+spec Bands : 8

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System;
 using OneShader.Diagnostics;
 using OneShader.IR;
@@ -56,5 +57,13 @@ public static class MslBackend
     {
         ArgumentNullException.ThrowIfNull(hlslName);
         return MslNames.EntryName(hlslName);
+    }
+
+    /// <summary>The name of a specialization constant's <c>[[function_constant]]</c> variable in the MSL source.</summary>
+    internal static string SpecConstantName(IrModule module, SpecConstant constant)
+    {
+        var raw = new Dictionary<SpecConstant, string>(ReferenceEqualityComparer.Instance);
+        MslEmitter.ClaimSpecNames(module, new MslNames(), raw, new Dictionary<SpecConstant, string>(ReferenceEqualityComparer.Instance));
+        return raw.TryGetValue(constant, out var n) ? n : constant.Name ?? "spec";
     }
 }

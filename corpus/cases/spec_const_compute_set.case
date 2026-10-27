@@ -1,0 +1,11 @@
+# The same kernel with every specialization constant overridden when the pipeline is created.
+case spec_const_compute_set
+shader compute/spec_const_compute.hlsl
+dispatch CSMain 2 1 1
+spec UseOffset : true
+spec Rounds : 7
+spec Mask : 63
+spec Scale : 2.25
+storage 0 0 out size=128
+storage 0 1 out size=128
+expect spec_const_compute

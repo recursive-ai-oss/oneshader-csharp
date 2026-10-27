@@ -70,6 +70,8 @@ internal sealed partial class SpirvEmitter
         {
             case Constant c:
                 return ConstId(c);
+            case SpecConstant sc:
+                return SpecId(sc);
             case GlobalVariable g:
                 if (_globalIds.TryGetValue(g, out var gid))
                 {

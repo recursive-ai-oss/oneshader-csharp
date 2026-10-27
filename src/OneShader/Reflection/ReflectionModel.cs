@@ -307,6 +307,48 @@ public sealed class PushConstantInfo
     public IReadOnlyList<TargetSlot> Slots { get; init; } = [];
 }
 
+/// <summary>How a specialization constant is named and numbered for one target.</summary>
+/// <param name="Target">The backend.</param>
+/// <param name="Index">
+/// SPIR-V: the <c>SpecId</c> (the <c>constant_id</c>). Metal: the <c>[[function_constant(n)]]</c> index. WebGPU: the <c>@id(n)</c>; the
+/// pipeline's <c>constants</c> record is keyed by its decimal text. All three equal the HLSL <c>constant_id</c>.
+/// </param>
+/// <param name="Name">
+/// The name in that target's source: the SPIR-V <c>OpName</c> (present unless names are stripped), the Metal function-constant variable
+/// (usable with <c>setConstantValue:type:withName:</c>) and the WGSL <c>override</c> identifier.
+/// </param>
+public readonly record struct SpecConstantSlot(CompileTarget Target, uint Index, string Name);
+
+/// <summary>
+/// A specialization constant (<c>[[vk::constant_id(N)]] const T Name = default;</c>): a scalar the host sets when it builds the pipeline,
+/// without recompiling the shader. Only <c>bool</c>, <c>int</c>, <c>uint</c> and <c>float</c> are allowed.
+/// </summary>
+public sealed class SpecConstantInfo
+{
+    /// <summary>The HLSL name.</summary>
+    public required string Name { get; init; }
+
+    /// <summary>The <c>constant_id</c>.</summary>
+    public required uint Id { get; init; }
+
+    /// <summary>The scalar type: <see cref="ScalarKind.Bool"/>, <see cref="ScalarKind.Int"/>, <see cref="ScalarKind.UInt"/> or <see cref="ScalarKind.Float"/>.</summary>
+    public required ScalarKind Scalar { get; init; }
+
+    /// <summary>The default as the 32-bit pattern the host would write: 0 or 1 for bool, two's complement for int, IEEE bits for float.</summary>
+    public uint DefaultBits { get; init; }
+
+    /// <summary>The default as a double (bool as 0 or 1), which is exact for all four types.</summary>
+    public double DefaultValue => Scalar switch
+    {
+        ScalarKind.Float => BitConverter.UInt32BitsToSingle(DefaultBits),
+        ScalarKind.Int => (int)DefaultBits,
+        _ => DefaultBits,
+    };
+
+    /// <summary>One entry per enabled target, in <see cref="CompileTarget"/> order.</summary>
+    public IReadOnlyList<SpecConstantSlot> Slots { get; init; } = [];
+}
+
 /// <summary>An input or output of an entry point.</summary>
 public sealed class StageVariable
 {
@@ -368,6 +410,9 @@ public sealed class EntryPointInfo
     /// <summary>The name of the push-constant block this entry point reads (an entry of <see cref="ShaderReflection.PushConstants"/>), or null.</summary>
     public string? PushConstant { get; init; }
 
+    /// <summary>Names of the specialization constants this entry point (and the functions it calls) reads, a subset of <see cref="ShaderReflection.SpecConstants"/>.</summary>
+    public IReadOnlyList<string> UsedSpecConstants { get; init; } = [];
+
     /// <summary>The subgroup operations this entry point (and the functions it calls) uses; <see cref="SubgroupOperations.None"/> when it uses none.</summary>
     public SubgroupOperations SubgroupOperations { get; init; }
 
@@ -392,6 +437,9 @@ public sealed class ShaderReflection
 
     /// <summary>Push-constant blocks in declaration order; an entry point reads at most one. They are not in <see cref="Resources"/>.</summary>
     public IReadOnlyList<PushConstantInfo> PushConstants { get; init; } = [];
+
+    /// <summary>Specialization constants in declaration order.</summary>
+    public IReadOnlyList<SpecConstantInfo> SpecConstants { get; init; } = [];
 
     /// <summary>Entry points in declaration order.</summary>
     public IReadOnlyList<EntryPointInfo> EntryPoints { get; init; } = [];
