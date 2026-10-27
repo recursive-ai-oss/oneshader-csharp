@@ -84,6 +84,9 @@ public sealed class CompileOptions
     /// A value that does not fit the constant's type is error OSH0335; a name the shader does not declare is warning OSH0335.
     /// </summary>
     public IReadOnlyList<KeyValuePair<string, double>> SpecializationOverrides { get; init; } = [];
+
+    /// <summary>Replaces the include lookup entirely (the compile cache uses it to record what a compile read). Not part of the public API.</summary>
+    internal Preprocessing.IIncludeResolver? ResolverOverride { get; init; }
 }
 
 /// <summary>The compiled code of one entry point for one target.</summary>

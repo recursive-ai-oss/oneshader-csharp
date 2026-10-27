@@ -70,6 +70,24 @@ set, binding, kind, array size and stage visibility, the entry points present an
 sizes. Edits to function bodies, new entry points, and resources that become visible to fewer stages are compatible.
 `ShaderCompiler.Compile` can be called from several threads at once. `samples/HotReload` is a complete console loop.
 
+## Compile cache
+
+`ShaderCompileCache` answers a compile from memory when the same inputs were compiled before, for hosts that build many
+variants of the same shaders (hot reload, tools, material systems). A result is reused when the source text, path,
+every option (targets, defines, include directories, entry points, matrix packing, 16-bit types, optimization, names) and the
+content of every include the earlier compile read are unchanged; includes are looked up again on each call, so an edited
+file, or a new file earlier on the search path, makes the next call compile.
+
+```csharp
+var cache = new ShaderCompileCache(maxEntries: 256);          // thread-safe; least recently used results are dropped
+CompileResult a = cache.Compile(source, "Material.hlsl", new CompileOptions { Defines = [new("ALPHA_TEST", null)] });
+CompileResult b = cache.CompileFile("Shaders/Material.hlsl", options);   // reads the file every call
+Console.WriteLine($"{cache.Hits} hits, {cache.Misses} compiles"); cache.Clear();
+```
+
+Callers asking for one key at the same time share one compile; different keys compile in parallel. Results (errors included) are shared
+objects, so treat them as read-only; they are the bytes a direct `ShaderCompiler.Compile` gives. A cancelled call caches nothing.
+
 ## Pipeline layouts
 
 `OneShader.Layouts` turns a shader into what a renderer creates, as plain data with no graphics API behind it: descriptor set

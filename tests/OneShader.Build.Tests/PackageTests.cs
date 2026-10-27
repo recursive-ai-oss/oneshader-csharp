@@ -361,6 +361,79 @@ public sealed class PackageTests : IClassFixture<PackageFixture>
     }
 
     [Fact]
+    public void VariantsSampleBuildsSixVariantsForAllTargetsAndRebuildsWithoutCompiling()
+    {
+        string a = Path.Combine(_fx.Root, "art-variants");
+        string[] flags = ["-p:EmitCompilerGeneratedFiles=true"];
+        var first = Build("Variants", a, flags);
+        Assert.True(first.Code == 0, first.Output);
+        Assert.Matches(new Regex(@"\b0 Warning\(s\)"), first.Output);
+
+        // The program prints numbers that come from the generated lookup.
+        string dll = Find(a, "Variants.dll");
+        var run = PackageFixture.Run(Dotnet, [dll], Path.GetDirectoryName(dll)!, a);
+        Assert.True(run.Code == 0, run.Output);
+        var lines = run.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        Assert.Contains("variants: 6", lines);
+        string shader = Path.Combine(Harness.RepoRoot, "samples", "Variants", "Shaders", "Material.hlsl");
+        var compiled = ShaderCompiler.Compile(
+            File.ReadAllText(shader),
+            "Shaders/Material.hlsl",
+            new CompileOptions
+            {
+                Defines = [new("ALPHA_TEST", "1"), new("LIGHTING", "PBR"), new("LIGHTING_PBR", "1")],
+                Targets = [CompileTarget.SpirV, CompileTarget.Msl, CompileTarget.Wgsl],
+            },
+            TestContext.Current.CancellationToken);
+        Assert.True(compiled.Success, string.Join("\n", compiled.Diagnostics));
+        string pbrCutout = $"AlphaTestOn_LightingPbr: ALPHA_TEST=1 LIGHTING=PBR -> vertex {compiled.Find("VSMain", CompileTarget.SpirV)!.Data.Length} bytes of SPIR-V, "
+            + $"pixel {compiled.Find("PSMain", CompileTarget.SpirV)!.Data.Length} bytes, {compiled.Find("PSMain", CompileTarget.Wgsl)!.Data.Length} bytes of WGSL, 4 bindings";
+        Assert.Contains(pbrCutout, lines);
+        Assert.Contains("picked: AlphaTestOn_LightingPbr, normal map bound: True", lines);
+        Assert.Contains("picked: AlphaTestOff_LightingNone, normal map bound: False", lines);
+
+        // One constant-buffer struct for all six, and a class of data per variant.
+        string generated = File.ReadAllText(Find(a, "OneShader.*.g.cs"));
+        Assert.Equal(1, Regex.Count(generated, @"public struct Frame\b"));
+        Assert.Equal(6, Regex.Count(generated, @"public static class AlphaTest(On|Off)_Lighting\w+"));
+
+        // A no-op rebuild compiles nothing: the task says so and the program is not rebuilt.
+        var stamp = File.GetLastWriteTimeUtc(dll);
+        var again = Dotnet_("Variants", a, ["build", "{project}", "--no-restore", "-nologo", "-v:d", .. flags]);
+        Assert.True(again.Code == 0, again.Output);
+        Assert.Contains("OneShader: 0 compiled, 6 up to date.", again.Output, StringComparison.Ordinal);
+        Assert.Equal(stamp, File.GetLastWriteTimeUtc(dll));
+    }
+
+    [Fact]
+    public void AShaderErrorInOneVariantIsOneBuildErrorOnTheHlslLineNamingTheVariant()
+    {
+        string project = Path.Combine(_fx.Root, "broken-variants");
+        Directory.CreateDirectory(Path.Combine(project, "Shaders"));
+        File.WriteAllText(
+            Path.Combine(project, "BrokenVariants.csproj"),
+            "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework></PropertyGroup>"
+            + "<ItemGroup><PackageReference Include=\"RecursiveAI.OneShader.Build\" Version=\"0.1.0-dev.*\" />"
+            + "<OneShader Include=\"Shaders/Broken.hlsl\" Axes=\"ALPHA_TEST;LIGHTING=NONE|PBR\" /></ItemGroup></Project>");
+        File.WriteAllText(Path.Combine(project, "Program.cs"), "System.Console.WriteLine();\n");
+        string shader = Path.Combine(project, "Shaders", "Broken.hlsl");
+        File.WriteAllText(shader, "[shader(\"vertex\")]\nfloat4 VSMain() : SV_Position {\n#if ALPHA_TEST && LIGHTING_PBR\n    return missing;\n#endif\n    return 0;\n}\n");
+        string a = Path.Combine(_fx.Root, "art-broken-variants");
+        string packages = Path.Combine(_fx.Root, "packages");
+        var restore = PackageFixture.Run(Dotnet, ["restore", "BrokenVariants.csproj", "--source", _fx.Feed, "-v", "quiet"], project, a, packages);
+        Assert.True(restore.Code == 0, restore.Output);
+        var result = PackageFixture.Run(Dotnet, ["build", "BrokenVariants.csproj", "--no-restore", "-nologo", "-clp:NoSummary"], project, a, packages);
+        Assert.NotEqual(0, result.Code);
+
+        // The exact form MSBuild and IDEs parse, with the variant's define set at the end, printed once.
+        var matches = Regex.Matches(result.Output, "^" + Regex.Escape(shader) + @"\(4,12\): error OSH0300: .+ \(variant ALPHA_TEST=1, LIGHTING=PBR\) \[", RegexOptions.Multiline);
+        // MSBuild prints each error once where it happens and once more in its closing list; the task logged one.
+        Assert.True(matches.Count is 1 or 2, result.Output);
+        Assert.Single(matches.Select(m => m.Value).Distinct());
+        Assert.Equal(0, Regex.Count(result.Output, "OSH0300") - matches.Count);
+    }
+
+    [Fact]
     public void ProjectReferencesWorkWithoutAPackage()
     {
         string a = Path.Combine(_fx.Root, "art-local");

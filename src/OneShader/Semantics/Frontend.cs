@@ -61,6 +61,17 @@ internal static class Frontend
         }
     }
 
+    /// <summary>The resolver a compile with these options uses for <c>#include</c>: the internal override, the host's hook, or the file system.</summary>
+    internal static IIncludeResolver CreateResolver(CompileOptions options)
+    {
+        if (options.ResolverOverride is { } over)
+        {
+            return over;
+        }
+
+        return options.IncludeResolver is { } hook ? new DelegateResolver(hook) : new FileSystemIncludeResolver(options.IncludeDirectories);
+    }
+
     private static bool ListHas(IReadOnlyList<CompileTarget> list, CompileTarget t)
     {
         foreach (var x in list)
@@ -98,15 +109,7 @@ internal static class Frontend
 
     private static FrontendResult RunCore(string source, string path, CompileOptions options, DiagnosticBag bag, ICollection<string>? includesRead, CancellationToken ct)
     {
-        var pp = new PreprocessorOptions();
-        if (options.IncludeResolver is { } hook)
-        {
-            pp.IncludeResolver = new DelegateResolver(hook);
-        }
-        else
-        {
-            pp.IncludeResolver = new FileSystemIncludeResolver(options.IncludeDirectories);
-        }
+        var pp = new PreprocessorOptions { IncludeResolver = CreateResolver(options) };
 
         if (includesRead is not null)
         {
