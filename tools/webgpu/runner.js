@@ -45,19 +45,28 @@ async function init() {
   plainDevice = device;
 }
 
-// A second device with the optional subgroups feature, for jobs whose WGSL enables it. Null when the adapter lacks the feature.
+// Further devices with the optional features a job's WGSL enables (subgroups, shader-f16), one per combination. Null when the adapter lacks a feature.
 let plainDevice = null;
-let subgroupDevice = null;
+const featureDevices = new Map();
+function neededFeatures(job) {
+  const names = [];
+  if (job.subgroups) names.push('subgroups');
+  if (job.f16) names.push('shader-f16');
+  return names;
+}
 async function deviceFor(job) {
-  if (!job.subgroups) return plainDevice;
-  if (!subgroupDevice && adapter.features.has('subgroups')) {
-    // An adapter makes one device, so the second device comes from a second adapter request.
+  const names = neededFeatures(job);
+  if (names.length === 0) return plainDevice;
+  const key = names.join('+');
+  if (!featureDevices.has(key) && names.every((n) => adapter.features.has(n))) {
+    // An adapter makes one device, so each further device comes from another adapter request.
     const second = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
-    subgroupDevice = await second.requestDevice({ requiredFeatures: ['subgroups'] });
-    subgroupDevice.addEventListener('uncapturederror', (e) => sink?.push('uncaptured: ' + e.error.message));
-    subgroupDevice.lost.then((info) => sink?.push('device lost: ' + info.message));
+    const d = await second.requestDevice({ requiredFeatures: names });
+    d.addEventListener('uncapturederror', (e) => sink?.push('uncaptured: ' + e.error.message));
+    d.lost.then((info) => sink?.push('device lost: ' + info.message));
+    featureDevices.set(key, d);
   }
-  return subgroupDevice;
+  return featureDevices.get(key) ?? null;
 }
 
 window.adapterInfo = async () => {
@@ -436,7 +445,8 @@ window.runJob = async (job) => {
   if (!device) {
     device = plainDevice;
     sink = null;
-    return { name: job.name, outputs: [], errors: ['no-subgroups: the adapter does not offer the WebGPU subgroups feature'] };
+    const missing = neededFeatures(job).find((n) => !adapter.features.has(n)) ?? 'subgroups';
+    return { name: job.name, outputs: [], errors: [(missing === 'shader-f16' ? 'no-f16' : 'no-subgroups') + ': the adapter does not offer the WebGPU ' + missing + ' feature'] };
   }
   const scopes = ['validation', 'out-of-memory', 'internal'];
   scopes.forEach((s) => device.pushErrorScope(s));

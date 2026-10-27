@@ -18,6 +18,9 @@ internal sealed partial class Checker
 
     private static bool IsInt32(HlslType t) => t is ScalarType s && (s == ScalarType.Int || s == ScalarType.UInt);
 
+    /// <summary>Atomics work on 32-bit integers everywhere and on 64-bit integers in buffers and group-shared memory.</summary>
+    private static bool IsAtomicInt(HlslType t) => IsInt32(t) || t is ScalarType { ScalarKind: ScalarKind.Int64 or ScalarKind.UInt64 };
+
     private static bool TryAtomicOp(string suffix, out AtomicOp op, out int form)
     {
         form = 0;
@@ -326,10 +329,16 @@ internal sealed partial class Checker
                 return HlslType.Error;
             }
 
-            if (!IsInt32(at[0]))
+            if (!IsAtomicInt(at[0]))
             {
                 string hint = at[0].ScalarElement is { IsFloatingPoint: true } ? " Float atomics are not supported; reinterpret the data as uint with asuint()/asfloat()." : "";
-                Err(SemanticCodes.BadAtomic, "'" + name + "' works on 32-bit int or uint, but the first argument is '" + at[0] + "'." + hint, c.Arguments[0].Span);
+                Err(SemanticCodes.BadAtomic, "'" + name + "' works on int, uint, int64_t and uint64_t, but the first argument is '" + at[0] + "'." + hint, c.Arguments[0].Span);
+                return HlslType.Error;
+            }
+
+            if (kind == AtomicDest.Texel && at[0] is ScalarType { ScalarKind: ScalarKind.Int64 or ScalarKind.UInt64 })
+            {
+                Err(SemanticCodes.BadAtomic, "64-bit atomics on a texture are not available; use a structured buffer of uint64_t.", c.Arguments[0].Span);
                 return HlslType.Error;
             }
 
@@ -363,9 +372,9 @@ internal sealed partial class Checker
                 return HlslType.Error;
             }
 
-            if (!IsInt32(at[n - 1]))
+            if (!IsAtomicInt(at[n - 1]))
             {
-                Err(SemanticCodes.TypeMismatch, "The original-value argument of '" + name + "' must be an int or uint variable, not '" + at[n - 1] + "'.", outArg.Span);
+                Err(SemanticCodes.TypeMismatch, "The original-value argument of '" + name + "' must be an integer variable, not '" + at[n - 1] + "'.", outArg.Span);
                 return HlslType.Error;
             }
 

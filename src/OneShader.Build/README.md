@@ -125,7 +125,7 @@ Support types (`ShaderStage`, `ResourceKind`, `VertexFormat`, `VertexAttribute`,
 take them. When only these are used, trimming removes the compiler from a NativeAOT app.
 
 Item metadata: `EntryPoints`, `Defines`, `IncludeDirectories`, `Namespace`, `ClassName`, `Targets`, `Axes`, `MaxVariants`.
-Properties: `EnableDefaultOneShaderItems`, `OneShaderNamespace`, `OneShaderTargets`,
+Properties: `EnableDefaultOneShaderItems`, `OneShaderNamespace`, `OneShaderTargets`, `OneShaderEnable16BitTypes` (item metadata `Enable16BitTypes`),
 `OneShaderDefines`, `OneShaderIncludeDirectories`, `OneShaderMaxVariants`. Shaders are recompiled only when they, a file they include, or the
 options change; the output is deterministic.
 

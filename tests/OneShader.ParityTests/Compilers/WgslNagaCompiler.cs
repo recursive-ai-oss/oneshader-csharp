@@ -44,6 +44,7 @@ public static class WgslNagaCompiler
         {
             Targets = [CompileTarget.Wgsl],
             Defines = request.Defines.Select(d => new KeyValuePair<string, string?>(d.Key, d.Value)).ToList(),
+            Enable16BitTypes = SizedTypes.Enabled(request.Defines),
             IncludeDirectories = [Path.GetDirectoryName(request.SourcePath)!],
             EntryPoints = [new EntryPointRequest(request.Entry, stage)],
             Optimize = Environment.GetEnvironmentVariable("ONESHADER_OPTIMIZE") != "0",
@@ -63,7 +64,7 @@ public static class WgslNagaCompiler
                 + string.Join('\n', result.Diagnostics.Select(d => d.ToString())));
         }
 
-        if (blob.AsText().StartsWith("enable subgroups;", StringComparison.Ordinal))
+        if (blob.AsText().Contains("enable subgroups;", StringComparison.Ordinal))
         {
             // naga's WGSL reader rejects the subgroups extension and its functions; the browser run covers these cases.
             throw new UnsupportedOnTargetException("naga cannot read WGSL that uses the subgroups extension (" + request.Entry + " in " + request.SourcePath + ")");

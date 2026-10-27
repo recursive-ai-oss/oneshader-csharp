@@ -137,6 +137,21 @@ public sealed partial class PipelineLayout
         }
     }
 
+    /// <summary>The optional device features any entry point of the pipeline needs for 16-bit and 64-bit types.</summary>
+    public DeviceFeatures RequiredFeatures
+    {
+        get
+        {
+            var all = DeviceFeatures.None;
+            foreach (var e in _entries)
+            {
+                all |= e.RequiredFeatures;
+            }
+
+            return all;
+        }
+    }
+
     /// <summary>The entry point of the given stage, or null.</summary>
     /// <param name="stage">The stage.</param>
     /// <returns>The entry layout.</returns>

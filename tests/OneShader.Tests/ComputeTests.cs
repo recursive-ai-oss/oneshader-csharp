@@ -163,7 +163,7 @@ RWByteAddressBuffer Bytes;
             ["c.hlsl(5,16): error OSH0314: The first argument of 'InterlockedAdd' must be groupshared memory or an element of a read-write resource: a StructuredBuffer is read-only; declare it RWStructuredBuffer."],
             Diags(Cs("InterlockedAdd(RO[0], 1u);", "StructuredBuffer<uint> RO;")));
         Assert.Equal(
-            ["c.hlsl(5,16): error OSH0314: 'InterlockedAdd' works on 32-bit int or uint, but the first argument is 'float'. Float atomics are not supported; reinterpret the data as uint with asuint()/asfloat()."],
+            ["c.hlsl(5,16): error OSH0314: 'InterlockedAdd' works on int, uint, int64_t and uint64_t, but the first argument is 'float'. Float atomics are not supported; reinterpret the data as uint with asuint()/asfloat()."],
             Diags(Cs("InterlockedAdd(F[0], 1.0);", "RWStructuredBuffer<float> F;")));
         Assert.Equal(
             ["c.hlsl(5,16): error OSH0314: Atomics on the texture 'T' need a single-channel 32-bit integer format. Declare it with [[vk::image_format(\"r32ui\")]] (or \"r32i\" for int texels)."],

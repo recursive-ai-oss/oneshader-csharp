@@ -54,12 +54,20 @@ override has a name: `SpecializationValues.ToWebGpu()` builds it, with a bool as
 constants of the entry point you are building (`EntryLayout.SpecConstants`, or the generated `SpecConstantIds`). The `naga` command-line tool writes
 overrides into SPIR-V as plain constants at their defaults, so overrides are verified in the browser run rather than through naga.
 
+## 16-bit floats
+
+With `Enable16BitTypes`, `half` and `min16float` are `f16` and the module starts with `enable f16;` (WebGPU's optional `shader-f16` feature: reflection
+`DeviceFeatures.Float16` and `PipelineLayout.TryToWebGpu` `RequiredFeatures` say when to request it). Buffers stay raw 32-bit words: a half is
+read as one half of `unpack2x16float(word)` and written with `pack2x16float`; because the other half of a word may belong to a neighbour written by another invocation, a
+buffer written with halves is declared `array<atomic<u32>>` and a store clears and sets only its own 16 bits with `atomicAnd`/`atomicOr`. WebGPU does not require half arithmetic
+to round exactly as Vulkan does, so results can differ in the last bit of a half (the parity case allows 0.4%). There are no 16-bit integers.
+
 ## Not available (diagnostic OSH5202)
 
 clip and cull distances (optional WebGPU feature); `CalculateLevelOfDetail`; wave and quad intrinsics in vertex shaders (WebGPU's subgroup functions and built-ins exist only in compute and fragment shaders); resource arrays (WebGPU has no
 binding arrays: one error per array, which suggests separate resources or a `Texture2DArray`; `NonUniformResourceIndex` is just its
 index);
-`Buffer<T>`/`RWBuffer<T>`; append and consume buffers; atomics on textures; `double`, 64-bit and 16-bit types; integer and bool
+`Buffer<T>`/`RWBuffer<T>`; append and consume buffers; atomics on textures; `double`, 64-bit integers and 16-bit integers (each reported at the line of its first use); integer and bool
 matrices; `PrimitiveID`, layer and viewport index; recursion; storage textures without a format or read-written in a format other than
 r32float/r32uint/r32sint; bool stage variables; texel offsets on cube textures; control flow that is not structured.
 

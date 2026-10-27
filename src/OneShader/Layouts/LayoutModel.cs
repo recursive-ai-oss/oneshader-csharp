@@ -141,10 +141,12 @@ public sealed class EntryLayout
     /// <param name="vertex">The vertex input, for vertex entry points.</param>
     /// <param name="workgroupSize">The thread-group size for compute entry points.</param>
     /// <param name="subgroupOperations">The subgroup (wave) operations the entry point uses.</param>
+    /// <param name="requiredFeatures">The optional device features its 16-bit and 64-bit types need.</param>
     /// <param name="specConstants">The specialization constants the entry point reads.</param>
-    public EntryLayout(string name, ShaderStage stage, ReadOnlySpan<ResourceLayout> resources, PushConstantLayout? pushConstant = null, VertexLayout? vertex = null, (uint X, uint Y, uint Z) workgroupSize = default, SubgroupOperations subgroupOperations = SubgroupOperations.None, ReadOnlySpan<SpecConstantLayout> specConstants = default)
+    public EntryLayout(string name, ShaderStage stage, ReadOnlySpan<ResourceLayout> resources, PushConstantLayout? pushConstant = null, VertexLayout? vertex = null, (uint X, uint Y, uint Z) workgroupSize = default, SubgroupOperations subgroupOperations = SubgroupOperations.None, ReadOnlySpan<SpecConstantLayout> specConstants = default, DeviceFeatures requiredFeatures = DeviceFeatures.None)
     {
         SubgroupOperations = subgroupOperations;
+        RequiredFeatures = requiredFeatures;
         SpecConstants = specConstants.ToArray();
         ArgumentNullException.ThrowIfNull(name);
         Name = name;
@@ -178,6 +180,12 @@ public sealed class EntryLayout
     /// <c>subgroupSupportedOperations</c>, a Metal host needs a GPU family with SIMD-group functions, a WebGPU host the <c>subgroups</c> feature.
     /// </summary>
     public SubgroupOperations SubgroupOperations { get; }
+
+    /// <summary>
+    /// The optional device features the entry point needs for 16-bit and 64-bit types. A Vulkan host enables the matching features when it
+    /// creates the device; a WebGPU host requests <c>shader-f16</c> for <see cref="DeviceFeatures.Float16"/>.
+    /// </summary>
+    public DeviceFeatures RequiredFeatures { get; }
 
     /// <summary>
     /// The specialization constants the entry point reads, in declaration order. Give them values with <see cref="SpecializationValues.For"/>;
@@ -375,7 +383,7 @@ public sealed class EntryLayout
             specs.Add(new SpecConstantLayout(sc.Name, sc.Id, sc.Scalar, sc.DefaultBits));
         }
 
-        layout = new EntryLayout(entry.Name, entry.Stage, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(resources), push, vertex, entry.WorkgroupSize, entry.SubgroupOperations, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(specs)).WithPushConstantType(pushType);
+        layout = new EntryLayout(entry.Name, entry.Stage, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(resources), push, vertex, entry.WorkgroupSize, entry.SubgroupOperations, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(specs), entry.RequiredFeatures).WithPushConstantType(pushType);
         error = null;
         return true;
     }

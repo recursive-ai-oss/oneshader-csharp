@@ -118,6 +118,45 @@ public enum SubgroupOperations
 }
 
 /// <summary>
+/// Optional device features a shader needs because of the scalar types it uses. The Vulkan features are the ones the SPIR-V
+/// capabilities require; a WebGPU host needs <c>shader-f16</c> for <see cref="Float16"/>. Metal has no feature switches for these types
+/// (it has no 64-bit float, and <see cref="Int64Atomics"/> needs an Apple GPU family that has 64-bit atomics).
+/// </summary>
+[Flags]
+public enum DeviceFeatures
+{
+    /// <summary>Nothing beyond 32-bit scalars.</summary>
+    None = 0,
+
+    /// <summary>16-bit floating-point arithmetic (Vulkan <c>shaderFloat16</c>, WebGPU <c>shader-f16</c>).</summary>
+    Float16 = 1,
+
+    /// <summary>16-bit integer arithmetic (Vulkan <c>shaderInt16</c>).</summary>
+    Int16 = 2,
+
+    /// <summary>64-bit floating point (Vulkan <c>shaderFloat64</c>).</summary>
+    Float64 = 4,
+
+    /// <summary>64-bit integers (Vulkan <c>shaderInt64</c>).</summary>
+    Int64 = 8,
+
+    /// <summary>16-bit values in storage buffers (Vulkan <c>storageBuffer16BitAccess</c>).</summary>
+    StorageBuffer16 = 16,
+
+    /// <summary>16-bit values in uniform buffers (Vulkan <c>uniformAndStorageBuffer16BitAccess</c>).</summary>
+    UniformBuffer16 = 32,
+
+    /// <summary>16-bit values in push constants (Vulkan <c>storagePushConstant16</c>).</summary>
+    PushConstant16 = 64,
+
+    /// <summary>16-bit values as stage inputs or outputs (Vulkan <c>storageInputOutput16</c>).</summary>
+    InputOutput16 = 128,
+
+    /// <summary>64-bit atomics (Vulkan <c>shaderBufferInt64Atomics</c> / <c>shaderSharedInt64Atomics</c>).</summary>
+    Int64Atomics = 256,
+}
+
+/// <summary>
 /// A type described for tooling, with the byte layout the buffer rules gave it. Shape by
 /// <see cref="Kind"/>; properties that do not apply to a kind are 0, empty or null.
 /// </summary>
@@ -418,6 +457,9 @@ public sealed class EntryPointInfo
 
     /// <summary>True when the entry point needs subgroup support from the device (Vulkan subgroup operations, Metal SIMD-group functions, the WebGPU <c>subgroups</c> feature).</summary>
     public bool UsesSubgroups => SubgroupOperations != SubgroupOperations.None;
+
+    /// <summary>The optional device features this entry point needs for 16-bit and 64-bit types; <see cref="DeviceFeatures.None"/> when it uses only 32-bit scalars.</summary>
+    public DeviceFeatures RequiredFeatures { get; init; }
 }
 
 /// <summary>Everything tooling and generated code need to know about one compiled shader file.</summary>

@@ -1,0 +1,11 @@
+# 64-bit integers: wrapping arithmetic, shifts, division, conversions, and 64-bit atomics on a structured buffer and on group-shared memory.
+# The constant buffer is Offset, Mask, Shift, 12 bytes of padding, Step (int64_t2, 16-byte aligned).
+case types_int64
+shader types/int64.hlsl
+dispatch CSMain 4 1 1
+uniform 0 0 : 123456789012L 1099511628211L 13u 0u 0u 0u 7L -9L
+storage 0 1 : @u64(9,768)
+storage 0 2 out size=6144
+storage 0 3 out size=104 : 0L -1L 0L -1L 0L 0L 0L 0L 5L 0L 77L 0L 0L
+storage 0 4 out size=40 : 0L 9223372036854775807L -9223372036854775808L 9223372036854775807L -9223372036854775808L
+storage 0 5 out size=1024

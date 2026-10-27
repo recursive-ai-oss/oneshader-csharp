@@ -146,7 +146,8 @@ internal sealed partial class Checker
                     ScalarKind.Half => Canon(ScalarType.Half),
                     _ => ScalarType.Float,
                 };
-                info.Const = ConstValue.FromFloat(t, l.FloatValue);
+                // Without a suffix the literal keeps its full precision so that it can still become a double exactly.
+                info.Const = l.SuffixType is null ? new ConstValue(t, 0, l.FloatValue) : ConstValue.FromFloat(t, l.FloatValue);
                 return t;
             }
 
@@ -400,6 +401,35 @@ internal sealed partial class Checker
         }
     }
 
+    /// <summary>
+    /// The type arithmetic between two operands is done in. A min-precision operand mixed with a plain one gives the plain type, except
+    /// that a literal adopts the other side's type (DXC: <c>min16int * 2</c> stays min16int).
+    /// </summary>
+    private static ScalarType CommonWithLiterals(ScalarType ls, ScalarType rs, Expression left, Expression right)
+    {
+        var common = TypeOps.Common(TypeOps.ArithmeticScalar(ls), TypeOps.ArithmeticScalar(rs));
+        if (!common.IsRelaxed && (ls.IsRelaxed || rs.IsRelaxed))
+        {
+            var other = ls.IsRelaxed ? right : left;
+            if (Unparen(other) is LiteralExpression { SuffixType: null })
+            {
+                return ScalarType.Relaxed(common);
+            }
+        }
+
+        return common;
+    }
+
+    private static Expression Unparen(Expression e)
+    {
+        while (e is ParenthesizedExpression p)
+        {
+            e = p.Inner;
+        }
+
+        return e;
+    }
+
     private HlslType CheckBinary(BinaryExpression b)
     {
         var lt = CheckExpr(b.Left);
@@ -435,7 +465,7 @@ internal sealed partial class Checker
         switch (b.Operator)
         {
             case BinaryOperator.Add or BinaryOperator.Subtract or BinaryOperator.Multiply or BinaryOperator.Divide or BinaryOperator.Modulo:
-                operand = TypeOps.Reshape(shape, TypeOps.Common(TypeOps.ArithmeticScalar(ls), TypeOps.ArithmeticScalar(rs)));
+                operand = TypeOps.Reshape(shape, CommonWithLiterals(ls, rs, b.Left, b.Right));
                 result = operand;
                 break;
             case BinaryOperator.ShiftLeft or BinaryOperator.ShiftRight:
@@ -460,7 +490,7 @@ internal sealed partial class Checker
                     return HlslType.Error;
                 }
 
-                var sc = ls.ScalarKind == ScalarKind.Bool && rs.ScalarKind == ScalarKind.Bool ? ScalarType.Bool : TypeOps.Common(TypeOps.ArithmeticScalar(ls), TypeOps.ArithmeticScalar(rs));
+                var sc = ls.ScalarKind == ScalarKind.Bool && rs.ScalarKind == ScalarKind.Bool ? ScalarType.Bool : CommonWithLiterals(ls, rs, b.Left, b.Right);
                 operand = TypeOps.Reshape(shape, sc);
                 result = operand;
                 break;

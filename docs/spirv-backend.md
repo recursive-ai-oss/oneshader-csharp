@@ -65,7 +65,20 @@ bits) with `OpDecorate SpecId N` and an `OpName`, written where it is first used
 constant as an unknown value, so branches on it stay. Pass the values in `VkSpecializationInfo` (`SpecializationValues.ToVulkan()`): every constant is a
 4-byte value, a bool is a `VkBool32`.
 
+## 16-bit and 64-bit types
+
+With `Enable16BitTypes`, `half`/`min16float`/`min10float` are `OpTypeFloat 16` and `min16int`/`min16uint` and the `int16_t` family are 16-bit
+integers (capabilities `Float16`, `Int16`, and for buffer members `StorageBuffer16BitAccess`, `UniformAndStorageBuffer16BitAccess`,
+`StoragePushConstant16`, `StorageInputOutput16`). `double` is `Float64`, `int64_t`/`uint64_t` are `Int64`, and 64-bit `Interlocked*` adds `Int64Atomics`.
+Buffer offsets, array strides and matrix strides equal DXC's (checked with `spirv-dis` on the corpus `types_*` cases). Without the switch, min-precision
+types are 32-bit and carry `RelaxedPrecision` on members and results; a `min16int` constant is cut to 16 bits while the arithmetic stays 32-bit
+(observed in DXC's output). Observed DXC choices followed: double arguments to float-only intrinsics are converted to float (we warn, OSH0361);
+unsuffixed float literals stay double until they meet a concrete type. One DXC behaviour is not copied: `(float)int64_t` goes through a 32-bit
+`SConvert` in DXC and truncates; we convert directly. `EntryPointInfo.RequiredFeatures` lists the device features the capabilities need.
+Note: on the RTX 4070 (driver 595) a 16-bit signed remainder with a negative dividend returns a different value from RADV, llvmpipe and Metal;
+the corpus case `types_int16` agrees between DXC and this compiler on every device because both emit `OpSRem`.
+
 ## Not supported yet (reported as OSH5002)
 
-16-bit floating point, unbounded resource arrays (rejected by the front end),
+Unbounded resource arrays (rejected by the front end),
 comparison or bit-casting of whole matrices, bool matrices, products involving one-row/column matrices.

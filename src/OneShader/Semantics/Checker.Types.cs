@@ -16,11 +16,13 @@ internal sealed partial class Checker
             return s;
         }
 
+        // Without 16-bit types DXC computes min-precision values in 32 bits and marks them RelaxedPrecision; half is plain float.
         return s.ScalarKind switch
         {
-            ScalarKind.Half or ScalarKind.Min16Float or ScalarKind.Min10Float => ScalarType.Float,
-            ScalarKind.Min16Int => ScalarType.Int,
-            ScalarKind.Min16UInt => ScalarType.UInt,
+            ScalarKind.Half => ScalarType.Float,
+            ScalarKind.Min16Float or ScalarKind.Min10Float => ScalarType.Relaxed(ScalarType.Float),
+            ScalarKind.Min16Int => ScalarType.Relaxed(ScalarType.Int),
+            ScalarKind.Min16UInt => ScalarType.Relaxed(ScalarType.UInt),
             _ => s,
         };
     }
@@ -265,6 +267,14 @@ internal sealed partial class Checker
         if (BuiltinTypes.TryGetResource(name, out var rk))
         {
             return ResolveResourceType(n, name, rk);
+        }
+
+        if (!_opt.Layout.Enable16BitTypes && BuiltinTypes.TryGet(name, out var sixteen)
+            && (sixteen.ScalarElement is { ScalarKind: ScalarKind.Int16 or ScalarKind.UInt16 } || name.StartsWith("float16_t", StringComparison.Ordinal)))
+        {
+            // DXC: "unknown type name" without -enable-16bit-types; half and min16* stay available.
+            Err(SemanticCodes.SixteenBitTypesOff, "The type '" + name + "' needs 16-bit types enabled. Compile with -enable-16bit-types (MSBuild: OneShaderEnable16BitTypes=true), or use half, min16float, int or uint.", n.Name.Span);
+            return HlslType.Error;
         }
 
         if (BuiltinTypes.TryGet(name, out var bt))

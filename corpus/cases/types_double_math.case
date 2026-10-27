@@ -1,0 +1,10 @@
+# 64-bit floats: arithmetic, min/max/fma, conversions, asdouble/asuint splitting, float-only intrinsics narrowed as DXC does.
+# The constant buffer is Gain, pad, Scale, Pair, Seed, 28 bytes of padding, Axis (32-byte aligned).
+case types_double_math
+shader types/double_math.hlsl
+dispatch CSMain 4 1 1
+uniform 0 0 : 1.25 0u 0.75d 0.5d -1.25d 5u 0u 0u 0u 0u 0u 0u 0u 0.5d -2.0d 1.5d
+storage 0 1 : @f64pm1(3,768)
+storage 0 2 out size=6144
+storage 0 3 out size=1024
+storage 0 4 out size=512

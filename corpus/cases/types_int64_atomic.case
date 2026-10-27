@@ -1,0 +1,8 @@
+# 64-bit integer scalars with unsigned InterlockedMax / InterlockedMin (result unused) on a structured buffer: the part of 64-bit integers Metal can run.
+case types_int64_atomic
+shader types/int64_atomic.hlsl
+dispatch CSMain 4 1 1
+storage 0 0 : @u64(5,64)
+storage 0 1 out size=32 : 0L 0L 0L 0L
+storage 0 2 out size=32 : -1L -1L -1L -1L
+storage 0 3 out size=512

@@ -202,7 +202,7 @@ instead of the single-variant members `Bindings`, `Reflection`, `Pipeline` and t
 | `<Axis>Value` | `enum` per choice axis (`LightingValue { None, Lambert, Pbr }`); flags are `bool`; named sets use `VariantName` |
 | `Key` | `readonly struct`, one property per axis, `Index` (-1 for an enum value out of range), equality |
 | `Variant` | `Index`, `Name`, `Defines`, `Key`, `Bindings`, `Reflection`, `Pipeline` (when any variant has one) and one `Entry` property per entry point |
-| `Entry` | `Stage`, `EntryPoint`, `SpirV`, `Msl`, `MslFunctionName`, `MslVertexBufferIndex`, `Wgsl`, `WgslEntryPoint`, `Stride`, `Inputs`, `ThreadGroupSizeX/Y/Z`, `SubgroupOperations`, `Layout` (each only when some variant has it) |
+| `Entry` | `Stage`, `EntryPoint`, `SpirV`, `Msl`, `MslFunctionName`, `MslVertexBufferIndex`, `Wgsl`, `WgslEntryPoint`, `Stride`, `Inputs`, `ThreadGroupSizeX/Y/Z`, `SubgroupOperations`, `RequiredFeatures`, `Layout` (each only when some variant has it) |
 | `Variants` | `Count`, `All`, `Get(Key)`, `Get(int)`, `TryGet(Key, out Variant)`, and one static class per variant (`Variants.AlphaTestOn_LightingPbr`) shaped like a single-variant file's class |
 
 Variant order is the cartesian product with the first axis changing slowest; `Key.Index` is the position in `Variants.All`.
@@ -249,6 +249,15 @@ Strings are never changed: `EntryPoint` is still `"vs_main"`, and `Bindings.All`
 resource names. Members (struct fields, properties, constants) keep their HLSL spelling; a C#
 keyword is escaped with `@` (`@class`). Two names that map to the same C# name, such as `ui-rect`
 and `ui_rect`, are a build error that says to rename one or set `ClassName`.
+
+## 16-bit and 64-bit members
+
+A buffer member of a sized type is generated at its DXC offset with the matching C# type: `half` is `System.Half`, `int16_t` `short`, `uint16_t` `ushort`,
+`int64_t` `long`, `uint64_t` `ulong`, `double` `double` (min-precision types without 16-bit types are `float`/`int`/`uint`). Vectors of these have no
+`System.Numerics` form, so they are one field per component: `half3 b` becomes `b_X`, `b_Y`, `b_Z` (each at its own offset). A matrix of a 16-bit or 64-bit element is an
+error that says to split it (only float matrices up to 4x4 are generated). Each entry class gets `RequiredFeatures` (a `DeviceFeatures` constant) beside `SubgroupOperations`,
+and its `Layout` carries it; enable the Vulkan features it names (or request `shader-f16` on WebGPU) when creating the device. Turn the types on with
+`<OneShaderEnable16BitTypes>true</OneShaderEnable16BitTypes>` or `Enable16BitTypes="true"` on a `OneShader` item.
 
 ## Layout rules
 

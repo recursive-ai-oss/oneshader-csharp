@@ -106,6 +106,11 @@ internal sealed partial class MslEmitter
         }
 
         _ep = ep;
+        if (!CheckWideTypes())
+        {
+            return null;
+        }
+
         ClaimSpecNames(_m, _names, _specRaw, _specNames);
         _entryName = _names.ClaimExact(MslNames.EntryName(ep.Function.Name));
         if (!CollectReachable())
@@ -142,6 +147,31 @@ internal sealed partial class MslEmitter
 
         sb.Append(_fnText);
         return sb.ToString();
+    }
+
+    // Metal has no 64-bit float, no 64-bit integer vectors in buffers and only one 64-bit atomic. Found up front so the error names the
+    // line of the first use rather than coming out of type printing.
+    private bool CheckWideTypes()
+    {
+        var use = WideTypeUse.Scan(_m, _ep);
+        var fallback = _ep.Function.Span;
+        if ((use.Features & DeviceFeatures.Float64) != 0)
+        {
+            Unsupported("MSL has no 64-bit floating-point type. Use float, or compile this shader for SPIR-V only.", use.Float64Site.IsKnown ? use.Float64Site : fallback);
+        }
+
+        if (use.HasInt64Vector)
+        {
+            Unsupported("MSL output cannot store 64-bit integer vectors in buffers (Metal has no packed long vectors). Use scalars, or compile this shader for SPIR-V only.", use.Int64VectorSite.IsKnown ? use.Int64VectorSite : fallback);
+        }
+
+        if (use.HasInt64AtomicUnsupportedOnMetal)
+        {
+            Unsupported("Metal 2.4 supports 64-bit atomics only as unsigned InterlockedMax / InterlockedMin on a buffer without using the returned value. Use that form, 32-bit atomics, or compile this shader for SPIR-V only.",
+                use.Int64AtomicUnsupportedOnMetalSite.IsKnown ? use.Int64AtomicUnsupportedOnMetalSite : fallback);
+        }
+
+        return !_failed;
     }
 
     // ---- specialization constants -------------------------------------------------------------------

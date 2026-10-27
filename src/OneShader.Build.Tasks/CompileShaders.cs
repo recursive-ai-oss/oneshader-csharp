@@ -49,6 +49,9 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
     /// <summary>Semicolon-separated targets to compile for (<c>SpirV</c>, <c>Msl</c>, <c>Wgsl</c>); empty means SPIR-V only.</summary>
     public string DefaultTargets { get; set; } = "";
 
+    /// <summary>"true" makes <c>half</c>, <c>min16*</c> and the <c>int16_t</c> family native 16-bit types in every shader (DXC's <c>-enable-16bit-types</c>); the item's <c>Enable16BitTypes</c> metadata overrides it.</summary>
+    public string DefaultEnable16BitTypes { get; set; } = "";
+
     /// <summary>Semicolon-separated definitions applied to every shader (<c>NAME</c> or <c>NAME=value</c>).</summary>
     public string DefaultDefines { get; set; } = "";
 
@@ -213,6 +216,7 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
         public List<string> IncludeDirs = [];
         public List<EntryPointRequest> Entries = [];
         public List<CompileTarget> Targets = [];
+        public bool Enable16BitTypes;
 
         /// <summary>Empty for a plain shader; otherwise the variant's define set, for messages.</summary>
         public string Label = "";
@@ -249,6 +253,11 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
             return;
         }
 
+        if (!TryEnable16(item, full, out bool enable16))
+        {
+            return;
+        }
+
         var group = new JobGroup { Full = full };
         var plan = PlanVariants(item, full, relative, projectDir);
         if (plan is null)
@@ -261,7 +270,7 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
             group.Jobs.Add(new Job
             {
                 Full = full, Relative = relative, OutputPath = outputPath, Namespace = ns, ClassName = className,
-                Defines = defines, IncludeDirs = includeDirs, Entries = entries, Targets = targets,
+                Defines = defines, IncludeDirs = includeDirs, Entries = entries, Targets = targets, Enable16BitTypes = enable16,
             });
             groups.Add(group);
             return;
@@ -294,7 +303,7 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
             {
                 Full = full, Relative = relative, Namespace = ns, ClassName = className,
                 OutputPath = Path.Combine(variantDir, v.Key + ".oneshader"),
-                Defines = jobDefines, IncludeDirs = includeDirs, Entries = entries, Targets = targets,
+                Defines = jobDefines, IncludeDirs = includeDirs, Entries = entries, Targets = targets, Enable16BitTypes = enable16,
                 Label = v.Label, VariantKey = v.Key,
             });
             manifest.Append("variant index=").Append(i.ToString(CultureInfo.InvariantCulture)).Append(" key=").Append(v.Key);
@@ -410,7 +419,7 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
         string full = job.Full;
         string relative = job.Relative;
         string outputPath = job.OutputPath;
-        string optionsHash = HashOptions(relative, job.Namespace, job.ClassName, job.Defines, job.IncludeDirs, job.Entries, job.Targets);
+        string optionsHash = HashOptions(relative, job.Namespace, job.ClassName, job.Defines, job.IncludeDirs, job.Entries, job.Targets, job.Enable16BitTypes);
         if (TryReuse(outputPath, optionsHash, job))
         {
             Interlocked.Increment(ref _upToDate);
@@ -436,6 +445,7 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
             Defines = job.Defines,
             EntryPoints = job.Entries,
             Targets = job.Targets,
+            Enable16BitTypes = job.Enable16BitTypes,
             IncludeResolver = (requested, including, isSystem) => ResolveInclude(requested, including, isSystem, projectDir, includeDirs),
         };
 
@@ -779,7 +789,8 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
         List<KeyValuePair<string, string?>> defines,
         List<string> includeDirs,
         List<EntryPointRequest> entries,
-        IReadOnlyList<CompileTarget>? targets = null)
+        IReadOnlyList<CompileTarget>? targets = null,
+        bool enable16BitTypes = false)
     {
         var sb = new StringBuilder();
 
@@ -805,8 +816,32 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
             sb.Append("T ").Append(t).Append('\n');
         }
 
+        if (enable16BitTypes)
+        {
+            sb.Append("16\n");
+        }
+
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
         return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private bool TryEnable16(ITaskItem item, string full, out bool value)
+    {
+        string text = Meta(item, "Enable16BitTypes", DefaultEnable16BitTypes).Trim();
+        value = false;
+        if (text.Length == 0 || text.Equals("false", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (text.Equals("true", StringComparison.OrdinalIgnoreCase))
+        {
+            value = true;
+            return true;
+        }
+
+        Log.LogError(null, BadMetadataCode, null, full, 0, 0, 0, 0, "OneShaderEnable16BitTypes / Enable16BitTypes is '" + text + "'. Use true or false.");
+        return false;
     }
 
     private static string Meta(ITaskItem item, string name, string fallback)

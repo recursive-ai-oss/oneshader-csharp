@@ -50,7 +50,7 @@ public class WebGpuParityTests
 
         var result = outcome.Result!;
         var errors = result["errors"]!.AsArray().Select(e => e!.GetValue<string>()).ToList();
-        if (errors.FirstOrDefault(e => e.StartsWith("no-subgroups:", StringComparison.Ordinal)) is { } noSubgroups)
+        if (errors.FirstOrDefault(e => e.StartsWith("no-subgroups:", StringComparison.Ordinal) || e.StartsWith("no-f16:", StringComparison.Ordinal)) is { } noSubgroups)
         {
             Row(name, "skipped", noSubgroups);
             Assert.Skip(noSubgroups);
@@ -114,6 +114,11 @@ public class WebGpuParityTests
             {
                 var model = Corpus.Load(name);
                 var data = CaseData.Build(model);
+                if (model.RelaxedPrecision)
+                {
+                    outcomes[name] = new Outcome(null, null, "the outputs depend on RelaxedPrecision rounding, which WGSL does not have", null);
+                    continue;
+                }
                 var modules = new List<(string Entry, ShaderStage Stage, string Wgsl)>();
                 (uint Group, uint Binding)? pushSlot = null;
                 var constants = new Dictionary<string, IReadOnlyDictionary<string, double>>(StringComparer.Ordinal);
@@ -186,6 +191,7 @@ public class WebGpuParityTests
         {
             Targets = [CompileTarget.Wgsl],
             Defines = model.Defines.Select(d => new KeyValuePair<string, string?>(d.Key, d.Value)).ToList(),
+            Enable16BitTypes = SizedTypes.Enabled(model.Defines),
             IncludeDirectories = [Path.GetDirectoryName(source)!],
             EntryPoints = [new EntryPointRequest(entry, stage switch
             {
@@ -246,7 +252,9 @@ public class WebGpuParityTests
             ["name"] = model.Name,
             ["kind"] = model.IsCompute ? "compute" : "graphics",
             // WGSL with `enable subgroups;` needs a device created with that optional feature; the others keep the default device.
-            ["subgroups"] = modules.Any(m => m.Wgsl.StartsWith("enable subgroups;", StringComparison.Ordinal)),
+            ["subgroups"] = modules.Any(m => m.Wgsl.Contains("enable subgroups;", StringComparison.Ordinal)),
+            // `enable f16;` needs the optional shader-f16 feature.
+            ["f16"] = modules.Any(m => m.Wgsl.Contains("enable f16;", StringComparison.Ordinal)),
             ["modules"] = new JsonArray(modules.Select(m => (JsonNode)new JsonObject
             {
                 ["entry"] = m.Entry,

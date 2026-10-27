@@ -195,7 +195,8 @@ namespace OneShader.Layouts.Vulkan
     /// <param name="SetLayouts">One entry per set from 0; <c>SetLayouts[i].Set == i</c>.</param>
     /// <param name="PushConstantRanges">At most one range per stage.</param>
     /// <param name="SubgroupOperations">The subgroup operations the shaders use; check them against <c>subgroupSupportedOperations</c> before creating the pipeline.</param>
-    public sealed record PipelineLayoutInfo(IReadOnlyList<DescriptorSetLayoutInfo> SetLayouts, IReadOnlyList<PushConstantRangeInfo> PushConstantRanges, SubgroupOperations SubgroupOperations = SubgroupOperations.None);
+    /// <param name="RequiredFeatures">The 16-bit and 64-bit device features the shaders need (<c>shaderFloat16</c>, <c>shaderInt16</c>, <c>shaderFloat64</c>, <c>shaderInt64</c>, the 16-bit storage features, 64-bit atomics); enable them when creating the device.</param>
+    public sealed record PipelineLayoutInfo(IReadOnlyList<DescriptorSetLayoutInfo> SetLayouts, IReadOnlyList<PushConstantRangeInfo> PushConstantRanges, SubgroupOperations SubgroupOperations = SubgroupOperations.None, DeviceFeatures RequiredFeatures = DeviceFeatures.None);
 
     /// <summary>Choices a host can make that the shader does not decide.</summary>
     public sealed class VulkanLayoutOptions
@@ -281,7 +282,7 @@ namespace OneShader.Layouts
                 ranges[i] = new PushConstantRangeInfo(VulkanStages(PushConstants[i].Stages | (options?.WidenPushConstants ?? ShaderStages.None)), 0, (PushConstants[i].Size + 3) & ~3u);
             }
 
-            return new PipelineLayoutInfo(sets, ranges, SubgroupOperations);
+            return new PipelineLayoutInfo(sets, ranges, SubgroupOperations, RequiredFeatures);
         }
 
         internal static ShaderStages WidenedStages(uint set, uint binding, IReadOnlyDictionary<uint, ShaderStages> sets, IReadOnlyDictionary<(uint Set, uint Binding), ShaderStages> bindings)

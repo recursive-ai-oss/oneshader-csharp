@@ -498,6 +498,7 @@ internal sealed partial class CSharpWriter
         bool compute = Any(variants, (f, e) => e.Stage == "Compute");
         bool vertex = Any(variants, (f, e) => e.Stage == "Vertex");
         bool subgroup = Any(variants, (f, e) => e.Subgroup != 0);
+        bool features = Any(variants, (f, e) => e.Features != 0);
         bool layout = HasLayout(union);
 
         Line("/// <summary>One entry point of one variant: its code for each selected target, and what a host needs to create the pipeline stage.</summary>");
@@ -506,7 +507,7 @@ internal sealed partial class CSharpWriter
         _indent++;
         Line("private readonly int _id;");
         Line("");
-        Line("internal Entry(int id, global::OneShader.ShaderStage stage, string entryPoint, string? mslFunctionName, uint? mslVertexBufferIndex, string? wgslEntryPoint, uint stride, uint threadGroupSizeX, uint threadGroupSizeY, uint threadGroupSizeZ, uint subgroupOperations)");
+        Line("internal Entry(int id, global::OneShader.ShaderStage stage, string entryPoint, string? mslFunctionName, uint? mslVertexBufferIndex, string? wgslEntryPoint, uint stride, uint threadGroupSizeX, uint threadGroupSizeY, uint threadGroupSizeZ, uint subgroupOperations, uint requiredFeatures)");
         Line("{");
         _indent++;
         Line("_id = id;");
@@ -542,6 +543,11 @@ internal sealed partial class CSharpWriter
         if (subgroup)
         {
             Line("SubgroupOperations = (global::OneShader.Reflection.SubgroupOperations)subgroupOperations;");
+        }
+
+        if (features)
+        {
+            Line("RequiredFeatures = (global::OneShader.Reflection.DeviceFeatures)requiredFeatures;");
         }
 
         _indent--;
@@ -609,6 +615,13 @@ internal sealed partial class CSharpWriter
         {
             Line("");
             Line("public global::OneShader.Reflection.SubgroupOperations SubgroupOperations { get; }");
+        }
+
+        if (features)
+        {
+            Line("");
+            Line("/// <summary>The optional device features this variant's entry point needs for 16-bit and 64-bit types.</summary>");
+            Line("public global::OneShader.Reflection.DeviceFeatures RequiredFeatures { get; }");
         }
 
         if (Any(variants, (f, e) => e.SpecUses.Count > 0))
@@ -968,7 +981,7 @@ internal sealed partial class CSharpWriter
                     + (msl is null ? "null" : Str(msl.Function)) + ", "
                     + (msl is { HasVertexBuffer: true } ? Num(msl.VertexBuffer) : "null") + ", "
                     + (wgsl is null ? "null" : Str(wgsl.Function)) + ", "
-                    + Num(node.Stride) + ", " + Num(node.X) + ", " + Num(node.Y) + ", " + Num(node.Z) + ", " + Num(node.Subgroup) + "),");
+                    + Num(node.Stride) + ", " + Num(node.X) + ", " + Num(node.Y) + ", " + Num(node.Z) + ", " + Num(node.Subgroup) + ", " + Num(node.Features) + "),");
             }
 
             _indent--;

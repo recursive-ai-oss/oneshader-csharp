@@ -86,6 +86,7 @@ internal sealed partial class WgslEmitter
     private readonly HashSet<GlobalVariable> _atomicWorkgroup = [];
     private bool _usesDerivatives;
     private bool _usesSubgroups;
+    private bool _usesF16;
     private string? _entryReturnExpr;
 
     public WgslEmitter(IrModule m, WgslOptions o, DiagnosticBag d)
@@ -114,6 +115,11 @@ internal sealed partial class WgslEmitter
         }
 
         _ep = ep;
+        if (!CheckWideTypes())
+        {
+            return null;
+        }
+
         Scan();
         if (_failed)
         {
@@ -151,6 +157,30 @@ internal sealed partial class WgslEmitter
         }
 
         return v;
+    }
+
+    // WebGPU has f16 (an optional feature) but no 16-bit integers, no 64-bit types. Found up front so each error names the line of the first use.
+    private bool CheckWideTypes()
+    {
+        var use = WideTypeUse.Scan(_m, _ep);
+        var fallback = _ep.Function.Span;
+        _usesF16 = (use.Features & DeviceFeatures.Float16) != 0;
+        if ((use.Features & DeviceFeatures.Int16) != 0)
+        {
+            Unsupported("WGSL has no 16-bit integer types (only f16). Use int or uint, or compile this shader for SPIR-V or MSL only.", use.Int16Site.IsKnown ? use.Int16Site : fallback);
+        }
+
+        if ((use.Features & DeviceFeatures.Float64) != 0)
+        {
+            Unsupported("WGSL has no 64-bit floating-point type. Use float, or compile this shader for SPIR-V only.", use.Float64Site.IsKnown ? use.Float64Site : fallback);
+        }
+
+        if ((use.Features & DeviceFeatures.Int64) != 0)
+        {
+            Unsupported("WGSL has no 64-bit integer types. Use int or uint (or a uint2 pair), or compile this shader for SPIR-V or MSL only.", use.Int64Site.IsKnown ? use.Int64Site : fallback);
+        }
+
+        return !_failed;
     }
 
     private void Scan()
@@ -303,6 +333,11 @@ internal sealed partial class WgslEmitter
                 break;
             }
 
+            case Opcode.Store when RootOf(i.Operands[0]) is GlobalVariable { ValueType: ResourceType { IsStorageBuffer: true } } sg
+                && (TypeFeatures.Of(i.Operands[1].Type, _m.LayoutOptions.Enable16BitTypes) & WideTypes.Float16) != 0:
+                // A half is half a word: neighbours written by other invocations share it, so the update must not touch the other half.
+                PendingAtomicBuffers.Add(sg);
+                break;
             case Opcode.TextureSampleCompare or Opcode.TextureSampleCompareLevelZero or Opcode.TextureGatherCompare:
                 if (i.Operands[0] is GlobalVariable depth)
                 {
@@ -548,6 +583,12 @@ internal sealed partial class WgslEmitter
         foreach (var input in _ep.Inputs)
         {
             _usesSubgroups |= input.BuiltIn is BuiltIn.SubgroupLocalInvocationId or BuiltIn.SubgroupSize;
+        }
+
+        if (_usesF16)
+        {
+            // WebGPU's optional shader-f16 feature; the host must request it (reflection and layouts say when).
+            sb.Append("enable f16;\n");
         }
 
         if (_usesSubgroups)

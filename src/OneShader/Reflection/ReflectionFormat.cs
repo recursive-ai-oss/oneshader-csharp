@@ -138,6 +138,11 @@ public static class ReflectionFormat
             {
                 Line(sb, 1, "subgroup", ("ops", N((uint)e.SubgroupOperations)));
             }
+
+            if (e.RequiredFeatures != DeviceFeatures.None)
+            {
+                Line(sb, 1, "features", ("bits", N((uint)e.RequiredFeatures)));
+            }
         }
 
         return sb.ToString();
@@ -528,6 +533,7 @@ public static class ReflectionFormat
             var uses = new List<string>();
             string? push = null;
             var subgroup = SubgroupOperations.None;
+            var features = DeviceFeatures.None;
             var specUses = new List<string>();
             while (_pos < _nodes.Count && _nodes[_pos].Depth > 0)
             {
@@ -540,6 +546,7 @@ public static class ReflectionFormat
                     case "pushuse": push = Str(c, "name"); break;
                     case "specuse": specUses.Add(Str(c, "name")); break;
                     case "subgroup": subgroup = (SubgroupOperations)U(c, "ops"); break;
+                    case "features": features = (DeviceFeatures)U(c, "bits"); break;
                     default: break;
                 }
             }
@@ -562,6 +569,7 @@ public static class ReflectionFormat
                 PushConstant = push,
                 UsedSpecConstants = specUses,
                 SubgroupOperations = subgroup,
+                RequiredFeatures = features,
             };
         }
 

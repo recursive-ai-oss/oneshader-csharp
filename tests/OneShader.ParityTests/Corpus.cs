@@ -11,9 +11,13 @@ public static class Corpus
 {
     private static string CasesDir => Path.Combine(Tools.CorpusDir, "cases");
 
-    /// <summary>Names (file names without extension) of every case, in alphabetical order.</summary>
+    /// <summary>
+    /// Names (file names without extension) of every case, in alphabetical order. The environment variable
+    /// ONESHADER_CASES (comma-separated name prefixes) narrows the list for a quick run on one area.
+    /// </summary>
     public static IReadOnlyList<string> CaseNames { get; } = Directory.GetFiles(CasesDir, "*.case")
         .Select(p => Path.GetFileNameWithoutExtension(p))
+        .Where(n => Environment.GetEnvironmentVariable("ONESHADER_CASES") is not { Length: > 0 } only || only.Split(',').Any(prefix => n.StartsWith(prefix, StringComparison.Ordinal)))
         .Order(StringComparer.Ordinal)
         .ToArray();
 

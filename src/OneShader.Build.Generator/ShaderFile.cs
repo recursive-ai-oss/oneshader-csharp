@@ -104,6 +104,7 @@ internal sealed class SpecNode
 internal sealed class EntryNode
 {
     public uint Subgroup;
+    public uint Features;
 
     /// <summary>Names of the specialization constants the entry point reads, in declaration order.</summary>
     public List<string> SpecUses = new List<string>();
@@ -595,6 +596,10 @@ internal sealed class ShaderFile
             else if (c.Keyword == "subgroup")
             {
                 e.Subgroup = U(c, "ops");
+            }
+            else if (c.Keyword == "features")
+            {
+                e.Features = U(c, "bits");
             }
         }
 

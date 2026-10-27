@@ -44,7 +44,7 @@ internal sealed partial class CSharpWriter
     // Names an entry-point class declares itself; a class cannot share its name with a member.
     private static readonly HashSet<string> EntryMembers = new HashSet<string>(StringComparer.Ordinal)
     {
-        "Stage", "EntryPoint", "SpirV", "Msl", "MslFunctionName", "MslVertexBufferIndex", "Wgsl", "WgslEntryPoint", "Vertex", "Stride", "Inputs", "ThreadGroupSizeX", "ThreadGroupSizeY", "ThreadGroupSizeZ", "SubgroupOperations", "SpecConstantIds",
+        "Stage", "EntryPoint", "SpirV", "Msl", "MslFunctionName", "MslVertexBufferIndex", "Wgsl", "WgslEntryPoint", "Vertex", "Stride", "Inputs", "ThreadGroupSizeX", "ThreadGroupSizeY", "ThreadGroupSizeZ", "SubgroupOperations", "RequiredFeatures", "SpecConstantIds",
     };
 
     private ShaderFile _file;
@@ -1086,6 +1086,13 @@ internal sealed partial class CSharpWriter
             Line("public const global::OneShader.Reflection.SubgroupOperations SubgroupOperations = (global::OneShader.Reflection.SubgroupOperations)" + Num(e.Subgroup) + ";");
         }
 
+        if (e.Features != 0)
+        {
+            Line("");
+            Line("/// <summary>The optional device features this entry point needs for 16-bit and 64-bit types: the Vulkan features to enable, <c>shader-f16</c> for a WebGPU device.</summary>");
+            Line("public const global::OneShader.Reflection.DeviceFeatures RequiredFeatures = (global::OneShader.Reflection.DeviceFeatures)" + Num(e.Features) + ";");
+        }
+
         // An entry point that happens to be called Layout would clash with its own member; it just goes without.
         if (TypeName(e.Name) != "Layout")
         {
@@ -1214,7 +1221,7 @@ internal sealed partial class CSharpWriter
             specs = ", specConstants: new global::OneShader.Layouts.SpecConstantLayout[] { " + string.Join(", ", items) + " }";
         }
 
-        Line("return new global::OneShader.Layouts.EntryLayout(EntryPoint, Stage, resources, " + push + ", " + vertex + ", " + group + (e.Subgroup == 0 ? "" : ", SubgroupOperations") + specs + ");");
+        Line("return new global::OneShader.Layouts.EntryLayout(EntryPoint, Stage, resources, " + push + ", " + vertex + ", " + group + (e.Subgroup == 0 ? "" : ", SubgroupOperations") + specs + (e.Features == 0 ? "" : ", requiredFeatures: RequiredFeatures") + ");");
         _indent--;
         Line("}");
     }

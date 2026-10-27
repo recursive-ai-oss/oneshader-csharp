@@ -1,0 +1,13 @@
+# 16-bit floats (16-bit types on): arithmetic, intrinsics and conversions through constant and structured buffers
+# (float=, half=: WGSL may round half arithmetic differently).
+# The constant buffer is Scale | Bias.x, Bias.yz, Gain, Range, Tint (4 halves), pad, Mix rows at a 16-byte stride.
+case types_half_math
+shader types/half_math.hlsl
+define ONESHADER_16BIT=1
+dispatch CSMain 4 1 1
+uniform 0 0 : 0x3C003800u 0x3D003A00u 1.5 0x3C003400u 0x34003800u 0x3C003000u 0u 0u
+    0x34003800u 0u 0u 0u 0x3C00B800u 0u 0u 0u
+storage 0 1 : @h01(1,1024)
+storage 0 2 out size=2048 half=0.004
+storage 0 3 out size=512 half=0.004
+storage 0 4 out size=1024 float=0.002
