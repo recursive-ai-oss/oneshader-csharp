@@ -31,6 +31,9 @@ public enum LayoutErrorKind
 
     /// <summary>The target cannot express something the shader declares.</summary>
     Unsupported,
+
+    /// <summary>A vertex stride, format or offset the host chose does not fit the shader's input or the graphics APIs' rules.</summary>
+    InvalidVertexInput,
 }
 
 /// <summary>A layout problem returned as a value; the message says what is wrong and what to change.</summary>
@@ -67,7 +70,15 @@ public readonly record struct ResourceLayout(
     ResourceTypeKind Type = ResourceTypeKind.ConstantBuffer,
     ScalarKind Texel = ScalarKind.Float,
     bool Comparison = false,
-    string ImageFormat = "");
+    string ImageFormat = "")
+{
+    /// <summary>
+    /// True when the host binds this buffer with a dynamic offset (Vulkan <c>*_BUFFER_DYNAMIC</c>, WebGPU <c>hasDynamicOffset</c>). Set it on a
+    /// resource you build by hand, or name the buffer in the options of <c>ToVulkan</c> / <c>TryToWebGpu</c>; either is enough. Ignored for
+    /// anything but constant and storage buffers.
+    /// </summary>
+    public bool DynamicOffset { get; init; }
+}
 
 /// <summary>Sentinel values shared by the layout types.</summary>
 public static class LayoutSlots
@@ -159,7 +170,7 @@ public sealed class EntryLayout
     public PushConstantLayout? PushConstant { get; }
 
     /// <summary>The vertex input of a vertex entry point; null for other stages.</summary>
-    public VertexLayout? Vertex { get; }
+    public VertexLayout? Vertex { get; private set; }
 
     /// <summary>The thread-group size of a compute entry point; zeros otherwise.</summary>
     public (uint X, uint Y, uint Z) WorkgroupSize { get; }
@@ -181,6 +192,55 @@ public sealed class EntryLayout
     /// a constant the entry point does not read is not part of its pipeline (WebGPU rejects unknown keys).
     /// </summary>
     public IReadOnlyList<SpecConstantLayout> SpecConstants { get; }
+
+    /// <summary>
+    /// The layout of the push-constant block as reflection describes it (members with offsets and types), when this entry layout was built
+    /// from reflection; null for generated and hand-built layouts. <see cref="PipelineLayout.TryCreateUnion"/> uses it to merge blocks of
+    /// different structs by comparing the members that overlap.
+    /// </summary>
+    public ReflectedType? PushConstantType { get; private set; }
+
+    /// <summary>A copy that carries the push-constant block's reflected layout (see <see cref="PushConstantType"/>).</summary>
+    /// <param name="type">The layout of the block, from <c>PushConstantInfo.Layout</c>.</param>
+    /// <returns>The copy.</returns>
+    public EntryLayout WithPushConstantType(ReflectedType? type)
+    {
+        var copy = (EntryLayout)MemberwiseClone();
+        copy.PushConstantType = type;
+        return copy;
+    }
+
+    /// <summary>
+    /// A copy whose vertex input has the host's stride, formats and offsets (see <see cref="VertexLayout.TryWithOverrides"/>), for the engine
+    /// whose vertex buffer stores an attribute differently from the shader's declared type. Use the copy in <see cref="PipelineLayout.TryCreate"/>
+    /// and the vertex input of every API follows. Fails with <see cref="LayoutErrorKind.InvalidVertexInput"/> for an entry point without vertex input.
+    /// </summary>
+    /// <param name="overrides">The host's choices.</param>
+    /// <param name="layout">The new entry layout on success; this instance is not changed.</param>
+    /// <param name="error">What is wrong and what to change; the message names the entry point.</param>
+    /// <returns>True on success.</returns>
+    public bool TryWithVertexOverrides(VertexLayoutOverrides overrides, out EntryLayout? layout, out LayoutError? error)
+    {
+        ArgumentNullException.ThrowIfNull(overrides);
+        layout = null;
+        if (Vertex is null)
+        {
+            error = new LayoutError(LayoutErrorKind.InvalidVertexInput, "The entry point '" + Name + "' is not a vertex shader with inputs, so it has no vertex layout to override.");
+            return false;
+        }
+
+        if (!Vertex.TryWithOverrides(overrides, out var vertex, out var inner))
+        {
+            error = new LayoutError(inner!.Kind, "Entry point '" + Name + "': " + inner.Message);
+            return false;
+        }
+
+        var copy = (EntryLayout)MemberwiseClone();
+        copy.Vertex = vertex;
+        layout = copy;
+        error = null;
+        return true;
+    }
 
     /// <summary>The <see cref="ShaderStages"/> bit of <see cref="Stage"/>.</summary>
     public ShaderStages StageFlag => StageBit(Stage);
@@ -257,6 +317,7 @@ public sealed class EntryLayout
         }
 
         PushConstantLayout? push = null;
+        ReflectedType? pushType = null;
         if (entry.PushConstant is { } pushName)
         {
             foreach (var p in reflection.PushConstants)
@@ -281,6 +342,7 @@ public sealed class EntryLayout
                 }
 
                 push = new PushConstantLayout(p.Name, p.Layout.Size, stage, metal, group, wbinding);
+                pushType = p.Layout;
             }
         }
 
@@ -321,7 +383,7 @@ public sealed class EntryLayout
             specs.Add(new SpecConstantLayout(sc.Name, sc.Id, sc.Scalar, sc.DefaultBits));
         }
 
-        layout = new EntryLayout(entry.Name, entry.Stage, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(resources), push, vertex, entry.WorkgroupSize, entry.SubgroupOperations, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(specs), entry.RequiredFeatures);
+        layout = new EntryLayout(entry.Name, entry.Stage, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(resources), push, vertex, entry.WorkgroupSize, entry.SubgroupOperations, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(specs), entry.RequiredFeatures).WithPushConstantType(pushType);
         error = null;
         return true;
     }

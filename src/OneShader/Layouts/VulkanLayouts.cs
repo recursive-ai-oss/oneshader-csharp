@@ -156,7 +156,11 @@ namespace OneShader.Layouts.Vulkan
     /// <param name="DescriptorCount">The array size, at least 1.</param>
     /// <param name="StageFlags">The stages that use it.</param>
     /// <param name="Name">The HLSL name, for messages and for matching writes to bindings; not part of Vulkan.</param>
-    public readonly record struct DescriptorSetLayoutBindingInfo(uint Binding, DescriptorType DescriptorType, uint DescriptorCount, ShaderStageFlags StageFlags, string Name);
+    public readonly record struct DescriptorSetLayoutBindingInfo(uint Binding, DescriptorType DescriptorType, uint DescriptorCount, ShaderStageFlags StageFlags, string Name)
+    {
+        /// <summary>True for a <c>*_BUFFER_DYNAMIC</c> descriptor: the host passes one offset for it at every <c>vkCmdBindDescriptorSets</c>, in binding order.</summary>
+        public bool IsDynamic => DescriptorType is DescriptorType.UniformBufferDynamic or DescriptorType.StorageBufferDynamic;
+    }
 
     /// <summary>One <c>VkDescriptorSetLayout</c> to create.</summary>
     /// <param name="Set">The set number.</param>
@@ -202,6 +206,26 @@ namespace OneShader.Layouts.Vulkan
         /// <c>STORAGE_BUFFER_DYNAMIC</c>). Default: none.
         /// </summary>
         public IReadOnlyCollection<string> DynamicBuffers { get; init; } = [];
+
+        /// <summary>
+        /// The same by slot, for hosts that address a binding by number: <c>(set, binding)</c> pairs of constant or storage buffers to declare
+        /// dynamic. Either this, <see cref="DynamicBuffers"/> or <see cref="ResourceLayout.DynamicOffset"/> is enough. Slots that name no
+        /// buffer are ignored. Default: none.
+        /// </summary>
+        public IReadOnlyCollection<(uint Set, uint Binding)> DynamicBindings { get; init; } = [];
+
+        /// <summary>
+        /// Extra stages OR-ed into the visibility of every binding of a set, by set number, so a descriptor set layout made once fits pipelines
+        /// whose shaders use different stages (for example <c>{ [0] = ShaderStages.Vertex | ShaderStages.Pixel }</c>). Sets with no bindings
+        /// are not changed. Default: none.
+        /// </summary>
+        public IReadOnlyDictionary<uint, ShaderStages> WidenSets { get; init; } = new Dictionary<uint, ShaderStages>();
+
+        /// <summary>The same for single bindings, by <c>(set, binding)</c>; combined with <see cref="WidenSets"/>. Default: none.</summary>
+        public IReadOnlyDictionary<(uint Set, uint Binding), ShaderStages> WidenBindings { get; init; } = new Dictionary<(uint Set, uint Binding), ShaderStages>();
+
+        /// <summary>Extra stages OR-ed into the stage flags of every push-constant range, so one range fits several pipelines. Default: none.</summary>
+        public ShaderStages WidenPushConstants { get; init; }
     }
 }
 
@@ -219,6 +243,7 @@ namespace OneShader.Layouts
         public PipelineLayoutInfo ToVulkan(VulkanLayoutOptions? options = null)
         {
             var dynamic = options?.DynamicBuffers ?? [];
+            var dynamicSlots = options?.DynamicBindings ?? [];
             var sets = new DescriptorSetLayoutInfo[Groups.Count];
             for (int g = 0; g < sets.Length; g++)
             {
@@ -227,13 +252,24 @@ namespace OneShader.Layouts
                 for (int i = 0; i < bindings.Length; i++)
                 {
                     var r = entries[i].Resource;
-                    bool isDynamic = false;
+                    bool isDynamic = r.DynamicOffset;
                     foreach (string d in dynamic)
                     {
                         isDynamic |= d == r.Name;
                     }
 
-                    bindings[i] = new DescriptorSetLayoutBindingInfo(r.Binding, VulkanDescriptor(r.Kind, isDynamic), Math.Max(r.Count, 1), VulkanStages(r.Stages), r.Name);
+                    foreach (var d in dynamicSlots)
+                    {
+                        isDynamic |= d.Set == r.Set && d.Binding == r.Binding;
+                    }
+
+                    var stages = r.Stages;
+                    if (options is not null)
+                    {
+                        stages |= WidenedStages(r.Set, r.Binding, options.WidenSets, options.WidenBindings);
+                    }
+
+                    bindings[i] = new DescriptorSetLayoutBindingInfo(r.Binding, VulkanDescriptor(r.Kind, isDynamic), Math.Max(r.Count, 1), VulkanStages(stages), r.Name);
                 }
 
                 sets[g] = new DescriptorSetLayoutInfo(Groups[g].Set, bindings);
@@ -243,10 +279,26 @@ namespace OneShader.Layouts
             for (int i = 0; i < ranges.Length; i++)
             {
                 // Vulkan wants a multiple of 4; block sizes already are, rounding keeps a hand-built layout valid.
-                ranges[i] = new PushConstantRangeInfo(VulkanStages(PushConstants[i].Stages), 0, (PushConstants[i].Size + 3) & ~3u);
+                ranges[i] = new PushConstantRangeInfo(VulkanStages(PushConstants[i].Stages | (options?.WidenPushConstants ?? ShaderStages.None)), 0, (PushConstants[i].Size + 3) & ~3u);
             }
 
             return new PipelineLayoutInfo(sets, ranges, SubgroupOperations, RequiredFeatures);
+        }
+
+        internal static ShaderStages WidenedStages(uint set, uint binding, IReadOnlyDictionary<uint, ShaderStages> sets, IReadOnlyDictionary<(uint Set, uint Binding), ShaderStages> bindings)
+        {
+            var extra = ShaderStages.None;
+            if (sets.TryGetValue(set, out var s))
+            {
+                extra |= s;
+            }
+
+            if (bindings.TryGetValue((set, binding), out var b))
+            {
+                extra |= b;
+            }
+
+            return extra;
         }
 
         /// <summary>The Vulkan descriptor type for a resource kind.</summary>

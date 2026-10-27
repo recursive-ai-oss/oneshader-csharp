@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using OneShader.Lexing;
 using OneShader.Preprocessing;
 using OneShader.Semantics;
@@ -112,42 +113,135 @@ public sealed class ShaderCompileCache
         string key = KeyOf(source, path, fullPath, options);
         var inner = Frontend.CreateResolver(options);
         var slot = _slots.GetOrAdd(key, static _ => new Slot());
-        while (!Monitor.TryEnter(slot.Gate, 50))
+        while (true)
         {
-            // Another caller is compiling this key; wait for its result, but stay cancellable.
             ct.ThrowIfCancellationRequested();
-        }
+            CompileResult? cached;
+            List<Probe> probes;
+            lock (slot)
+            {
+                cached = slot.Result;
+                probes = slot.Probes;
+            }
 
-        try
-        {
-            if (slot.Result is { } cached && slot.StillValid(inner))
+            if (cached is not null && StillValid(probes, inner))
             {
                 slot.Stamp = Interlocked.Increment(ref _clock);
                 Interlocked.Increment(ref _hits);
                 return cached;
             }
 
-            var recorder = new RecordingResolver(inner);
-            var run = WithResolver(options, recorder);
-            var result = ShaderCompiler.Compile(source, path, run, ct);
-            if (fullPath is not null)
+            // One caller per key compiles; the others wait on its task (and can give up through their token).
+            TaskCompletionSource<CompileResult>? running;
+            TaskCompletionSource<CompileResult>? mine = null;
+            lock (slot)
             {
-                // As CompileFile does: the watched list names the shader by its full path.
-                result.Files = new List<string>(result.Files) { [0] = fullPath };
+                running = slot.Running;
+                if (running is null)
+                {
+                    mine = slot.Running = new TaskCompletionSource<CompileResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+                }
             }
 
-            slot.Result = result;
-            slot.Probes = recorder.Probes;
-            slot.Stamp = Interlocked.Increment(ref _clock);
-            Interlocked.Increment(ref _misses);
-            _slots[key] = slot;
-            Trim();
-            return result;
+            if (mine is null)
+            {
+                CompileResult shared;
+                try
+                {
+                    shared = running!.Task.WaitAsync(ct).GetAwaiter().GetResult();
+                }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                {
+                    continue; // the compiling caller was cancelled; try again, possibly compiling ourselves
+                }
+
+                Interlocked.Increment(ref _hits);
+                return shared;
+            }
+
+            try
+            {
+                var recorder = new RecordingResolver(inner);
+                var result = ShaderCompiler.Compile(source, path, WithResolver(options, recorder), ct);
+                if (fullPath is not null)
+                {
+                    // As CompileFile does: the watched list names the shader by its full path.
+                    result.Files = new List<string>(result.Files) { [0] = fullPath };
+                }
+
+                lock (slot)
+                {
+                    slot.Result = result;
+                    slot.Probes = recorder.Probes;
+                    slot.Running = null;
+                }
+
+                slot.Stamp = Interlocked.Increment(ref _clock);
+                Interlocked.Increment(ref _misses);
+                _slots[key] = slot;
+                Trim();
+                mine.SetResult(result);
+                return result;
+            }
+            catch (OperationCanceledException)
+            {
+                lock (slot)
+                {
+                    slot.Running = null;
+                }
+
+                mine.SetCanceled(ct);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                lock (slot)
+                {
+                    slot.Running = null;
+                }
+
+                mine.SetException(ex);
+                throw;
+            }
         }
-        finally
+    }
+
+    /// <summary>True when every include lookup of the earlier compile still finds the same file with the same text.</summary>
+    private static bool StillValid(List<Probe> probes, IIncludeResolver resolver)
+    {
+        foreach (var p in probes)
         {
-            Monitor.Exit(slot.Gate);
+            SourceFile? now;
+            try
+            {
+                now = resolver.Resolve(p.Name, p.IsAngled, new SourceFile(p.Includer, string.Empty), new List<string>());
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                return false;
+            }
+
+            if (now is null)
+            {
+                if (p.Identity is not null)
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
+            if (p.Identity is null
+                || !string.Equals(now.Identity, p.Identity, StringComparison.Ordinal)
+                || !string.Equals(now.Path, p.Path, StringComparison.Ordinal)
+                || p.Hash is not { } expected
+                || !HashOf(now.Text).AsSpan().SequenceEqual(expected))
+            {
+                return false;
+            }
         }
+
+        return true;
     }
 
     private void Trim()
@@ -291,47 +385,9 @@ public sealed class ShaderCompileCache
 
     private sealed class Slot
     {
-        public readonly object Gate = new object();
         public CompileResult? Result;
         public List<Probe> Probes = [];
+        public TaskCompletionSource<CompileResult>? Running;
         public long Stamp;
-
-        /// <summary>True when every include lookup of the earlier compile still finds the same file with the same text.</summary>
-        public bool StillValid(IIncludeResolver resolver)
-        {
-            foreach (var p in Probes)
-            {
-                SourceFile? now;
-                try
-                {
-                    now = resolver.Resolve(p.Name, p.IsAngled, new SourceFile(p.Includer, string.Empty), new List<string>());
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    return false;
-                }
-
-                if (now is null)
-                {
-                    if (p.Identity is not null)
-                    {
-                        return false;
-                    }
-
-                    continue;
-                }
-
-                if (p.Identity is null
-                    || !string.Equals(now.Identity, p.Identity, StringComparison.Ordinal)
-                    || !string.Equals(now.Path, p.Path, StringComparison.Ordinal)
-                    || p.Hash is not { } expected
-                    || !HashOf(now.Text).AsSpan().SequenceEqual(expected))
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
     }
 }

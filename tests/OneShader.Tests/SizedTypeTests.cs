@@ -173,6 +173,23 @@ public sealed class SizedTypeTests
     }
 
     [Fact]
+    public void UnionLayoutOrsTheFeaturesOfItsEntries()
+    {
+        const string Src = """
+            [[vk::binding(0, 0)]] RWStructuredBuffer<half4> H;
+            [[vk::binding(1, 0)]] RWStructuredBuffer<double> D;
+            [shader("compute")] [numthreads(1, 1, 1)] void A() { H[0] = (half4)1; }
+            [shader("compute")] [numthreads(1, 1, 1)] void B() { D[0] = 2.0; }
+            """;
+        var r = Compile(Src, true);
+        Assert.True(r.Success, Describe(r));
+        Assert.True(EntryLayout.TryCreate(r.Reflection!, "A", out var a, out var error), error?.Message);
+        Assert.True(EntryLayout.TryCreate(r.Reflection!, "B", out var b, out error), error?.Message);
+        Assert.True(PipelineLayout.TryCreateUnion([a!, b!], out var union, out error), error?.Message);
+        Assert.Equal(DeviceFeatures.Float16 | DeviceFeatures.StorageBuffer16 | DeviceFeatures.Float64, union!.RequiredFeatures);
+    }
+
+    [Fact]
     public void SixteenBitVertexInputsGetSixteenBitFormats()
     {
         const string Src = """

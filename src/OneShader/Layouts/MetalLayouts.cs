@@ -249,6 +249,12 @@ namespace OneShader.Layouts
                             continue;
                         }
 
+                        if (b.MetalConflict[(int)stage] is { } conflict)
+                        {
+                            error = new LayoutError(LayoutErrorKind.ResourceConflict, conflict);
+                            return false;
+                        }
+
                         uint index = b.MetalIndexFor(stage);
                         if (index == LayoutSlots.None)
                         {
@@ -261,13 +267,32 @@ namespace OneShader.Layouts
                 }
 
                 args.Sort(static (a, b) => a.Kind != b.Kind ? a.Kind.CompareTo(b.Kind) : a.Index.CompareTo(b.Index));
+                for (int i = 1; i < args.Count; i++)
+                {
+                    // Entry points compiled from different files number their resources independently; two resources of one stage cannot share an index.
+                    var prev = args[i - 1];
+                    if (prev.Kind == args[i].Kind && (ulong)prev.Index + prev.Count > args[i].Index)
+                    {
+                        error = new LayoutError(LayoutErrorKind.ResourceConflict, "The resources '" + prev.Name + "' (set " + Num(prev.Set) + " binding " + Num(prev.Binding) + ") and '" + args[i].Name + "' (set " + Num(args[i].Set) + " binding " + Num(args[i].Binding)
+                            + ") both take Metal " + args[i].Kind + " index " + Num(args[i].Index) + " in the " + stage + " stage. Metal has no sets, so entry points that share a pipeline must be compiled from one file.");
+                        return false;
+                    }
+                }
+
                 MetalPushConstant? push = null;
                 if (entry.PushConstant is { } p)
                 {
                     foreach (var block in PushConstants)
                     {
-                        if (block.Name == p.Name && block.Size == p.Size)
+                        // A block merged from several structs is found by its stage.
+                        if ((block.Name == p.Name && block.Size == p.Size) || (block.Stages & EntryLayout.StageBit(stage)) != 0)
                         {
+                            if (block.MetalConflict[(int)stage] is { } pushConflict)
+                            {
+                                error = new LayoutError(LayoutErrorKind.PushConstantConflict, pushConflict);
+                                return false;
+                            }
+
                             uint index = block.MetalIndexFor(stage);
                             if (index == LayoutSlots.None)
                             {
