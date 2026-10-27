@@ -15,7 +15,14 @@ public sealed class BindingEntry
     {
         Resource = resource;
         FirstEntry = firstEntry;
+        Types = [resource.Type];
     }
+
+    // Union layouts only: every resource type seen at the slot (several only with UnionOptions.IgnoreTextureDimension), and whether read-only and
+    // read-write storage buffers were merged (UnionOptions.MergeStorageAccess).
+    internal List<ResourceTypeKind> Types { get; }
+
+    internal bool MixedStorageAccess { get; set; }
 
     // Union layouts only: the entry point that declared the slot first, and per stage why two entry points disagree on its Metal index.
     internal string FirstEntry { get; }
@@ -202,7 +209,7 @@ public sealed partial class PipelineLayout
             }
         }
 
-        return Build(entries, false, out layout, out error);
+        return Build(entries, false, null, out layout, out error);
     }
 
     /// <summary>
@@ -225,6 +232,18 @@ public sealed partial class PipelineLayout
     /// <param name="error">What is wrong on failure; never an exception.</param>
     /// <returns>True on success.</returns>
     public static bool TryCreateUnion(ReadOnlySpan<EntryLayout> entries, out PipelineLayout? layout, out LayoutError? error)
+        => TryCreateUnion(entries, null, out layout, out error);
+
+    /// <summary>
+    /// As <see cref="TryCreateUnion(ReadOnlySpan{EntryLayout}, out PipelineLayout?, out LayoutError?)"/>, with opt-in leniency for slots whose
+    /// declarations differ in ways one Vulkan descriptor covers (see <see cref="UnionOptions"/>).
+    /// </summary>
+    /// <param name="entries">The entry points, at least one.</param>
+    /// <param name="options">What may differ at one slot; the strict rules when null.</param>
+    /// <param name="layout">The layout on success.</param>
+    /// <param name="error">What is wrong on failure; never an exception.</param>
+    /// <returns>True on success.</returns>
+    public static bool TryCreateUnion(ReadOnlySpan<EntryLayout> entries, UnionOptions? options, out PipelineLayout? layout, out LayoutError? error)
     {
         layout = null;
         if (entries.IsEmpty)
@@ -241,10 +260,10 @@ public sealed partial class PipelineLayout
             }
         }
 
-        return Build(entries, true, out layout, out error);
+        return Build(entries, true, options, out layout, out error);
     }
 
-    private static bool Build(ReadOnlySpan<EntryLayout> entries, bool union, out PipelineLayout? layout, out LayoutError? error)
+    private static bool Build(ReadOnlySpan<EntryLayout> entries, bool union, UnionOptions? options, out PipelineLayout? layout, out LayoutError? error)
     {
         layout = null;
         var bindings = new List<BindingEntry>();
@@ -274,7 +293,10 @@ public sealed partial class PipelineLayout
                 else
                 {
                     var o = existing.Resource;
-                    bool differs = o.Kind != r.Kind || o.Count != r.Count || o.Heap != r.Heap || !SameKinds(o.HeapKinds, r.HeapKinds) || (r.Kind != ResourceKind.Sampler && o.Type != r.Type) || o.Comparison != r.Comparison;
+                    bool lenientDimension = union && options is { IgnoreTextureDimension: true } && o.Kind == r.Kind && r.Kind is ResourceKind.SampledTexture or ResourceKind.StorageTexture;
+                    bool mergeStorage = union && options is { MergeStorageAccess: true } && IsStorageBuffer(o.Kind) && IsStorageBuffer(r.Kind) && StorageFamily(o.Type) == StorageFamily(r.Type);
+                    bool typeDiffers = r.Kind != ResourceKind.Sampler && o.Type != r.Type && !lenientDimension && !mergeStorage;
+                    bool differs = (o.Kind != r.Kind && !mergeStorage) || o.Count != r.Count || o.Heap != r.Heap || !SameKinds(o.HeapKinds, r.HeapKinds) || typeDiffers || o.Comparison != r.Comparison;
                     if (union && !differs)
                     {
                         // The texel type decides the WebGPU sample type and the image format the storage format; a union shared by pipelines must agree.
@@ -287,7 +309,7 @@ public sealed partial class PipelineLayout
                             ? new LayoutError(
                                 LayoutErrorKind.ResourceConflict,
                                 "Set " + Num(r.Set) + " binding " + Num(r.Binding) + " is '" + o.Name + "' (" + Describe(o) + ") in entry point '" + existing.FirstEntry + "' and '" + r.Name + "' (" + Describe(r)
-                                + ") in entry point '" + e.Name + "'. Renumber one of them with [[vk::binding]] or declare them identically.")
+                                + ") in entry point '" + e.Name + "'. Renumber one of them with [[vk::binding]] or declare them identically." + UnionHint(o, r))
                             : new LayoutError(
                                 LayoutErrorKind.ResourceConflict,
                                 "Set " + Num(r.Set) + " binding " + Num(r.Binding) + " is '" + o.Name + "' (" + o.Kind + ", count " + Num(o.Count) + ") in one entry point and '" + r.Name + "' ("
@@ -295,7 +317,23 @@ public sealed partial class PipelineLayout
                         return false;
                     }
 
-                    existing.Resource = o with { Stages = o.Stages | r.Stages, DynamicOffset = o.DynamicOffset | r.DynamicOffset };
+                    var merged = o with { Stages = o.Stages | r.Stages, DynamicOffset = o.DynamicOffset | r.DynamicOffset };
+                    if (mergeStorage && o.Kind != r.Kind)
+                    {
+                        // Read-only and read-write at one slot: the slot is read-write (Vulkan has one descriptor type for both).
+                        existing.MixedStorageAccess = true;
+                        if (r.Kind == ResourceKind.StorageBuffer)
+                        {
+                            merged = merged with { Kind = ResourceKind.StorageBuffer, Type = r.Type };
+                        }
+                    }
+
+                    if (!existing.Types.Contains(r.Type))
+                    {
+                        existing.Types.Add(r.Type);
+                    }
+
+                    existing.Resource = merged;
                 }
 
                 uint previous = existing.MetalIndexFor(e.Stage);
@@ -426,6 +464,26 @@ public sealed partial class PipelineLayout
         }
 
         return layout!;
+    }
+
+    private static bool IsStorageBuffer(ResourceKind k) => k is ResourceKind.ReadOnlyStorageBuffer or ResourceKind.StorageBuffer;
+
+    // Structured buffers and byte-address buffers hold different data; only buffers of one family can share a slot.
+    private static int StorageFamily(ResourceTypeKind t) => t is ResourceTypeKind.ByteAddressBuffer or ResourceTypeKind.RWByteAddressBuffer ? 1 : 0;
+
+    private static string UnionHint(ResourceLayout o, ResourceLayout r)
+    {
+        if (o.Kind == r.Kind && o.Kind is ResourceKind.SampledTexture or ResourceKind.StorageTexture && o.Count == r.Count && o.Type != r.Type)
+        {
+            return " If the textures only differ in dimension, pass UnionOptions.IgnoreTextureDimension.";
+        }
+
+        if (IsStorageBuffer(o.Kind) && IsStorageBuffer(r.Kind) && o.Kind != r.Kind && o.Count == r.Count && StorageFamily(o.Type) == StorageFamily(r.Type))
+        {
+            return " If one reads and the other writes the same buffer, pass UnionOptions.MergeStorageAccess.";
+        }
+
+        return "";
     }
 
     private static string Describe(ResourceLayout r) => r.Kind + ", " + (r.Kind == ResourceKind.Sampler ? (r.Comparison ? "comparison" : "sampler") : r.Type.ToString()) + (r.Kind == ResourceKind.SampledTexture || r.Kind == ResourceKind.StorageTexture ? " of " + r.Texel : "")

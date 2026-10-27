@@ -117,6 +117,37 @@ public class FuzzRegressionTests
     }
 
     [Fact]
+    public void AScalarTexelOffsetIsBroadcastToEveryAxisAndValidates()
+    {
+        var r = ShaderCompiler.Compile(File.ReadAllText(Path.Combine(Dir(), "scalar-texel-offset.hlsl")), "t.hlsl",
+            new CompileOptions { EntryPoints = [new EntryPointRequest("main", ShaderStage.Pixel)], Optimize = false }, TestContext.Current.CancellationToken);
+        Assert.True(r.Success, string.Join("\n", r.Diagnostics));
+        string? val = Oracles.Find("spirv-val");
+        string? dis = Oracles.Find("spirv-dis");
+        if (val is null || dis is null)
+        {
+            return;
+        }
+
+        string dir = Path.Combine(Path.GetTempPath(), "osh-off-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string file = Path.Combine(dir, "a.spv");
+            File.WriteAllBytes(file, r.Find("main", CompileTarget.SpirV)!.Data.ToArray());
+            var (code, output) = Oracles.Run(val, ["--target-env", "vulkan1.2", file], dir);
+            Assert.True(code == 0, output);
+            string text = Oracles.Run(dis, [file], dir).Output;
+            Assert.Contains("OpConstantComposite %v2int %int_1 %int_1", text, StringComparison.Ordinal);
+            Assert.Contains("OpConstantComposite %v3int %int_0 %int_0 %int_0", text, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
     public void TwoInputsOnOneVertexLocationAreRejected()
     {
         var r = Compile("duplicate-vertex-input-location.hlsl", true);

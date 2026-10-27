@@ -296,6 +296,14 @@ namespace OneShader.Layouts.WebGpu
 
         /// <summary>Extra stages OR-ed into the visibility of the emulated push-constant buffer. Default: none.</summary>
         public ShaderStages WidenPushConstants { get; init; }
+
+        /// <summary>
+        /// The <c>viewDimension</c> to use, by <c>(group, binding)</c>, for a texture slot that entry points declare with different dimensions
+        /// (a union built with <see cref="UnionOptions.IgnoreTextureDimension"/>). Without a pick such a slot is an <see cref="LayoutErrorKind.Unsupported"/>
+        /// error. The pick must be one of the declared dimensions; a pipeline whose shader declares another one needs a layout with its own pick.
+        /// Default: none.
+        /// </summary>
+        public IReadOnlyDictionary<(uint Group, uint Binding), TextureViewDimension> TextureDimensions { get; init; } = new Dictionary<(uint Group, uint Binding), TextureViewDimension>();
     }
 }
 
@@ -324,8 +332,7 @@ namespace OneShader.Layouts
                 var list = new List<BindGroupLayoutEntryInfo>();
                 foreach (var b in g.Entries)
                 {
-                    var r = b.Resource;
-                    if (!TryEntry(r, options, out var entry, out error))
+                    if (!TryEntry(b, options, out var entry, out error))
                     {
                         return false;
                     }
@@ -433,9 +440,49 @@ namespace OneShader.Layouts
             return false;
         }
 
-        private static bool TryEntry(ResourceLayout r, WebGpuLayoutOptions options, out BindGroupLayoutEntryInfo? entry, out LayoutError? error)
+        private static bool TryEntry(BindingEntry binding, WebGpuLayoutOptions options, out BindGroupLayoutEntryInfo? entry, out LayoutError? error)
         {
             entry = null;
+            var r = binding.Resource;
+            if (binding.Types.Count > 1 && r.Kind is ResourceKind.SampledTexture or ResourceKind.StorageTexture)
+            {
+                // WebGPU checks the shader's texture type against viewDimension, so one entry cannot serve shaders that disagree.
+                var picked = ResourceTypeKind.Texture2D;
+                bool found = false;
+                if (options.TextureDimensions.TryGetValue((r.Set, r.Binding), out var wanted))
+                {
+                    foreach (var t in binding.Types)
+                    {
+                        if (!found && ViewDimensionOf(t) == wanted)
+                        {
+                            picked = t;
+                            found = true;
+                        }
+                    }
+                }
+
+                if (!found)
+                {
+                    var seen = new List<string>();
+                    foreach (var t in binding.Types)
+                    {
+                        seen.Add(t.ToString());
+                    }
+
+                    error = Unsupported("Group " + Num(r.Set) + " binding " + Num(r.Binding) + " ('" + r.Name + "') is declared as " + string.Join(" and ", seen) + " by different entry points. WebGPU checks the view dimension against the shader, so one layout cannot serve both."
+                        + (options.TextureDimensions.ContainsKey((r.Set, r.Binding)) ? " The dimension chosen in WebGpuLayoutOptions.TextureDimensions matches none of them." : " Choose one in WebGpuLayoutOptions.TextureDimensions (and build a layout per dimension for the pipelines that need the other), or declare the same texture type everywhere."));
+                    return false;
+                }
+
+                r = r with { Type = picked };
+            }
+
+            if (binding.MixedStorageAccess && !Contains(options.ReadOnlyStorageBuffers, r.Name))
+            {
+                error = Unsupported("Group " + Num(r.Set) + " binding " + Num(r.Binding) + " ('" + r.Name + "') is a read-only buffer in some entry points and a read-write buffer in others. WebGPU's storage binding only fits shaders that declare it read-write. Declare it RW in every entry point, or name it in WebGpuLayoutOptions.ReadOnlyStorageBuffers if no shader writes it.");
+                return false;
+            }
+
             var vis = Visibility(r.Stages | WidenedStages(r.Set, r.Binding, options.WidenGroups, options.WidenBindings));
             if (r.IsUnbounded)
             {
@@ -540,6 +587,17 @@ namespace OneShader.Layouts
             error = null;
             return true;
         }
+
+        private static TextureViewDimension? ViewDimensionOf(ResourceTypeKind t) => t switch
+        {
+            ResourceTypeKind.Texture1D or ResourceTypeKind.RWTexture1D => TextureViewDimension.D1,
+            ResourceTypeKind.Texture2D or ResourceTypeKind.Texture2DMS or ResourceTypeKind.RWTexture2D => TextureViewDimension.D2,
+            ResourceTypeKind.Texture2DArray or ResourceTypeKind.RWTexture2DArray => TextureViewDimension.D2Array,
+            ResourceTypeKind.Texture3D or ResourceTypeKind.RWTexture3D => TextureViewDimension.D3,
+            ResourceTypeKind.TextureCube => TextureViewDimension.Cube,
+            ResourceTypeKind.TextureCubeArray => TextureViewDimension.CubeArray,
+            _ => null,
+        };
 
         private static bool IsDynamic(ResourceLayout r, WebGpuLayoutOptions options)
         {

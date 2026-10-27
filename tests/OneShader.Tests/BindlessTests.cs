@@ -503,4 +503,100 @@ public partial class BindlessTests
             Directory.Delete(dir, true);
         }
     }
+
+    // ---- binding descriptions and unions ----
+
+    [Fact]
+    public void ToBindingsDescribesUnboundedArrays()
+    {
+        var b = PipelineOf(Textures, "PSMain").ToBindings();
+        var tex = b.Single(x => x.Name == "Tex");
+        Assert.Equal(BindingType.SampledTexture, tex.Type);
+        Assert.Equal(0u, tex.Count);
+        Assert.True(tex.IsUnbounded);
+        Assert.True(tex.PartiallyBound);
+        Assert.True(tex.HasVariableCount);
+        Assert.Equal(DescriptorHeaps.None, tex.Heap);
+        Assert.Empty(tex.HeapKinds!);
+        Assert.Equal(TextureDimension.D2, tex.Dimension);
+        var smp = b.Single(x => x.Name == "Smp");
+        Assert.Equal(BindingType.Sampler, smp.Type);
+        Assert.True(smp.IsUnbounded);
+    }
+
+    [Fact]
+    public void ToBindingsDescribesHeapsAndOnlyTheHighestBindingTakesAVariableCount()
+    {
+        var b = PipelineOf(Heap, "CSMain").ToBindings();
+        var res = b.Single(x => x.Name == "ResourceDescriptorHeap");
+        Assert.Equal(DescriptorHeaps.Resource, res.Heap);
+        Assert.Equal([BindingType.SampledTexture, BindingType.ReadOnlyStorageBuffer], res.HeapKinds!.ToArray());
+        Assert.True(res.IsUnbounded);
+        Assert.Equal(0u, res.Count);
+        Assert.True(res.PartiallyBound);
+        Assert.False(res.HasVariableCount);
+        var smp = b.Single(x => x.Name == "SamplerDescriptorHeap");
+        Assert.Equal(DescriptorHeaps.Sampler, smp.Heap);
+        Assert.True(smp.HasVariableCount);
+        var plain = b.Single(x => x.Name == "Out");
+        Assert.False(plain.IsUnbounded);
+        Assert.False(plain.PartiallyBound);
+        Assert.Equal(1u, plain.Count);
+    }
+
+    private static List<EntryLayout> EntryLayouts(string text, params string[] entries)
+    {
+        var r = Compile(text, CompileTarget.SpirV);
+        Assert.True(r.Success, string.Join("\n", r.Diagnostics));
+        var list = new List<EntryLayout>();
+        foreach (string e in entries)
+        {
+            Assert.True(EntryLayout.TryCreate(r.Reflection!, e, out var l, out var error), error?.Message);
+            list.Add(l!);
+        }
+
+        return list;
+    }
+
+    private const string UnionBody =
+        "[shader(\"compute\")] [numthreads(1,1,1)] void A() { float4 c = T[NonUniformResourceIndex(1)].Load(0); }\n" +
+        "[shader(\"compute\")] [numthreads(1,1,1)] void B() { float4 c = T[NonUniformResourceIndex(2)].Load(0); }\n";
+
+    [Fact]
+    public void UnionMergesEqualUnboundedSlots()
+    {
+        var entries = EntryLayouts("[[vk::binding(0, 0)]] Texture2D<float4> T[];\n" + UnionBody, "A", "B");
+        Assert.True(PipelineLayout.TryCreateUnion(entries.ToArray(), out var union, out var error), error?.Message);
+        var t = union!.ToBindings().Single();
+        Assert.True(t.IsUnbounded);
+        Assert.Equal(0u, t.Count);
+        Assert.True(t.HasVariableCount);
+        Assert.Equal(ShaderStages.Compute, t.Stages);
+    }
+
+    [Fact]
+    public void UnionRefusesAnUnboundedSlotAgainstASizedOneEvenWithLenientOptions()
+    {
+        var unbounded = EntryLayouts("[[vk::binding(0, 0)]] Texture2D<float4> T[];\n" + UnionBody, "A")[0];
+        var sized = EntryLayouts("[[vk::binding(0, 0)]] Texture2D<float4> T[4];\n" + UnionBody, "B")[0];
+        var options = new UnionOptions { IgnoreTextureDimension = true, MergeStorageAccess = true };
+        Assert.False(PipelineLayout.TryCreateUnion([unbounded, sized], options, out _, out var error));
+        Assert.Equal(LayoutErrorKind.ResourceConflict, error!.Kind);
+    }
+
+    [Fact]
+    public void UnionMergesHeapsAndRefusesHeapAgainstDeclaredResource()
+    {
+        const string a = "[shader(\"compute\")] [numthreads(1,1,1)] void A() { Texture2D<float4> t = ResourceDescriptorHeap[0]; float4 c = t.Load(0); }\n";
+        const string b = "[shader(\"compute\")] [numthreads(1,1,1)] void B() { Texture2D<float4> t = ResourceDescriptorHeap[1]; float4 c = t.Load(0); }\n";
+        var both = EntryLayouts(a + b, "A", "B");
+        Assert.True(PipelineLayout.TryCreateUnion(both.ToArray(), out var union, out var error), error?.Message);
+        var h = union!.ToBindings().Single();
+        Assert.Equal(DescriptorHeaps.Resource, h.Heap);
+        // A heap that is also read as a buffer in the other entry point has other kinds: not the same slot contents.
+        const string c = "[shader(\"compute\")] [numthreads(1,1,1)] void C() { StructuredBuffer<uint> t = ResourceDescriptorHeap[1]; uint c = t[0]; }\n";
+        var mixed = new[] { both[0], EntryLayouts(c, "C")[0] };
+        Assert.False(PipelineLayout.TryCreateUnion(mixed, new UnionOptions { IgnoreTextureDimension = true, MergeStorageAccess = true }, out _, out error));
+        Assert.Equal(LayoutErrorKind.ResourceConflict, error!.Kind);
+    }
 }

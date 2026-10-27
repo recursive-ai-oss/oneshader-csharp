@@ -211,7 +211,7 @@ public sealed class EntryLayout
 
     /// <summary>
     /// The layout of the push-constant block as reflection describes it (members with offsets and types), when this entry layout was built
-    /// from reflection; null for generated and hand-built layouts. <see cref="PipelineLayout.TryCreateUnion"/> uses it to merge blocks of
+    /// from reflection; null for generated and hand-built layouts. <see cref="PipelineLayout.TryCreateUnion(ReadOnlySpan{EntryLayout}, out PipelineLayout?, out LayoutError?)"/> uses it to merge blocks of
     /// different structs by comparing the members that overlap.
     /// </summary>
     public ReflectedType? PushConstantType { get; private set; }

@@ -241,7 +241,9 @@ public static PipelineLayout Pipeline { get; }    // Create(VSMain.Layout, PSMai
 ```
 
 Both are built on first use from constant arrays (no reflection parsing) and cached. `Pipeline.ToVulkan()`, `TryToMetal()` and
-`TryToWebGpu()` convert to the target's description; see the `RecursiveAI.OneShader` readme.
+`TryToWebGpu()` convert to the target's description, `ToBindings()` gives the target-neutral list (read-only against read-write storage,
+texture dimension, sample kind, comparison samplers), and `Layout.Vertex!.TrySplit(...)` spreads a vertex input over several vertex buffers; see
+the `RecursiveAI.OneShader` readme.
 
 ## Names
 
