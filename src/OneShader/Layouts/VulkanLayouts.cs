@@ -36,6 +36,43 @@ namespace OneShader.Layouts.Vulkan
 
         /// <summary><c>VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC</c>.</summary>
         StorageBufferDynamic = 9,
+
+        /// <summary>
+        /// <c>VK_DESCRIPTOR_TYPE_MUTABLE_EXT</c> (<c>VK_EXT_mutable_descriptor_type</c>): a binding that holds several descriptor types, listed in
+        /// <see cref="DescriptorSetLayoutBindingInfo.MutableTypes"/>. Produced for a descriptor heap that shaders read as more than one kind of resource.
+        /// </summary>
+        Mutable = 1000351000,
+    }
+
+    /// <summary>A <c>VkDescriptorBindingFlagBits</c> mask, with the numeric values of the Vulkan specification.</summary>
+    [Flags]
+    public enum DescriptorBindingFlags : uint
+    {
+        /// <summary>No flags.</summary>
+        None = 0,
+
+        /// <summary><c>VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT</c>: descriptors may be written after the set is bound; needs <c>descriptorBindingXxxUpdateAfterBind</c> for the descriptor type.</summary>
+        UpdateAfterBind = 1,
+
+        /// <summary><c>VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT</c>.</summary>
+        UpdateUnusedWhilePending = 2,
+
+        /// <summary><c>VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT</c>: elements the shader does not touch need not hold a valid descriptor (<c>descriptorBindingPartiallyBound</c>).</summary>
+        PartiallyBound = 4,
+
+        /// <summary><c>VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT</c>: the count is chosen when the set is allocated (<c>descriptorBindingVariableDescriptorCount</c>); only the highest binding of a set can have it.</summary>
+        VariableDescriptorCount = 8,
+    }
+
+    /// <summary>A <c>VkDescriptorSetLayoutCreateFlagBits</c> mask, with the numeric values of the Vulkan specification.</summary>
+    [Flags]
+    public enum DescriptorSetLayoutCreateFlags : uint
+    {
+        /// <summary>No flags.</summary>
+        None = 0,
+
+        /// <summary><c>VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT</c>: sets of this layout come from a pool created with <c>UPDATE_AFTER_BIND</c>.</summary>
+        UpdateAfterBindPool = 2,
     }
 
     /// <summary>A <c>VkShaderStageFlagBits</c> mask, with the numeric values of the Vulkan specification.</summary>
@@ -160,12 +197,54 @@ namespace OneShader.Layouts.Vulkan
     {
         /// <summary>True for a <c>*_BUFFER_DYNAMIC</c> descriptor: the host passes one offset for it at every <c>vkCmdBindDescriptorSets</c>, in binding order.</summary>
         public bool IsDynamic => DescriptorType is DescriptorType.UniformBufferDynamic or DescriptorType.StorageBufferDynamic;
+
+        /// <summary>
+        /// The <c>VkDescriptorSetLayoutBindingFlagsCreateInfo</c> flags of this binding; <see cref="DescriptorBindingFlags.None"/> for ordinary
+        /// bindings. Set only on bindings of unbounded arrays and heaps.
+        /// </summary>
+        public DescriptorBindingFlags BindingFlags { get; init; }
+
+        /// <summary>True when the shader declares this binding without a size (an unbounded array or a heap); <see cref="DescriptorCount"/> is then the maximum the layout was built for.</summary>
+        public bool IsUnbounded { get; init; }
+
+        /// <summary>True when the binding's flags include <see cref="DescriptorBindingFlags.VariableDescriptorCount"/>: <see cref="DescriptorCount"/> is the largest count a set may be allocated with.</summary>
+        public bool IsVariableCount => (BindingFlags & DescriptorBindingFlags.VariableDescriptorCount) != 0;
+
+        /// <summary>For <see cref="DescriptorType.Mutable"/>: the descriptor types the binding may hold (<c>VkMutableDescriptorTypeListEXT</c>); empty otherwise.</summary>
+        public IReadOnlyList<DescriptorType> MutableTypes
+        {
+            get => _mutableTypes ?? [];
+            init => _mutableTypes = value;
+        }
+
+        private readonly IReadOnlyList<DescriptorType>? _mutableTypes;
     }
 
     /// <summary>One <c>VkDescriptorSetLayout</c> to create.</summary>
     /// <param name="Set">The set number.</param>
     /// <param name="Bindings">The bindings, sorted by binding number; empty for a set no shader uses.</param>
-    public sealed record DescriptorSetLayoutInfo(uint Set, IReadOnlyList<DescriptorSetLayoutBindingInfo> Bindings);
+    public sealed record DescriptorSetLayoutInfo(uint Set, IReadOnlyList<DescriptorSetLayoutBindingInfo> Bindings)
+    {
+        /// <summary>The <c>VkDescriptorSetLayoutCreateInfo</c> flags: <see cref="DescriptorSetLayoutCreateFlags.UpdateAfterBindPool"/> when a binding is update-after-bind.</summary>
+        public DescriptorSetLayoutCreateFlags CreateFlags { get; init; }
+
+        /// <summary>True when any binding has flags, so the layout needs a <c>VkDescriptorSetLayoutBindingFlagsCreateInfo</c> (and descriptor indexing enabled).</summary>
+        public bool HasBindingFlags
+        {
+            get
+            {
+                foreach (var b in Bindings)
+                {
+                    if (b.BindingFlags != DescriptorBindingFlags.None)
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+        }
+    }
 
     /// <summary>One <c>VkPushConstantRange</c>.</summary>
     /// <param name="StageFlags">The stages that read the block.</param>
@@ -226,6 +305,34 @@ namespace OneShader.Layouts.Vulkan
 
         /// <summary>Extra stages OR-ed into the stage flags of every push-constant range, so one range fits several pipelines. Default: none.</summary>
         public ShaderStages WidenPushConstants { get; init; }
+
+        /// <summary>
+        /// The descriptor count given to an unbounded array or a descriptor heap, which the shader leaves open: the largest number of
+        /// descriptors a set of this layout can hold. Keep it within the device's <c>maxPerStageDescriptorUpdateAfterBind*</c> limits; samplers
+        /// have much lower limits than images on some devices. Default 4096.
+        /// </summary>
+        public uint UnboundedMaxCount { get; init; } = 4096;
+
+        /// <summary>The same by <c>(set, binding)</c>, overriding <see cref="UnboundedMaxCount"/> for those bindings. Default: none.</summary>
+        public IReadOnlyDictionary<(uint Set, uint Binding), uint> UnboundedCounts { get; init; } = new Dictionary<(uint Set, uint Binding), uint>();
+
+        /// <summary>Mark unbounded bindings <see cref="DescriptorBindingFlags.PartiallyBound"/>, so descriptors the shader never reads may stay unwritten (needs <c>descriptorBindingPartiallyBound</c>). Default true.</summary>
+        public bool PartiallyBound { get; init; } = true;
+
+        /// <summary>
+        /// Mark the highest-numbered binding of a set <see cref="DescriptorBindingFlags.VariableDescriptorCount"/> when it is unbounded, so each set
+        /// is allocated with the count it needs (needs <c>descriptorBindingVariableDescriptorCount</c>). Vulkan allows the flag on the last binding
+        /// of a set only: other unbounded bindings keep the fixed maximum count. Default true.
+        /// </summary>
+        public bool VariableDescriptorCount { get; init; } = true;
+
+        /// <summary>
+        /// Mark unbounded bindings <see cref="DescriptorBindingFlags.UpdateAfterBind"/> and the layout of their set
+        /// <see cref="DescriptorSetLayoutCreateFlags.UpdateAfterBindPool"/>, so descriptors can be written while a command buffer that uses the set is
+        /// pending (the usual way a bindless renderer works; needs the matching <c>descriptorBindingXxxUpdateAfterBind</c> features, and the pool
+        /// must be created with <c>UPDATE_AFTER_BIND</c>). Default false.
+        /// </summary>
+        public bool UpdateAfterBind { get; init; }
     }
 }
 
@@ -269,10 +376,22 @@ namespace OneShader.Layouts
                         stages |= WidenedStages(r.Set, r.Binding, options.WidenSets, options.WidenBindings);
                     }
 
+                    if (r.IsUnbounded)
+                    {
+                        bindings[i] = UnboundedBinding(r, VulkanStages(stages), options, i == bindings.Length - 1);
+                        continue;
+                    }
+
                     bindings[i] = new DescriptorSetLayoutBindingInfo(r.Binding, VulkanDescriptor(r.Kind, isDynamic), Math.Max(r.Count, 1), VulkanStages(stages), r.Name);
                 }
 
-                sets[g] = new DescriptorSetLayoutInfo(Groups[g].Set, bindings);
+                bool updateAfterBind = false;
+                foreach (var b in bindings)
+                {
+                    updateAfterBind |= (b.BindingFlags & DescriptorBindingFlags.UpdateAfterBind) != 0;
+                }
+
+                sets[g] = new DescriptorSetLayoutInfo(Groups[g].Set, bindings) { CreateFlags = updateAfterBind ? DescriptorSetLayoutCreateFlags.UpdateAfterBindPool : DescriptorSetLayoutCreateFlags.None };
             }
 
             var ranges = new PushConstantRangeInfo[PushConstants.Count];
@@ -283,6 +402,51 @@ namespace OneShader.Layouts
             }
 
             return new PipelineLayoutInfo(sets, ranges, SubgroupOperations, RequiredFeatures);
+        }
+
+        // The bindings of a set are sorted by binding number, so the last one is the highest.
+        private static DescriptorSetLayoutBindingInfo UnboundedBinding(ResourceLayout r, ShaderStageFlags stages, VulkanLayoutOptions? options, bool highestInSet)
+        {
+            uint max = options?.UnboundedMaxCount ?? 4096;
+            if (options is not null && options.UnboundedCounts.TryGetValue((r.Set, r.Binding), out uint own))
+            {
+                max = own;
+            }
+
+            max = Math.Max(max, 1);
+            var flags = DescriptorBindingFlags.None;
+            if (options?.PartiallyBound ?? true)
+            {
+                flags |= DescriptorBindingFlags.PartiallyBound;
+            }
+
+            if ((options?.VariableDescriptorCount ?? true) && highestInSet)
+            {
+                flags |= DescriptorBindingFlags.VariableDescriptorCount;
+            }
+
+            if (options?.UpdateAfterBind ?? false)
+            {
+                flags |= DescriptorBindingFlags.UpdateAfterBind;
+            }
+
+            if (r.HeapKinds.Count > 1)
+            {
+                // One binding, several descriptor types: a mutable descriptor.
+                var types = new List<DescriptorType>();
+                foreach (var kind in r.HeapKinds)
+                {
+                    var t = VulkanDescriptor(kind);
+                    if (!types.Contains(t))
+                    {
+                        types.Add(t);
+                    }
+                }
+
+                return new DescriptorSetLayoutBindingInfo(r.Binding, DescriptorType.Mutable, max, stages, r.Name) { BindingFlags = flags, IsUnbounded = true, MutableTypes = types };
+            }
+
+            return new DescriptorSetLayoutBindingInfo(r.Binding, VulkanDescriptor(r.Kind), max, stages, r.Name) { BindingFlags = flags, IsUnbounded = true };
         }
 
         internal static ShaderStages WidenedStages(uint set, uint binding, IReadOnlyDictionary<uint, ShaderStages> sets, IReadOnlyDictionary<(uint Set, uint Binding), ShaderStages> bindings)

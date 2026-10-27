@@ -918,9 +918,21 @@ internal sealed partial class CSharpWriter
             Line("{");
             _indent++;
             Line("public const uint Set = " + Num(r.Set) + ", Binding = " + Num(r.Binding) + ", Count = " + Num(r.Count) + ";");
+            if (r.Count == 0)
+            {
+                Line("/// <summary>True: the shader leaves the size of this array open (an unbounded array or a descriptor heap); <c>Count</c> is 0 and the host chooses the size.</summary>");
+                Line("public const bool IsUnbounded = true;");
+            }
+
+            if (r.Heap.Length > 0)
+            {
+                Line("/// <summary>The SM 6.6 descriptor heap this binding is.</summary>");
+                Line("public const global::OneShader.Reflection.DescriptorHeaps Heap = global::OneShader.Reflection.DescriptorHeaps." + r.Heap + ";");
+            }
+
             if (r.HasMsl)
             {
-                Line("/// <summary>Metal argument index, counted within the resource's class (buffer, texture or sampler).</summary>");
+                Line("/// <summary>Metal argument index, counted within the resource's class (buffer, texture or sampler); an unbounded array or heap is one buffer index.</summary>");
                 Line("public const uint MslIndex = " + Num(r.MslIndex) + ";");
             }
 
@@ -993,6 +1005,28 @@ internal sealed partial class CSharpWriter
 
         _indent--;
         Line("}");
+    }
+
+    // Heap data the layout helpers need: the bindless heap and the descriptor kinds read from it.
+    private static string HeapInit(ResourceNode r)
+    {
+        if (r.Heap.Length == 0)
+        {
+            return "";
+        }
+
+        var kinds = new System.Text.StringBuilder();
+        foreach (string k in r.HeapKinds)
+        {
+            if (kinds.Length > 0)
+            {
+                kinds.Append(", ");
+            }
+
+            kinds.Append("global::OneShader.ResourceKind.").Append(k);
+        }
+
+        return " { Heap = global::OneShader.Reflection.DescriptorHeaps." + r.Heap + ", HeapKinds = new global::OneShader.ResourceKind[] { " + kinds + " } }";
     }
 
     private static string StagesExpr(string stages)
@@ -1180,7 +1214,7 @@ internal sealed partial class CSharpWriter
                 Line("new global::OneShader.Layouts.ResourceLayout(" + Str(r.Name) + ", " + Num(r.Set) + ", " + Num(r.Binding) + ", " + Num(r.Count)
                     + ", global::OneShader.ResourceKind." + r.Kind + ", " + stageFlag + ", " + (r.HasMsl ? Num(r.MslIndex) : "global::OneShader.Layouts.LayoutSlots.None")
                     + ", global::OneShader.Types.ResourceTypeKind." + r.ResourceType + ", global::OneShader.Types.ScalarKind." + texel + ", "
-                    + (r.Hlsl == "SamplerComparisonState" ? "true" : "false") + ", " + Str(r.ImageFormat) + "),");
+                    + (r.Hlsl == "SamplerComparisonState" ? "true" : "false") + ", " + Str(r.ImageFormat) + ")" + HeapInit(r) + ",");
                 if (r.HasCounter)
                 {
                     Line("new global::OneShader.Layouts.ResourceLayout(" + Str(r.Name + ".counter") + ", " + Num(r.Set) + ", " + Num(r.CounterBinding) + ", 1u"

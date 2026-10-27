@@ -437,6 +437,12 @@ namespace OneShader.Layouts
         {
             entry = null;
             var vis = Visibility(r.Stages | WidenedStages(r.Set, r.Binding, options.WidenGroups, options.WidenBindings));
+            if (r.IsUnbounded)
+            {
+                error = Unsupported("'" + r.Name + "' is " + (r.Heap != DescriptorHeaps.None ? "a descriptor heap" : "an unbounded resource array") + "; WebGPU has no binding arrays or descriptor indexing, so it cannot be bound. Build the shader for Vulkan or Metal only, or declare the resources separately.");
+                return false;
+            }
+
             if (r.Count != 1)
             {
                 error = Unsupported("'" + r.Name + "' is a resource array; WebGPU has no binding arrays. Declare separate resources or use a texture array.");
