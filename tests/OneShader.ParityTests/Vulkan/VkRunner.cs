@@ -570,31 +570,124 @@ public static unsafe class VkRunner
             var layouts = new DescriptorSetLayout[setCount];
             var sets = new DescriptorSet?[setCount];
             var typeCounts = new Dictionary<DescriptorType, uint>();
+            var variableCounts = new Dictionary<int, uint>();
+            var bindlessSets = new List<int>();
+            var mutableUnion = new List<DescriptorType>();
             for (int s = 0; s < setCount; s++)
             {
                 // Resources sharing a (set, binding) are the elements of one descriptor array.
-                var bindings = model.Resources.Where(r => r.Set == s).GroupBy(r => r.Binding).Select(g => new DescriptorSetLayoutBinding
+                var groups = model.Resources.Where(r => r.Set == s).GroupBy(r => r.Binding).OrderBy(g => g.Key).ToArray();
+                var bindings = new DescriptorSetLayoutBinding[groups.Length];
+                var flags = new DescriptorBindingFlags[groups.Length];
+                var mutableLists = new List<DescriptorType[]>();
+                var mutableOf = new int[groups.Length];
+                for (int b = 0; b < groups.Length; b++)
                 {
-                    Binding = (uint)g.Key,
-                    DescriptorType = TypeOf(g.First().Kind),
-                    DescriptorCount = (uint)g.Count(),
-                    StageFlags = stages,
-                }).ToArray();
-                fixed (DescriptorSetLayoutBinding* pb = bindings)
-                {
-                    var li = new DescriptorSetLayoutCreateInfo
+                    var g = groups[b];
+                    bool bindless = model.Bindless.Contains((s, g.Key));
+                    var kinds = g.Select(r => TypeOf(r.Kind)).Distinct().ToArray();
+                    bool mutable = bindless && kinds.Length > 1;
+                    mutableOf[b] = -1;
+                    if (mutable)
                     {
-                        SType = StructureType.DescriptorSetLayoutCreateInfo,
-                        BindingCount = (uint)bindings.Length,
-                        PBindings = pb,
+                        mutableOf[b] = mutableLists.Count;
+                        mutableLists.Add(kinds);
+                    }
+
+                    bindings[b] = new DescriptorSetLayoutBinding
+                    {
+                        Binding = (uint)g.Key,
+                        DescriptorType = mutable ? DescriptorType.MutableExt : kinds[0],
+                        DescriptorCount = (uint)g.Count(),
+                        StageFlags = stages,
                     };
-                    Check(vk.CreateDescriptorSetLayout(dev, &li, null, out layouts[s]), "vkCreateDescriptorSetLayout");
+                    if (bindless)
+                    {
+                        flags[b] = DescriptorBindingFlags.PartiallyBoundBit | DescriptorBindingFlags.UpdateAfterBindBit;
+                        if (b == groups.Length - 1)
+                        {
+                            flags[b] |= DescriptorBindingFlags.VariableDescriptorCountBit;
+                            variableCounts[s] = (uint)g.Count();
+                        }
+                    }
+                }
+
+                bool anyBindless = flags.Any(f => f != 0);
+                if (anyBindless)
+                {
+                    bindlessSets.Add(s);
+                }
+
+                var typeLists = new MutableDescriptorTypeListEXT[mutableLists.Count];
+                var typePins = new List<GCHandle>();
+                try
+                {
+                    for (int m = 0; m < mutableLists.Count; m++)
+                    {
+                        var handle = GCHandle.Alloc(mutableLists[m], GCHandleType.Pinned);
+                        typePins.Add(handle);
+                        typeLists[m] = new MutableDescriptorTypeListEXT { DescriptorTypeCount = (uint)mutableLists[m].Length, PDescriptorTypes = (DescriptorType*)handle.AddrOfPinnedObject() };
+                    }
+
+                    // One list per binding; bindings that are not mutable get an empty list.
+                    var perBinding = new MutableDescriptorTypeListEXT[bindings.Length];
+                    for (int b = 0; b < bindings.Length; b++)
+                    {
+                        perBinding[b] = mutableOf[b] >= 0 ? typeLists[mutableOf[b]] : default;
+                    }
+
+                    fixed (DescriptorSetLayoutBinding* pb = bindings)
+                    fixed (DescriptorBindingFlags* pf = flags)
+                    fixed (MutableDescriptorTypeListEXT* pm = perBinding)
+                    {
+                        var mutableInfo = new MutableDescriptorTypeCreateInfoEXT
+                        {
+                            SType = StructureType.MutableDescriptorTypeCreateInfoExt,
+                            MutableDescriptorTypeListCount = (uint)perBinding.Length,
+                            PMutableDescriptorTypeLists = pm,
+                        };
+                        var flagsInfo = new DescriptorSetLayoutBindingFlagsCreateInfo
+                        {
+                            SType = StructureType.DescriptorSetLayoutBindingFlagsCreateInfo,
+                            BindingCount = (uint)flags.Length,
+                            PBindingFlags = pf,
+                            PNext = mutableLists.Count > 0 ? &mutableInfo : null,
+                        };
+                        var li = new DescriptorSetLayoutCreateInfo
+                        {
+                            SType = StructureType.DescriptorSetLayoutCreateInfo,
+                            BindingCount = (uint)bindings.Length,
+                            PBindings = pb,
+                            Flags = flags.Any(f => (f & DescriptorBindingFlags.UpdateAfterBindBit) != 0) ? DescriptorSetLayoutCreateFlags.UpdateAfterBindPoolBit : 0,
+                            PNext = anyBindless ? &flagsInfo : (mutableLists.Count > 0 ? &mutableInfo : null),
+                        };
+                        Check(vk.CreateDescriptorSetLayout(dev, &li, null, out layouts[s]), "vkCreateDescriptorSetLayout");
+                    }
+                }
+                finally
+                {
+                    foreach (var h in typePins)
+                    {
+                        h.Free();
+                    }
                 }
                 var layoutCopy = layouts[s];
                 cleanup.Add(() => vk.DestroyDescriptorSetLayout(dev, layoutCopy, null));
                 foreach (var b in bindings)
                 {
                     typeCounts[b.DescriptorType] = typeCounts.GetValueOrDefault(b.DescriptorType) + b.DescriptorCount;
+                }
+
+                // A mutable binding draws its descriptors from the pool's mutable-descriptor size, which carries the type list.
+                foreach (var list in mutableLists)
+                {
+                    foreach (var t in list)
+                    {
+                        if (!mutableUnion.Contains(t))
+                        {
+                            mutableUnion.Add(t);
+                        }
+                    }
                 }
             }
 
@@ -617,27 +710,61 @@ public static unsafe class VkRunner
                 {
                     var poolSizes = typeCounts.Select(kv => new DescriptorPoolSize(kv.Key, kv.Value)).ToArray();
                     DescriptorPool pool;
+                    var unionTypes = mutableUnion.ToArray();
+                    var poolLists = new MutableDescriptorTypeListEXT[poolSizes.Length];
+                    fixed (DescriptorType* pu = unionTypes)
+                    fixed (MutableDescriptorTypeListEXT* pplists = poolLists)
                     fixed (DescriptorPoolSize* pp = poolSizes)
                     {
+                        for (int p = 0; p < poolSizes.Length; p++)
+                        {
+                            if (poolSizes[p].Type == DescriptorType.MutableExt)
+                            {
+                                poolLists[p] = new MutableDescriptorTypeListEXT { DescriptorTypeCount = (uint)unionTypes.Length, PDescriptorTypes = pu };
+                            }
+                        }
+
+                        var poolMutable = new MutableDescriptorTypeCreateInfoEXT
+                        {
+                            SType = StructureType.MutableDescriptorTypeCreateInfoExt,
+                            MutableDescriptorTypeListCount = (uint)poolLists.Length,
+                            PMutableDescriptorTypeLists = pplists,
+                        };
                         var ci = new DescriptorPoolCreateInfo
                         {
                             SType = StructureType.DescriptorPoolCreateInfo,
                             MaxSets = (uint)setCount,
                             PoolSizeCount = (uint)poolSizes.Length,
                             PPoolSizes = pp,
+                            Flags = bindlessSets.Count > 0 ? DescriptorPoolCreateFlags.UpdateAfterBindBit : 0,
+                            PNext = unionTypes.Length > 0 ? &poolMutable : null,
                         };
                         Check(vk.CreateDescriptorPool(dev, &ci, null, out pool), "vkCreateDescriptorPool");
                     }
                     cleanup.Add(() => vk.DestroyDescriptorPool(dev, pool, null));
                     var allocated = new DescriptorSet[setCount];
-                    fixed (DescriptorSet* pa = allocated)
+                    var counts = new uint[setCount];
+                    for (int s = 0; s < setCount; s++)
                     {
+                        counts[s] = variableCounts.GetValueOrDefault(s);
+                    }
+
+                    fixed (DescriptorSet* pa = allocated)
+                    fixed (uint* pc = counts)
+                    {
+                        var countInfo = new DescriptorSetVariableDescriptorCountAllocateInfo
+                        {
+                            SType = StructureType.DescriptorSetVariableDescriptorCountAllocateInfo,
+                            DescriptorSetCount = (uint)setCount,
+                            PDescriptorCounts = pc,
+                        };
                         var ai = new DescriptorSetAllocateInfo
                         {
                             SType = StructureType.DescriptorSetAllocateInfo,
                             DescriptorPool = pool,
                             DescriptorSetCount = (uint)setCount,
                             PSetLayouts = pl,
+                            PNext = variableCounts.Count > 0 ? &countInfo : null,
                         };
                         Check(vk.AllocateDescriptorSets(dev, &ai, pa), "vkAllocateDescriptorSets");
                     }

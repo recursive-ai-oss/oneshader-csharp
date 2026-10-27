@@ -1,0 +1,17 @@
+# Bindless textures: unbounded Texture2D and SamplerState arrays indexed with NonUniformResourceIndex in a pixel shader; six instanced
+# quads pick five textures and two samplers by instance.
+case bindless_textures
+shader lang/bindless_textures.hlsl
+graphics vs=VSMain ps=PSMain
+target 96 64
+tolerance 1
+draw vertices=6 instances=6
+bindless 0 0
+bindless 0 1
+texture 0 0 8x8 rgba8 photo element=0
+texture 0 0 8x8 rgba8 checker(2) element=1
+texture 0 0 8x8 rgba8 gradient element=2
+texture 0 0 8x8 rgba8 noise(7) element=3
+texture 0 0 8x8 rgba8 checker(4) element=4
+sampler 0 1 nearest clamp element=0
+sampler 0 1 linear repeat element=1
