@@ -57,6 +57,7 @@ jobs:
 
       # Oracle-based tests skip with a message when a tool is missing; the summary line counts them.
       - name: Test
+        timeout-minutes: 30
         run: dotnet test --solution OneShader.slnx -c Release --no-build
 
       - name: Pack
