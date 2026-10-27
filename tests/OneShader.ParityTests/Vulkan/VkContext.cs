@@ -68,6 +68,11 @@ public sealed unsafe partial class VkContext : IDisposable
         {
             reason = "no Vulkan loader: " + e.Message;
         }
+        catch (System.IO.FileNotFoundException e)
+        {
+            // The loader binding reports a missing library this way on some platforms (macOS without a Vulkan SDK).
+            reason = "no Vulkan loader: " + e.Message;
+        }
         ctx.Dispose();
         return null;
     }

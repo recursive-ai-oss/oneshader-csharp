@@ -195,8 +195,10 @@ public sealed partial class ToolTests : IDisposable
         var (code, _, err) = InProc("--depfile", dep, "-Fo", o, Path.Combine(_dir, "main.hlsl"));
         Assert.True(code == 0, err);
         string text = File.ReadAllText(dep);
-        Assert.StartsWith(o + ":", text, StringComparison.Ordinal);
-        Assert.Contains(Path.Combine(_dir, "main.hlsl"), text, StringComparison.Ordinal);
+        // Dependency files use forward slashes on every platform, which Make and Ninja accept on Windows too.
+        static string Make(string p) => p.Replace('\\', '/');
+        Assert.StartsWith(Make(o) + ":", text, StringComparison.Ordinal);
+        Assert.Contains(Make(Path.Combine(_dir, "main.hlsl")), text, StringComparison.Ordinal);
         Assert.Contains("inc\\ dir.hlsli", text, StringComparison.Ordinal); // the space is escaped for Make
         Assert.EndsWith("\n", text, StringComparison.Ordinal);
     }

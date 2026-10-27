@@ -65,7 +65,8 @@ public sealed class WaveTests
             File.WriteAllBytes(file, r.Blobs[0].ToArray());
             var (code, output) = Oracles.Run(val!, ["--target-env", "vulkan1.2", file], dir);
             Assert.True(code == 0, output);
-            string text = Oracles.Run(dis!, [file], dir).Output;
+            // spirv-dis writes CRLF on Windows.
+            string text = Oracles.Run(dis!, [file], dir).Output.Replace("\r\n", "\n", StringComparison.Ordinal);
             foreach (string cap in new[] { "GroupNonUniform", "GroupNonUniformVote", "GroupNonUniformArithmetic", "GroupNonUniformBallot", "GroupNonUniformShuffle", "GroupNonUniformQuad" })
             {
                 Assert.Contains("OpCapability " + cap + "\n", text, StringComparison.Ordinal);
