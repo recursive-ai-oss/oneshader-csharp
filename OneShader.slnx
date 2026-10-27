@@ -4,11 +4,13 @@
     <Project Path="src/OneShader.Build.Tasks/OneShader.Build.Tasks.csproj" />
     <Project Path="src/OneShader.Build.Generator/OneShader.Build.Generator.csproj" />
     <Project Path="src/OneShader.Build/OneShader.Build.csproj" />
+    <Project Path="src/OneShader.Tool/OneShader.Tool.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/OneShader.Tests/OneShader.Tests.csproj" />
     <Project Path="tests/OneShader.ParityTests/OneShader.ParityTests.csproj" />
     <Project Path="tests/AotSmoke/AotSmoke.csproj" />
+    <Project Path="tests/OneShader.Tool.Tests/OneShader.Tool.Tests.csproj" />
     <Project Path="tests/OneShader.Build.Tests/OneShader.Build.Tests.csproj" />
   </Folder>
   <Folder Name="/bench/">

@@ -294,6 +294,7 @@ internal sealed class CSharpWriter
             EmitEntry(e);
         }
 
+        EmitPipeline();
         Line("");
         EmitReflection();
         _indent--;
@@ -854,6 +855,118 @@ internal sealed class CSharpWriter
             Line("public const uint ThreadGroupSizeX = " + Num(e.X) + ", ThreadGroupSizeY = " + Num(e.Y) + ", ThreadGroupSizeZ = " + Num(e.Z) + ";");
         }
 
+        // An entry point that happens to be called Layout would clash with its own member; it just goes without.
+        if (TypeName(e.Name) != "Layout")
+        {
+            Line("");
+            EmitEntryLayout(e);
+        }
+
+        _indent--;
+        Line("}");
+    }
+
+    // A file with one vertex and one pixel entry point (or a single compute entry point) has an obvious pipeline. The name is taken only
+    // when free, so a file that already uses 'Pipeline' for something else keeps compiling.
+    private void EmitPipeline()
+    {
+        EntryNode? vs = null, ps = null, cs = null;
+        int count = 0;
+        foreach (var e in _file.Entries)
+        {
+            if (TypeName(e.Name) == "Layout")
+            {
+                return;
+            }
+
+            count++;
+            if (e.Stage == "Vertex" && vs == null)
+            {
+                vs = e;
+            }
+            else if (e.Stage == "Pixel" && ps == null)
+            {
+                ps = e;
+            }
+            else if (e.Stage == "Compute" && cs == null)
+            {
+                cs = e;
+            }
+            else
+            {
+                return;
+            }
+        }
+
+        bool graphics = vs != null && ps != null && cs == null && count == 2;
+        bool compute = cs != null && vs == null && ps == null && count == 1;
+        if ((!graphics && !compute) || !_topNames.Add("Pipeline"))
+        {
+            return;
+        }
+
+        string args = graphics ? TypeName(vs!.Name) + ".Layout, " + TypeName(ps!.Name) + ".Layout" : TypeName(cs!.Name) + ".Layout";
+        Line("");
+        Line("private static global::OneShader.Layouts.PipelineLayout? s_pipeline;");
+        Line("");
+        Line("/// <summary>The pipeline layout of this file's " + (graphics ? "vertex and pixel" : "compute") + " entry point" + (graphics ? "s" : "") + " as plain data; convert it with <c>ToVulkan</c>, <c>TryToMetal</c> or <c>TryToWebGpu</c>.</summary>");
+        Line("public static global::OneShader.Layouts.PipelineLayout Pipeline => s_pipeline ??= global::OneShader.Layouts.PipelineLayout.Create(new global::OneShader.Layouts.EntryLayout[] { " + args + " });");
+    }
+
+    // The entry point's share of the bindings as plain data, so a host can build a pipeline layout without parsing the reflection.
+    private void EmitEntryLayout(EntryNode e)
+    {
+        string stageFlag = "global::OneShader.ShaderStages." + e.Stage;
+        Line("private static global::OneShader.Layouts.EntryLayout? s_layout;");
+        Line("");
+        Line("/// <summary>The resources, push-constant block and vertex input of this entry point as plain data; combine entry points with <c>PipelineLayout</c>.</summary>");
+        Line("public static global::OneShader.Layouts.EntryLayout Layout => s_layout ??= CreateLayout();");
+        Line("");
+        Line("private static global::OneShader.Layouts.EntryLayout CreateLayout()");
+        Line("{");
+        _indent++;
+        Line("var resources = new global::OneShader.Layouts.ResourceLayout[]");
+        Line("{");
+        _indent++;
+        foreach (string used in e.Uses)
+        {
+            foreach (var r in _file.Resources)
+            {
+                if (r.Name != used || !r.HasSlot)
+                {
+                    continue;
+                }
+
+                string texel = r.Layout != null && (r.Layout.Kind == "Scalar" || r.Layout.Kind == "Vector") ? r.Layout.Scalar : "Float";
+                Line("new global::OneShader.Layouts.ResourceLayout(" + Str(r.Name) + ", " + Num(r.Set) + ", " + Num(r.Binding) + ", " + Num(r.Count)
+                    + ", global::OneShader.ResourceKind." + r.Kind + ", " + stageFlag + ", " + (r.HasMsl ? Num(r.MslIndex) : "global::OneShader.Layouts.LayoutSlots.None")
+                    + ", global::OneShader.Types.ResourceTypeKind." + r.ResourceType + ", global::OneShader.Types.ScalarKind." + texel + ", "
+                    + (r.Hlsl == "SamplerComparisonState" ? "true" : "false") + ", " + Str(r.ImageFormat) + "),");
+                if (r.HasCounter)
+                {
+                    Line("new global::OneShader.Layouts.ResourceLayout(" + Str(r.Name + ".counter") + ", " + Num(r.Set) + ", " + Num(r.CounterBinding) + ", 1u"
+                        + ", global::OneShader.ResourceKind.StorageBuffer, " + stageFlag + ", " + (r.HasMslCounter ? Num(r.MslCounterIndex) : "global::OneShader.Layouts.LayoutSlots.None")
+                        + ", global::OneShader.Types.ResourceTypeKind.RWStructuredBuffer, global::OneShader.Types.ScalarKind.Float, false, \"\"),");
+                }
+            }
+        }
+
+        _indent--;
+        Line("};");
+        string push = "null";
+        foreach (var p in _file.Pushes)
+        {
+            if (p.Name == e.PushUse)
+            {
+                push = "new global::OneShader.Layouts.PushConstantLayout(" + Str(p.Name) + ", " + Num(p.Layout?.Size ?? 0) + ", " + stageFlag + ", "
+                    + (p.HasMsl ? Num(p.MslIndex) : "global::OneShader.Layouts.LayoutSlots.None") + ", "
+                    + (p.HasWgsl ? Num(p.WgslGroup) + ", " + Num(p.WgslBinding) : "global::OneShader.Layouts.LayoutSlots.None, global::OneShader.Layouts.LayoutSlots.None") + ")";
+            }
+        }
+
+        string vertex = e.Stage == "Vertex" ? "new global::OneShader.Layouts.VertexLayout(Stride, s_inputs)" : "null";
+        string group = e.Stage == "Compute" ? "(ThreadGroupSizeX, ThreadGroupSizeY, ThreadGroupSizeZ)" : "default";
+        Line("return new global::OneShader.Layouts.EntryLayout(EntryPoint, Stage, resources, " + push + ", " + vertex + ", " + group + ");");
         _indent--;
         Line("}");
     }

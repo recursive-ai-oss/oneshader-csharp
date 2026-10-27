@@ -73,7 +73,31 @@ public static partial class Pool
         };
 
         public const uint ThreadGroupSizeX = 8u, ThreadGroupSizeY = 1u, ThreadGroupSizeZ = 1u;
+
+        private static global::OneShader.Layouts.EntryLayout? s_layout;
+
+        /// <summary>The resources, push-constant block and vertex input of this entry point as plain data; combine entry points with <c>PipelineLayout</c>.</summary>
+        public static global::OneShader.Layouts.EntryLayout Layout => s_layout ??= CreateLayout();
+
+        private static global::OneShader.Layouts.EntryLayout CreateLayout()
+        {
+            var resources = new global::OneShader.Layouts.ResourceLayout[]
+            {
+                new global::OneShader.Layouts.ResourceLayout("Textures", 0u, 0u, 4u, global::OneShader.ResourceKind.SampledTexture, global::OneShader.ShaderStages.Compute, global::OneShader.Layouts.LayoutSlots.None, global::OneShader.Types.ResourceTypeKind.Texture2D, global::OneShader.Types.ScalarKind.Float, false, ""),
+                new global::OneShader.Layouts.ResourceLayout("Samplers", 0u, 1u, 2u, global::OneShader.ResourceKind.Sampler, global::OneShader.ShaderStages.Compute, global::OneShader.Layouts.LayoutSlots.None, global::OneShader.Types.ResourceTypeKind.Texture2D, global::OneShader.Types.ScalarKind.Float, false, ""),
+                new global::OneShader.Layouts.ResourceLayout("Hits", 0u, 2u, 1u, global::OneShader.ResourceKind.StorageBuffer, global::OneShader.ShaderStages.Compute, global::OneShader.Layouts.LayoutSlots.None, global::OneShader.Types.ResourceTypeKind.AppendStructuredBuffer, global::OneShader.Types.ScalarKind.Float, false, ""),
+                new global::OneShader.Layouts.ResourceLayout("Hits.counter", 0u, 3u, 1u, global::OneShader.ResourceKind.StorageBuffer, global::OneShader.ShaderStages.Compute, global::OneShader.Layouts.LayoutSlots.None, global::OneShader.Types.ResourceTypeKind.RWStructuredBuffer, global::OneShader.Types.ScalarKind.Float, false, ""),
+                new global::OneShader.Layouts.ResourceLayout("Work", 0u, 4u, 1u, global::OneShader.ResourceKind.StorageBuffer, global::OneShader.ShaderStages.Compute, global::OneShader.Layouts.LayoutSlots.None, global::OneShader.Types.ResourceTypeKind.ConsumeStructuredBuffer, global::OneShader.Types.ScalarKind.UInt, false, ""),
+                new global::OneShader.Layouts.ResourceLayout("Work.counter", 0u, 5u, 1u, global::OneShader.ResourceKind.StorageBuffer, global::OneShader.ShaderStages.Compute, global::OneShader.Layouts.LayoutSlots.None, global::OneShader.Types.ResourceTypeKind.RWStructuredBuffer, global::OneShader.Types.ScalarKind.Float, false, ""),
+            };
+            return new global::OneShader.Layouts.EntryLayout(EntryPoint, Stage, resources, null, null, (ThreadGroupSizeX, ThreadGroupSizeY, ThreadGroupSizeZ));
+        }
     }
+
+    private static global::OneShader.Layouts.PipelineLayout? s_pipeline;
+
+    /// <summary>The pipeline layout of this file's compute entry point as plain data; convert it with <c>ToVulkan</c>, <c>TryToMetal</c> or <c>TryToWebGpu</c>.</summary>
+    public static global::OneShader.Layouts.PipelineLayout Pipeline => s_pipeline ??= global::OneShader.Layouts.PipelineLayout.Create(new global::OneShader.Layouts.EntryLayout[] { CSMain.Layout });
 
     public static global::System.ReadOnlySpan<byte> ReflectionData => new byte[]
     {

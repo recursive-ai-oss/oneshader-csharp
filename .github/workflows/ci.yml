@@ -65,6 +65,15 @@ jobs:
       - name: Publish AOT smoke app (warnings are errors)
         run: dotnet publish tests/AotSmoke -c Release -r ${{ matrix.rid }} -o "$RUNNER_TEMP/smoke" -warnaserror
 
+      - name: Publish the oneshader tool with NativeAOT (warnings are errors)
+        run: dotnet publish src/OneShader.Tool -c Release -r ${{ matrix.rid }} -o "$RUNNER_TEMP/tool" -warnaserror
+
+      - name: Run the AOT tool
+        run: |
+          tool="$RUNNER_TEMP/tool/oneshader"; if [ "$RUNNER_OS" = Windows ]; then tool="$tool.exe"; fi
+          "$tool" --version
+          "$tool" -T ps_6_0 -E PSMain -spirv corpus/2d/sprite.hlsl -Fo "$RUNNER_TEMP/sprite.spv"
+
       - name: Run AOT smoke app
         run: |
           if [ "$RUNNER_OS" = Windows ]; then "$RUNNER_TEMP/smoke/AotSmoke.exe"; else "$RUNNER_TEMP/smoke/AotSmoke"; fi

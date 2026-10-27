@@ -1,9 +1,13 @@
 # Changelog
 
-All notable changes to the packages `RecursiveAI.OneShader` and `RecursiveAI.OneShader.Build`.
+All notable changes to the packages `RecursiveAI.OneShader`, `RecursiveAI.OneShader.Build` and `RecursiveAI.OneShader.Tool`.
 Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+
+- New package `RecursiveAI.OneShader.Tool`: the `oneshader` command-line compiler (a .NET tool, and a NativeAOT single-file binary with `dotnet publish -r <rid>`). It takes DXC's core flags (`-T`, `-E`, `-D`, `-I`, `-Fo`, `-spirv`, `-O0`..`-O3`, `-Zpr`/`-Zpc`, `-HV 2021`, `-WX`) plus `--target spirv|msl|wgsl` (repeatable), `--all-entries`, `--reflect <file.json>` and `--depfile <file>`. Diagnostics print as `file(line,col): error OSHnnnn: message`; exit code 0, 1 for compile errors, 2 for command-line errors.
+- Pipeline layout helpers (`OneShader.Layouts`): plain data, no graphics API behind it, that turns a shader into what a renderer creates. `EntryLayout` (from reflection with `EntryLayout.TryCreate`, or the generated `Sprite.VSMain.Layout`) and `PipelineLayout.TryCreate` merge entry points into bind groups with combined stage visibility and push-constant blocks, returning conflicts as a `LayoutError` value. `ToVulkan()` gives descriptor set layouts, push-constant ranges and vertex input with numeric `VkDescriptorType`/`VkShaderStageFlagBits`/`VkFormat` values; `TryToMetal()` gives per-stage buffer, texture and sampler indices, the `setBytes` slot and `MTLVertexDescriptor` data; `TryToWebGpu()` gives bind group layout entries with the WebGPU enum strings, push constants as a uniform buffer at the reserved group and binding, and vertex buffer layouts. Generated classes gain `Layout` on every entry point and `Pipeline` (vertex + pixel, or one compute entry point) on the file.
+- Reflection: `ResourceInfo.ImageFormat` records the `[[vk::image_format]]` name of a storage texture (the serialized `resource` record gets an optional `format` attribute, written only when set).
 
 ## [1.0.0]
 

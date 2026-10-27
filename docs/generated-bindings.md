@@ -164,6 +164,21 @@ The support types (`ShaderStage`, `ResourceKind`, `VertexFormat`, `VertexAttribu
 rendering layer in another assembly can accept them. When only these types are used, trimming
 removes the compiler from a NativeAOT app.
 
+## Pipeline layouts
+
+Each entry-point class has `Layout`, an `OneShader.Layouts.EntryLayout` with the resources that entry point uses (with its own stage
+only), its push-constant block, its vertex input and its thread-group size, with the slot on every selected target. The file's class has
+`Pipeline` when the file has exactly one vertex and one pixel entry point, or exactly one compute entry point, and no cbuffer, struct or
+entry point of that name. For other combinations, merge entry points yourself with `PipelineLayout.TryCreate`.
+
+```csharp
+public static class VSMain { public static EntryLayout Layout { get; } /* ... */ }
+public static PipelineLayout Pipeline { get; }    // Create(VSMain.Layout, PSMain.Layout)
+```
+
+Both are built on first use from constant arrays (no reflection parsing) and cached. `Pipeline.ToVulkan()`, `TryToMetal()` and
+`TryToWebGpu()` convert to the target's description; see the `RecursiveAI.OneShader` readme.
+
 ## Names
 
 C# warns about type names made only of lower-case ASCII letters (CS8981), which is an error in

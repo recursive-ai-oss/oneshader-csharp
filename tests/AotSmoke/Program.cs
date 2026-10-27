@@ -80,6 +80,19 @@ if (!all.Success || all.Blobs.Count != 6
     return 8;
 }
 
+// Pipeline layouts for every target.
+if (!OneShader.Layouts.EntryLayout.TryCreate(all.Reflection!, "VS", out var vsLayout, out _)
+    || !OneShader.Layouts.EntryLayout.TryCreate(all.Reflection!, "PS", out var psLayout, out _)
+    || !OneShader.Layouts.PipelineLayout.TryCreate([vsLayout!, psLayout!], out var pipelineLayout, out _)
+    || pipelineLayout!.ToVulkan().SetLayouts[0].Bindings.Count != 3
+    || !pipelineLayout.TryToMetal(out var metalLayout, out _) || metalLayout!.Stages.Count != 2
+    || !pipelineLayout.TryToWebGpu(out var webLayout, out _) || webLayout!.Groups[0].Entries.Count != 3
+    || vsLayout!.Vertex is not { } vertexLayout || vertexLayout.ToWebGpu().Attributes.Count != 1)
+{
+    Console.Error.WriteLine("pipeline layout smoke test failed");
+    return 9;
+}
+
 // Hot-reload path: an edit that only touches a body is compatible, one that moves a constant-buffer member is not.
 var edited = ShaderCompiler.Compile(Shader.Replace("i.Uv);", "i.Uv) * 0.5;", StringComparison.Ordinal), "smoke.hlsl");
 var moved = ShaderCompiler.Compile(Shader.Replace("float4x4 M;", "float4 Pad; float4x4 M;", StringComparison.Ordinal), "smoke.hlsl");
