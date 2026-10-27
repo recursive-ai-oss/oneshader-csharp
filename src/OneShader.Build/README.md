@@ -122,10 +122,71 @@ Support types (`ShaderStage`, `ResourceKind`, `VertexFormat`, `VertexAttribute`,
 `ResourceBinding`) come from `RecursiveAI.OneShader`, so a rendering layer in another assembly can
 take them. When only these are used, trimming removes the compiler from a NativeAOT app.
 
-Item metadata: `EntryPoints`, `Defines`, `IncludeDirectories`, `Namespace`, `ClassName`, `Targets`.
+Item metadata: `EntryPoints`, `Defines`, `IncludeDirectories`, `Namespace`, `ClassName`, `Targets`, `Axes`, `MaxVariants`.
 Properties: `EnableDefaultOneShaderItems`, `OneShaderNamespace`, `OneShaderTargets`,
-`OneShaderDefines`, `OneShaderIncludeDirectories`. Shaders are recompiled only when they, a file they include, or the
+`OneShaderDefines`, `OneShaderIncludeDirectories`, `OneShaderMaxVariants`. Shaders are recompiled only when they, a file they include, or the
 options change; the output is deterministic.
+
+## Variants
+
+One HLSL file can be compiled many times with different macros, for a material system that picks the
+right shader at run time. Two shapes, both in the project file:
+
+```xml
+<ItemGroup>
+  <!-- Keyword axes: ALPHA_TEST on/off x LIGHTING NONE|LAMBERT|PBR = 6 variants. -->
+  <OneShader Include="Shaders/Material.hlsl" Axes="ALPHA_TEST;LIGHTING=NONE|LAMBERT|PBR" />
+
+  <!-- Hand-picked define sets, by name. -->
+  <OneShader Include="Shaders/Sky.hlsl" />
+  <OneShaderVariant Include="Day"   Shader="Shaders/Sky.hlsl" Defines="NIGHT=0" />
+  <OneShaderVariant Include="Night" Shader="Shaders/Sky.hlsl" Defines="NIGHT=1;STARS" />
+</ItemGroup>
+```
+
+Listing a file as an item gives it metadata; the default `**/*.hlsl` glob skips files that are already listed.
+
+- **Axes** is a `;`-list. A bare `NAME` is a flag: the variant either defines `NAME` as `1` or does not define it
+  (`#if ALPHA_TEST`). `NAME=A|B|C` is a choice: the variant defines `NAME` as the value *and* `NAME_VALUE` as `1`
+  (`LIGHTING=PBR` and `LIGHTING_PBR=1`, so `#if LIGHTING_PBR` works for words; numeric values also work with
+  `#if LIGHTING == 2`). Names and values are letters, digits and `_`. The cartesian product is compiled, first axis
+  varying slowest. `Defines`, `$(OneShaderDefines)` and the other item metadata apply to every variant.
+- **OneShaderVariant** items name a shader (`Shader`, any path to the same file) and give a `Defines` list. Use either
+  `Axes` or `OneShaderVariant` items on one shader, not both.
+- **Limit.** A shader may have 64 variants; more is error `OSH0905` naming the item and the fix. Raise it with
+  `MaxVariants="256"` metadata or `<OneShaderMaxVariants>` in the project. Each variant is compiled for every selected target
+  and embedded in the assembly, so the limit is also a size guard.
+- **One compile per variant per target**, in parallel. A variant is recompiled only when its define set, the shader, a
+  file it includes or the options change: adding a value to an axis compiles just the new combinations. Each variant's
+  SPIR-V is byte-for-byte what `ShaderCompiler.Compile` produces with the same defines.
+- **Errors** are the usual `Shaders/Material.hlsl(31,9): error OSH0300: ...` on the HLSL line, followed by the define set it
+  happened under, `(variant ALPHA_TEST=1, LIGHTING=PBR)`. The same error under several variants is reported once, with
+  `(variants A; B; C and 2 more)` or `(in all 6 variants)`.
+
+Generated code for a file with variants (`Material.hlsl` above, namespace and class as for any file):
+
+```csharp
+var v = Material.Variants.Get(new Material.Key(alphaTest: true, lighting: Material.LightingValue.Pbr));
+ReadOnlySpan<byte> spirv = v.PSMain.SpirV;     // Msl / Wgsl / MslFunctionName / Layout / ThreadGroupSizeX ... as for a single file
+ReadOnlySpan<ResourceBinding> bindings = v.Bindings;   // can differ per variant (the normal map exists only when lit)
+PipelineLayout? pipeline = v.Pipeline;
+```
+
+- `Material.Key` is a struct with one property per axis (`bool` for flags, a generated enum such as `LightingValue` for
+  choices; `VariantName` for `OneShaderVariant` sets). `Variants.Get(key)` is an array index: no allocation, no
+  reflection; it throws for an enum value that is out of range, `TryGet` does not. `Variants.All` and `Variants.Count` list every
+  variant; `Variant.Name`, `Variant.Defines` and `Variant.Index` identify one.
+- The `Variant` has one property per entry point (`PSMain`, null in variants that lack it; non-null when every variant has it).
+  Each is an `Entry` with `SpirV`, `Msl`, `Wgsl` (empty when the target was not selected), `MslFunctionName`,
+  `WgslEntryPoint`, `Stride`/`Inputs` for vertex entries, `ThreadGroupSize*` for compute, `Layout`.
+- The same data is also available the way a single-variant file has it, one static class per variant:
+  `Material.Variants.AlphaTestOn_LightingPbr.PSMain.SpirV`, `.Bindings.All`, `.Reflection`, `.Pipeline`.
+- **Shared structs.** A constant-buffer, push-constant or vertex struct that every variant agrees on is generated once at
+  file level (`Material.Frame`, `Material.VSMainVertex`), so one CPU struct serves all variants. When a struct's layout
+  differs between variants (a `cbuffer` member under `#if`), no shared type is generated: each variant's class gets its own
+  (`Variants.<Name>.Frame`) so a variant never gets a type that does not match its shader. Resource bindings can differ
+  per variant and are read from the variant (`Variant.Bindings`, `Variant.Pipeline`).
+- A file without `Axes` or variant items generates exactly the same C# as before.
 
 ## What works
 

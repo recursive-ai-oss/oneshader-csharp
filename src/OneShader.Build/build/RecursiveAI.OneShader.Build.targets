@@ -10,12 +10,21 @@
       Targets             SpirV;Msl;Wgsl         - overrides $(OneShaderTargets) for this file
       Namespace           overrides $(OneShaderNamespace) for this file
       ClassName           overrides the class name taken from the file name
+      Axes                NAME;NAME=A|B|C        - keyword axes; every combination is compiled as a variant (see below)
+      MaxVariants         largest number of variants for this file (default $(OneShaderMaxVariants), then 64)
 
     Project properties:
       EnableDefaultOneShaderItems  false stops **/*.hlsl from being added as OneShader items
       OneShaderNamespace           default namespace of generated code (default: $(RootNamespace).Shaders)
       OneShaderTargets             targets to compile and embed, ';'-separated: SpirV, Msl, Wgsl (default: SpirV)
       OneShaderDefines, OneShaderIncludeDirectories  applied to every shader
+      OneShaderMaxVariants         default for the MaxVariants metadata
+
+    Variants. Keyword axes on the item:
+      <OneShader Include="Shaders/Sprite.hlsl" Axes="ALPHA_TEST;LIGHTING=NONE|LAMBERT|PBR" />
+    compile 2 x 3 = 6 variants (a bare NAME is a flag: defined as 1 or not defined; NAME=A|B|C defines NAME as the
+    value and NAME_VALUE as 1). Hand-picked define sets are OneShaderVariant items that name their shader:
+      <OneShaderVariant Include="Cutout" Shader="Shaders/Sprite.hlsl" Defines="ALPHA_TEST=1" />
   -->
   <UsingTask TaskName="OneShader.Build.Tasks.CompileShaders" AssemblyFile="$(OneShaderTaskAssembly)" />
 
@@ -27,7 +36,8 @@
   </PropertyGroup>
 
   <ItemGroup Condition="'$(EnableDefaultOneShaderItems)' == 'true'">
-    <OneShader Include="**/*.hlsl" Exclude="$(DefaultItemExcludes);$(DefaultExcludesInProjectFolder)" />
+    <!-- Files the project already lists (to give them metadata) are not added a second time. -->
+    <OneShader Include="**/*.hlsl" Exclude="$(DefaultItemExcludes);$(DefaultExcludesInProjectFolder);@(OneShader)" />
   </ItemGroup>
 
   <Target Name="OneShaderCompile" BeforeTargets="CoreCompile" Condition="'@(OneShader)' != ''">
@@ -37,7 +47,9 @@
                     DefaultNamespace="$(OneShaderNamespace)"
                     DefaultTargets="$(OneShaderTargets)"
                     DefaultDefines="$(OneShaderDefines)"
-                    DefaultIncludeDirectories="$(OneShaderIncludeDirectories)">
+                    DefaultIncludeDirectories="$(OneShaderIncludeDirectories)"
+                    Variants="@(OneShaderVariant)"
+                    DefaultMaxVariants="$(OneShaderMaxVariants)">
       <Output TaskParameter="GeneratedFiles" ItemName="_OneShaderOutput" />
     </CompileShaders>
     <ItemGroup>

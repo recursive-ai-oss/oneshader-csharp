@@ -110,6 +110,24 @@ internal sealed class EntryNode
     public string PushUse = "";
 }
 
+/// <summary>A keyword axis of a variant set: a flag (defined as 1 or not) or a choice among named values.</summary>
+internal sealed class AxisNode
+{
+    public string Name = "";
+    public bool IsFlag;
+    public List<string> Values = new List<string>();
+}
+
+/// <summary>One line of a variant manifest: which file holds the variant and which axis values it stands for.</summary>
+internal sealed class VariantRef
+{
+    public uint Index;
+    public string Key = "";
+    public string Name = "";
+    public string Defines = "";
+    public List<uint> Ordinals = new List<uint>();
+}
+
 /// <summary>The text of one entry point for one text target.</summary>
 internal sealed class TextBlob
 {
@@ -151,6 +169,14 @@ internal sealed class ShaderFile
 
     /// <summary>WGSL sources by entry point name.</summary>
     public Dictionary<string, TextBlob> Wgsl = new Dictionary<string, TextBlob>(StringComparer.Ordinal);
+
+    /// <summary>Set on the output of one variant: the key the manifest lists it under.</summary>
+    public string VariantKey = "";
+
+    /// <summary>Set on a variant manifest: <c>axes</c> or <c>names</c>, with the axes and the variants it lists.</summary>
+    public string VariantMode = "";
+    public List<AxisNode> Axes = new List<AxisNode>();
+    public List<VariantRef> VariantRefs = new List<VariantRef>();
 
     /// <summary>The targets the shader was compiled for (<c>SpirV</c>, <c>Msl</c>, <c>Wgsl</c>).</summary>
     public HashSet<string> Targets = new HashSet<string>(StringComparer.Ordinal);
@@ -244,6 +270,18 @@ internal sealed class ShaderFile
                 case "blob":
                     ReadBlob(r);
                     break;
+                case "variantof":
+                    VariantKey = Str(r, "key");
+                    break;
+                case "variantset":
+                    VariantMode = Str(r, "mode");
+                    break;
+                case "axis":
+                    ReadAxis(r);
+                    break;
+                case "variant":
+                    ReadVariantRef(r);
+                    break;
                 case "resource":
                     pos = ReadResource(recs, pos, r);
                     break;
@@ -259,6 +297,36 @@ internal sealed class ShaderFile
         }
 
         return this;
+    }
+
+    private void ReadAxis(Rec r)
+    {
+        var axis = new AxisNode { Name = Str(r, "name"), IsFlag = Str(r, "kind") == "flag" };
+        if (!axis.IsFlag)
+        {
+            axis.Values.AddRange(Str(r, "values").Split(','));
+        }
+
+        Axes.Add(axis);
+    }
+
+    private void ReadVariantRef(Rec r)
+    {
+        var v = new VariantRef { Index = U(r, "index"), Key = Str(r, "key"), Defines = r.Attrs.TryGetValue("defines", out var d) ? d : "" };
+        if (r.Attrs.TryGetValue("name", out var name))
+        {
+            v.Name = name;
+        }
+
+        if (r.Attrs.TryGetValue("ordinals", out var ords) && ords.Length > 0)
+        {
+            foreach (string o in ords.Split(','))
+            {
+                v.Ordinals.Add(Num(r, o));
+            }
+        }
+
+        VariantRefs.Add(v);
     }
 
     private void ReadBlob(Rec r)

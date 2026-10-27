@@ -20,7 +20,7 @@ namespace OneShader.Build.Tasks;
 /// MSBuild prints <c>path(line,col): error OSHxxxx: message</c> and the build fails on errors.
 /// </summary>
 /// <remarks>Codes OSH0900 to OSH0949 belong to this task.</remarks>
-public sealed class CompileShaders : Task, ICancelableTask, IDisposable
+public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
 {
     private const string InternalErrorCode = "OSH0900";
     private const string BadMetadataCode = "OSH0901";
@@ -28,6 +28,8 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
     private const string BadTargetCode = "OSH0903";
 
     private readonly CancellationTokenSource _cancel = new CancellationTokenSource();
+    private int _compiled;
+    private int _upToDate;
 
     /// <summary>The shaders to compile. Metadata: <c>EntryPoints</c> (<c>Name:Stage;...</c>), <c>Defines</c> (<c>A;B=2</c>), <c>IncludeDirectories</c>, <c>Namespace</c>, <c>ClassName</c>, <c>Targets</c> (<c>SpirV;Msl;Wgsl</c>, overrides <see cref="DefaultTargets"/>).</summary>
     [Required]
@@ -57,6 +59,12 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
     [Output]
     public ITaskItem[] GeneratedFiles { get; set; } = [];
 
+    /// <summary>How many files (shaders or variants) the last <see cref="Execute"/> compiled; the others were up to date.</summary>
+    public int CompiledCount => _compiled;
+
+    /// <summary>How many files the last <see cref="Execute"/> found up to date and left alone.</summary>
+    public int UpToDateCount => _upToDate;
+
     /// <inheritdoc />
     public void Cancel() => _cancel.Cancel();
 
@@ -69,8 +77,9 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
         string projectDir = Path.GetFullPath(ProjectDirectory);
         string outDir = Path.GetFullPath(OutputDirectory, projectDir);
         Directory.CreateDirectory(outDir);
-        var outputs = new List<ITaskItem>();
-        var expected = new HashSet<string>(StringComparer.Ordinal);
+
+        // Phase 1 (sequential): read each item's metadata and expand its variants into jobs.
+        var groups = new List<JobGroup>();
         foreach (var item in Shaders)
         {
             if (_cancel.IsCancellationRequested)
@@ -78,31 +87,89 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
                 return false;
             }
 
-            string? output;
             try
             {
-                output = CompileOne(item, projectDir, outDir);
+                Prepare(item, projectDir, outDir, groups);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                // Anything unexpected outside the compiler call (rendering the output, hashing, file access) still must not
-                // surface as an MSBuild task crash with a stack trace.
                 string file = Path.GetFullPath(item.GetMetadata("FullPath").Length > 0 ? item.GetMetadata("FullPath") : item.ItemSpec, projectDir);
-                Log.LogError(null, InternalErrorCode, null, file, 1, 1, 0, 0, "Internal error while building this shader (" + ex.GetType().Name + ": " + ex.Message.Replace('\r', ' ').Replace('\n', ' ') + "). This is a bug in OneShader; please report it with this shader.");
-                output = null;
+                Log.LogError(null, InternalErrorCode, null, file, 1, 1, 0, 0, "Internal error while reading this shader's settings (" + ex.GetType().Name + ": " + OneLine(ex.Message) + "). This is a bug in OneShader; please report it with this shader.");
+            }
+        }
+
+        if (!CheckVariantNames())
+        {
+            return false;
+        }
+
+        // Phase 2 (parallel when there is more than one job): compile. Jobs do not log; they collect messages.
+        var jobs = new List<Job>();
+        foreach (var g in groups)
+        {
+            jobs.AddRange(g.Jobs);
+        }
+
+        try
+        {
+            if (jobs.Count == 1)
+            {
+                RunJob(jobs[0], projectDir);
+            }
+            else if (jobs.Count > 1)
+            {
+                var po = new System.Threading.Tasks.ParallelOptions { CancellationToken = _cancel.Token, MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount, 1, 8) };
+                System.Threading.Tasks.Parallel.ForEach(jobs, po, job => RunJob(job, projectDir));
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+
+        // Phase 3 (sequential, in item order): report, then list the outputs.
+        var outputs = new List<ITaskItem>();
+        var expected = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var g in groups)
+        {
+            Report(g);
+            bool ok = true;
+            foreach (var job in g.Jobs)
+            {
+                ok &= job.Output is not null;
             }
 
-            if (output is not null)
+            if (g.ManifestPath is not null)
             {
-                outputs.Add(new TaskItem(output));
-                expected.Add(output);
+                if (ok)
+                {
+                    WriteIfChanged(g.ManifestPath, g.ManifestText);
+                    outputs.Add(new TaskItem(g.ManifestPath));
+                    expected.Add(g.ManifestPath);
+                }
+                else
+                {
+                    TryDelete(g.ManifestPath);
+                }
+            }
+
+            foreach (var job in g.Jobs)
+            {
+                if (job.Output is not null)
+                {
+                    outputs.Add(new TaskItem(job.Output));
+                    expected.Add(job.Output);
+                }
             }
         }
 
         RemoveStale(outDir, expected);
         GeneratedFiles = [.. outputs];
+        Log.LogMessage(MessageImportance.Low, "OneShader: {0} compiled, {1} up to date.", _compiled, _upToDate);
         return !Log.HasLoggedErrors;
     }
+
+    private static string OneLine(string s) => s.Replace('\r', ' ').Replace('\n', ' ');
 
     private static void RemoveStale(string outDir, HashSet<string> keep)
     {
@@ -127,7 +194,49 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
         }
     }
 
-    private string? CompileOne(ITaskItem item, string projectDir, string outDir)
+    /// <summary>One message a job produced, kept as data so jobs can run on several threads and be reported in a fixed order.</summary>
+    private readonly record struct Msg(int Severity, string Code, string File, int Line, int Column, string Text);
+
+    private const int SevError = 0;
+    private const int SevWarning = 1;
+    private const int SevInfo = 2;
+
+    /// <summary>One compile: a whole shader file, or one variant of it.</summary>
+    private sealed class Job
+    {
+        public string Full = "";
+        public string Relative = "";
+        public string OutputPath = "";
+        public string Namespace = "";
+        public string ClassName = "";
+        public List<KeyValuePair<string, string?>> Defines = [];
+        public List<string> IncludeDirs = [];
+        public List<EntryPointRequest> Entries = [];
+        public List<CompileTarget> Targets = [];
+
+        /// <summary>Empty for a plain shader; otherwise the variant's define set, for messages.</summary>
+        public string Label = "";
+
+        /// <summary>Empty for a plain shader; otherwise the id that ties the variant's file to its manifest.</summary>
+        public string VariantKey = "";
+
+        public List<Msg> Messages = [];
+
+        /// <summary>The output file when the job succeeded.</summary>
+        public string? Output;
+    }
+
+    /// <summary>The jobs of one <c>OneShader</c> item, with the manifest that lists them when the item has variants.</summary>
+    private sealed class JobGroup
+    {
+        public List<Job> Jobs = [];
+        public string? ManifestPath;
+        public string ManifestText = "";
+        public string Full = "";
+        public int VariantCount;
+    }
+
+    private void Prepare(ITaskItem item, string projectDir, string outDir, List<JobGroup> groups)
     {
         string full = Path.GetFullPath(item.GetMetadata("FullPath").Length > 0 ? item.GetMetadata("FullPath") : item.ItemSpec, projectDir);
         string relative = Relative(projectDir, full);
@@ -137,14 +246,178 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
 
         if (!TryOptions(item, full, projectDir, out var defines, out var includeDirs, out var entries, out var targets))
         {
-            return null;
+            return;
         }
 
-        string optionsHash = HashOptions(relative, ns, className, defines, includeDirs, entries, targets);
-        if (TryReuse(outputPath, optionsHash))
+        var group = new JobGroup { Full = full };
+        var plan = PlanVariants(item, full, relative, projectDir);
+        if (plan is null)
         {
+            return;
+        }
+
+        if (!plan.HasVariants)
+        {
+            group.Jobs.Add(new Job
+            {
+                Full = full, Relative = relative, OutputPath = outputPath, Namespace = ns, ClassName = className,
+                Defines = defines, IncludeDirs = includeDirs, Entries = entries, Targets = targets,
+            });
+            groups.Add(group);
+            return;
+        }
+
+        // Variants: one output file per variant under <file>.variants/, named by a hash of the define set so that adding a value
+        // to an axis leaves the other variants' files (and their cached compiles) alone, plus one manifest at the usual path.
+        string variantDir = outputPath[..^".oneshader".Length] + ".variants";
+        var manifest = new StringBuilder("oneshader-reflection 1\n");
+        manifest.Append("source name=").Append(Quote(relative)).Append('\n');
+        manifest.Append("generate namespace=").Append(Quote(ns)).Append(" class=").Append(Quote(className)).Append('\n');
+        manifest.Append("variantset mode=").Append(plan.Named ? "names" : "axes").Append(" count=").Append(plan.Variants.Count.ToString(CultureInfo.InvariantCulture)).Append('\n');
+        foreach (var axis in plan.Axes)
+        {
+            manifest.Append("axis name=").Append(Quote(axis.Name)).Append(" kind=").Append(axis.IsFlag ? "flag" : "values");
+            if (!axis.IsFlag)
+            {
+                manifest.Append(" values=").Append(Quote(string.Join(",", axis.Values)));
+            }
+
+            manifest.Append('\n');
+        }
+
+        for (int i = 0; i < plan.Variants.Count; i++)
+        {
+            var v = plan.Variants[i];
+            var jobDefines = new List<KeyValuePair<string, string?>>(defines);
+            jobDefines.AddRange(v.Defines);
+            group.Jobs.Add(new Job
+            {
+                Full = full, Relative = relative, Namespace = ns, ClassName = className,
+                OutputPath = Path.Combine(variantDir, v.Key + ".oneshader"),
+                Defines = jobDefines, IncludeDirs = includeDirs, Entries = entries, Targets = targets,
+                Label = v.Label, VariantKey = v.Key,
+            });
+            manifest.Append("variant index=").Append(i.ToString(CultureInfo.InvariantCulture)).Append(" key=").Append(v.Key);
+            if (plan.Named)
+            {
+                manifest.Append(" name=").Append(Quote(v.Name));
+            }
+            else
+            {
+                manifest.Append(" ordinals=").Append(Quote(string.Join(",", v.Ordinals)));
+            }
+
+            manifest.Append(" defines=").Append(Quote(v.DefinesText)).Append('\n');
+        }
+
+        group.ManifestPath = outputPath;
+        group.ManifestText = manifest.ToString();
+        group.VariantCount = plan.Variants.Count;
+        groups.Add(group);
+    }
+
+    private void RunJob(Job job, string projectDir)
+    {
+        try
+        {
+            job.Output = Compile(job, projectDir);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Anything unexpected outside the compiler call (rendering the output, hashing, file access) still must not
+            // surface as an MSBuild task crash with a stack trace.
+            job.Messages.Add(new Msg(SevError, InternalErrorCode, job.Full, 1, 1, "Internal error while building this shader (" + ex.GetType().Name + ": " + OneLine(ex.Message) + "). This is a bug in OneShader; please report it with this shader."));
+            job.Output = null;
+        }
+    }
+
+    /// <summary>Logs a group's messages. The variants of one shader often fail the same way; the same message is reported once, naming the variants it occurred in.</summary>
+    private void Report(JobGroup group)
+    {
+        if (group.Jobs.Count == 1 && group.Jobs[0].Label.Length == 0)
+        {
+            foreach (var m in group.Jobs[0].Messages)
+            {
+                Emit(m);
+            }
+
+            return;
+        }
+
+        var order = new List<KeyValuePair<Msg, List<string>>>();
+        var index = new Dictionary<Msg, int>();
+        foreach (var job in group.Jobs)
+        {
+            foreach (var m in job.Messages)
+            {
+                if (index.TryGetValue(m, out int at))
+                {
+                    order[at].Value.Add(job.Label);
+                }
+                else
+                {
+                    index[m] = order.Count;
+                    order.Add(new KeyValuePair<Msg, List<string>>(m, [job.Label]));
+                }
+            }
+        }
+
+        foreach (var pair in order)
+        {
+            var labels = pair.Value;
+            string suffix;
+            if (group.Jobs.Count > 1 && labels.Count == group.Jobs.Count)
+            {
+                suffix = " (in all " + labels.Count.ToString(CultureInfo.InvariantCulture) + " variants)";
+            }
+            else if (labels.Count == 1)
+            {
+                suffix = " (variant " + labels[0] + ")";
+            }
+            else
+            {
+                const int Shown = 3;
+                string more = labels.Count > Shown ? "; and " + (labels.Count - Shown).ToString(CultureInfo.InvariantCulture) + " more" : "";
+                suffix = " (variants " + string.Join("; ", labels.GetRange(0, Math.Min(Shown, labels.Count))) + more + ")";
+            }
+
+            Emit(pair.Key with { Text = pair.Key.Text + suffix });
+        }
+    }
+
+    private void Emit(Msg m)
+    {
+        switch (m.Severity)
+        {
+            case SevError:
+                Log.LogError(null, m.Code, null, m.File, m.Line, m.Column, 0, 0, m.Text);
+                break;
+            case SevWarning:
+                Log.LogWarning(null, m.Code, null, m.File, m.Line, m.Column, 0, 0, m.Text);
+                break;
+            default:
+                Log.LogMessage(MessageImportance.Normal, "{0}({1},{2}): info {3}: {4}", m.File, m.Line, m.Column, m.Code, m.Text);
+                break;
+        }
+    }
+
+    private string? Compile(Job job, string projectDir)
+    {
+        string full = job.Full;
+        string relative = job.Relative;
+        string outputPath = job.OutputPath;
+        string optionsHash = HashOptions(relative, job.Namespace, job.ClassName, job.Defines, job.IncludeDirs, job.Entries, job.Targets);
+        if (TryReuse(outputPath, optionsHash, job))
+        {
+            Interlocked.Increment(ref _upToDate);
             return outputPath;
         }
+
+        Interlocked.Increment(ref _compiled);
 
         string text;
         try
@@ -153,15 +426,16 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            Log.LogError(null, UnreadableCode, null, full, 0, 0, 0, 0, "Cannot read the shader: " + ex.Message);
+            job.Messages.Add(new Msg(SevError, UnreadableCode, full, 0, 0, "Cannot read the shader: " + ex.Message));
             return null;
         }
 
+        var includeDirs = job.IncludeDirs;
         var options = new CompileOptions
         {
-            Defines = defines,
-            EntryPoints = entries,
-            Targets = targets,
+            Defines = job.Defines,
+            EntryPoints = job.Entries,
+            Targets = job.Targets,
             IncludeResolver = (requested, including, isSystem) => ResolveInclude(requested, including, isSystem, projectDir, includeDirs),
         };
 
@@ -172,12 +446,12 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
         }
         catch (OperationCanceledException)
         {
-            return null;
+            throw;
         }
         catch (Exception ex)
         {
             // A compiler bug must not take the build down with a stack trace nobody can read.
-            Log.LogError(null, InternalErrorCode, null, full, 1, 1, 0, 0, "Internal compiler error (" + ex.GetType().Name + ": " + ex.Message + "). This is a bug in OneShader; please report it with this shader.");
+            job.Messages.Add(new Msg(SevError, InternalErrorCode, full, 1, 1, "Internal compiler error (" + ex.GetType().Name + ": " + ex.Message + "). This is a bug in OneShader; please report it with this shader."));
             return null;
         }
 
@@ -191,7 +465,7 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
         var warnings = new List<Diagnostic>();
         foreach (var d in result.Diagnostics)
         {
-            Report(d, projectDir);
+            job.Messages.Add(ToMsg(d, projectDir));
             if (d.Severity != DiagnosticSeverity.Error)
             {
                 warnings.Add(d);
@@ -204,13 +478,13 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
             TryDelete(outputPath);
             if (result.Success)
             {
-                Log.LogError(null, InternalErrorCode, null, full, 1, 1, 0, 0, "Internal compiler error: the compile succeeded but produced no reflection. This is a bug in OneShader; please report it with this shader.");
+                job.Messages.Add(new Msg(SevError, InternalErrorCode, full, 1, 1, "Internal compiler error: the compile succeeded but produced no reflection. This is a bug in OneShader; please report it with this shader."));
             }
 
             return null;
         }
 
-        string content = Render(result.Reflection, result.Blobs, full, relative, ns, className, optionsHash, deps, warnings, projectDir);
+        string content = Render(result.Reflection, result.Blobs, full, relative, job.Namespace, job.ClassName, optionsHash, deps, warnings, projectDir, job.VariantKey);
         WriteIfChanged(outputPath, content);
         return outputPath;
     }
@@ -225,10 +499,16 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
         string optionsHash,
         SortedSet<string> deps,
         List<Diagnostic> warnings,
-        string projectDir)
+        string projectDir,
+        string variantKey = "")
     {
         var sb = new StringBuilder(ReflectionFormat.Write(reflection));
         sb.Append("generate namespace=").Append(Quote(ns)).Append(" class=").Append(Quote(className)).Append('\n');
+        if (variantKey.Length > 0)
+        {
+            sb.Append("variantof key=").Append(variantKey).Append('\n');
+        }
+
         foreach (var b in blobs)
         {
             sb.Append("blob entry=").Append(Quote(b.EntryPoint)).Append(" target=").Append(b.Target);
@@ -306,7 +586,7 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
     /// input file still has the content it had then (compared by hash, not by file time); its
     /// stored warnings are then reported again.
     /// </summary>
-    private bool TryReuse(string outputPath, string optionsHash)
+    private bool TryReuse(string outputPath, string optionsHash, Job job)
     {
         if (!File.Exists(outputPath))
         {
@@ -354,13 +634,13 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
 
         foreach (string line in replay)
         {
-            ReplayDiagnostic(line, projectDir);
+            job.Messages.Add(ReplayedMessage(line, projectDir));
         }
 
         return true;
     }
 
-    private void ReplayDiagnostic(string line, string projectDir)
+    private static Msg ReplayedMessage(string line, string projectDir)
     {
         var attrs = ParseAttrs(line);
         attrs.TryGetValue("code", out string? code);
@@ -369,33 +649,17 @@ public sealed class CompileShaders : Task, ICancelableTask, IDisposable
         int.TryParse(attrs.TryGetValue("line", out string? l) ? l : "0", NumberStyles.None, CultureInfo.InvariantCulture, out int ln);
         int.TryParse(attrs.TryGetValue("column", out string? c) ? c : "0", NumberStyles.None, CultureInfo.InvariantCulture, out int col);
         string path = string.IsNullOrEmpty(file) ? "" : Path.GetFullPath(file!, projectDir);
-        if (attrs.TryGetValue("severity", out string? sev) && sev == "Info")
-        {
-            Log.LogMessage(MessageImportance.Normal, "{0}({1},{2}): info {3}: {4}", path, ln, col, code, message);
-            return;
-        }
-
-        Log.LogWarning(null, code, null, path, ln, col, 0, 0, message ?? "");
+        bool info = attrs.TryGetValue("severity", out string? sev) && sev == "Info";
+        return new Msg(info ? SevInfo : SevWarning, code ?? "", path, ln, col, message ?? "");
     }
 
-    private void Report(Diagnostic d, string projectDir)
+    private static Msg ToMsg(Diagnostic d, string projectDir)
     {
         string path = d.Span.IsKnown ? Path.GetFullPath(d.Span.Path, projectDir) : "";
         int line = d.Span.IsKnown ? d.Span.Line : 0;
         int col = d.Span.IsKnown ? Math.Max(d.Span.Column, 1) : 0;
-        string message = d.Message.Replace('\r', ' ').Replace('\n', ' ');
-        switch (d.Severity)
-        {
-            case DiagnosticSeverity.Error:
-                Log.LogError(null, d.Code, null, path, line, col, 0, 0, message);
-                break;
-            case DiagnosticSeverity.Warning:
-                Log.LogWarning(null, d.Code, null, path, line, col, 0, 0, message);
-                break;
-            default:
-                Log.LogMessage(MessageImportance.Normal, "{0}({1},{2}): info {3}: {4}", path, line, col, d.Code, message);
-                break;
-        }
+        int severity = d.Severity switch { DiagnosticSeverity.Error => SevError, DiagnosticSeverity.Warning => SevWarning, _ => SevInfo };
+        return new Msg(severity, d.Code, path, line, col, OneLine(d.Message));
     }
 
     private bool TryOptions(
