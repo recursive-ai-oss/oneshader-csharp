@@ -220,7 +220,8 @@ variants are not an error: read them from `Variant.Bindings` and `Variant.Pipeli
 Each entry-point class has `Layout`, an `OneShader.Layouts.EntryLayout` with the resources that entry point uses (with its own stage
 only), its push-constant block, its vertex input and its thread-group size, with the slot on every selected target. The file's class has
 `Pipeline` when the file has exactly one vertex and one pixel entry point, or exactly one compute entry point, and no cbuffer, struct or
-entry point of that name. For other combinations, merge entry points yourself with `PipelineLayout.TryCreate`.
+entry point of that name. For other combinations, merge entry points yourself with `PipelineLayout.TryCreate`, or with
+`PipelineLayout.TryCreateUnion` when one layout must serve many entry points, several per stage.
 
 ```csharp
 public static class VSMain { public static EntryLayout Layout { get; } /* ... */ }
