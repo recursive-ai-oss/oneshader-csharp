@@ -52,6 +52,16 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
     /// <summary>"true" makes <c>half</c>, <c>min16*</c> and the <c>int16_t</c> family native 16-bit types in every shader (DXC's <c>-enable-16bit-types</c>); the item's <c>Enable16BitTypes</c> metadata overrides it.</summary>
     public string DefaultEnable16BitTypes { get; set; } = "";
 
+    /// <summary>
+    /// Source-level debug information in the embedded SPIR-V and MSL: <c>true</c> or <c>full</c> (NonSemantic.Shader.DebugInfo.100, for RenderDoc and Nsight),
+    /// <c>lines</c> (OpSource and OpLine) or <c>false</c>/empty (none, the default). The item's <c>DebugInfo</c> metadata overrides it.
+    /// File paths in the output are relative to the project directory, so the blobs do not depend on where the project is checked out.
+    /// </summary>
+    public string DefaultDebugInfo { get; set; } = "";
+
+    /// <summary>"false" compiles without the optimizer, which gives one-to-one stepping with every local visible in a debugger. Default true; the item's <c>Optimize</c> metadata overrides it.</summary>
+    public string DefaultOptimize { get; set; } = "";
+
     /// <summary>Semicolon-separated definitions applied to every shader (<c>NAME</c> or <c>NAME=value</c>).</summary>
     public string DefaultDefines { get; set; } = "";
 
@@ -217,6 +227,8 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
         public List<EntryPointRequest> Entries = [];
         public List<CompileTarget> Targets = [];
         public bool Enable16BitTypes;
+        public DebugInfoLevel DebugInfo;
+        public bool Optimize = true;
 
         /// <summary>Empty for a plain shader; otherwise the variant's define set, for messages.</summary>
         public string Label = "";
@@ -258,6 +270,11 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
             return;
         }
 
+        if (!TryDebugInfo(item, full, out var debugInfo) || !TryOptimize(item, full, out bool optimize))
+        {
+            return;
+        }
+
         var group = new JobGroup { Full = full };
         var plan = PlanVariants(item, full, relative, projectDir);
         if (plan is null)
@@ -271,6 +288,7 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
             {
                 Full = full, Relative = relative, OutputPath = outputPath, Namespace = ns, ClassName = className,
                 Defines = defines, IncludeDirs = includeDirs, Entries = entries, Targets = targets, Enable16BitTypes = enable16,
+                DebugInfo = debugInfo, Optimize = optimize,
             });
             groups.Add(group);
             return;
@@ -304,6 +322,7 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
                 Full = full, Relative = relative, Namespace = ns, ClassName = className,
                 OutputPath = Path.Combine(variantDir, v.Key + ".oneshader"),
                 Defines = jobDefines, IncludeDirs = includeDirs, Entries = entries, Targets = targets, Enable16BitTypes = enable16,
+                DebugInfo = debugInfo, Optimize = optimize,
                 Label = v.Label, VariantKey = v.Key,
             });
             manifest.Append("variant index=").Append(i.ToString(CultureInfo.InvariantCulture)).Append(" key=").Append(v.Key);
@@ -419,7 +438,7 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
         string full = job.Full;
         string relative = job.Relative;
         string outputPath = job.OutputPath;
-        string optionsHash = HashOptions(relative, job.Namespace, job.ClassName, job.Defines, job.IncludeDirs, job.Entries, job.Targets, job.Enable16BitTypes);
+        string optionsHash = HashOptions(relative, job.Namespace, job.ClassName, job.Defines, job.IncludeDirs, job.Entries, job.Targets, job.Enable16BitTypes, job.DebugInfo, job.Optimize);
         if (TryReuse(outputPath, optionsHash, job))
         {
             Interlocked.Increment(ref _upToDate);
@@ -446,6 +465,9 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
             EntryPoints = job.Entries,
             Targets = job.Targets,
             Enable16BitTypes = job.Enable16BitTypes,
+            DebugInfo = job.DebugInfo,
+            DebugSourceRoot = projectDir,
+            Optimize = job.Optimize,
             IncludeResolver = (requested, including, isSystem) => ResolveInclude(requested, including, isSystem, projectDir, includeDirs),
         };
 
@@ -790,7 +812,9 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
         List<string> includeDirs,
         List<EntryPointRequest> entries,
         IReadOnlyList<CompileTarget>? targets = null,
-        bool enable16BitTypes = false)
+        bool enable16BitTypes = false,
+        DebugInfoLevel debugInfo = DebugInfoLevel.None,
+        bool optimize = true)
     {
         var sb = new StringBuilder();
 
@@ -821,6 +845,16 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
             sb.Append("16\n");
         }
 
+        if (debugInfo != DebugInfoLevel.None)
+        {
+            sb.Append("G ").Append(debugInfo).Append('\n');
+        }
+
+        if (!optimize)
+        {
+            sb.Append("O0\n");
+        }
+
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
@@ -841,6 +875,50 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
         }
 
         Log.LogError(null, BadMetadataCode, null, full, 0, 0, 0, 0, "OneShaderEnable16BitTypes / Enable16BitTypes is '" + text + "'. Use true or false.");
+        return false;
+    }
+
+    private bool TryDebugInfo(ITaskItem item, string full, out DebugInfoLevel value)
+    {
+        string text = Meta(item, "DebugInfo", DefaultDebugInfo).Trim();
+        value = DebugInfoLevel.None;
+        if (text.Length == 0 || text.Equals("false", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (text.Equals("true", StringComparison.OrdinalIgnoreCase) || text.Equals("full", StringComparison.OrdinalIgnoreCase))
+        {
+            value = DebugInfoLevel.Full;
+            return true;
+        }
+
+        if (text.Equals("lines", StringComparison.OrdinalIgnoreCase))
+        {
+            value = DebugInfoLevel.Lines;
+            return true;
+        }
+
+        Log.LogError(null, BadMetadataCode, null, full, 0, 0, 0, 0, "OneShaderDebugInfo / DebugInfo is '" + text + "'. Use true, full, lines or false.");
+        return false;
+    }
+
+    private bool TryOptimize(ITaskItem item, string full, out bool value)
+    {
+        string text = Meta(item, "Optimize", DefaultOptimize).Trim();
+        value = true;
+        if (text.Length == 0 || text.Equals("true", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (text.Equals("false", StringComparison.OrdinalIgnoreCase))
+        {
+            value = false;
+            return true;
+        }
+
+        Log.LogError(null, BadMetadataCode, null, full, 0, 0, 0, 0, "OneShaderOptimize / Optimize is '" + text + "'. Use true or false.");
         return false;
     }
 

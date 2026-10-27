@@ -45,7 +45,7 @@ internal sealed partial class MslEmitter
             return string.Empty;
         }
 
-        string file = DebugPaths.Normalize(s.Path, _o.DebugSourceRoot).Replace("\\", "/", StringComparison.Ordinal).Replace("\"", "%22", StringComparison.Ordinal);
+        string file = DebugPaths.Normalize(s.Path, _o.DebugSourceRoot).Replace("\\", "/", StringComparison.Ordinal).Replace("\"", "%22", StringComparison.Ordinal).Replace('\n', '_').Replace('\r', '_');
         return "#line " + s.Line.ToString(CultureInfo.InvariantCulture) + " \"" + file + "\"\n";
     }
 

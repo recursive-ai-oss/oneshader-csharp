@@ -729,13 +729,15 @@ internal sealed partial class SpirvEmitter
 
         foreach (var g in globals)
         {
-            if (g.GlobalKind is not (GlobalKind.Private or GlobalKind.Workgroup) || !g.Span.IsKnown || !_globalIds.TryGetValue(g, out uint id))
+            if (g.GlobalKind is not (GlobalKind.Private or GlobalKind.Workgroup or GlobalKind.Resource) || !g.Span.IsKnown || !_globalIds.TryGetValue(g, out uint id))
             {
                 continue;
             }
 
+            // A constant buffer is shown as the struct it holds; other resources as opaque types named after themselves.
+            var shown = g.ValueType is ResourceType { Element: StructType element, ResourceKind: ResourceTypeKind.ConstantBuffer } ? element : g.ValueType;
             var at = g.Span;
-            Dbg(DbgGlobalVariable, Str(g.Name ?? ""), DbgType(g.ValueType), SourceOf(at.Path).DebugSource, Num(at.Line), Num(at.Column), _dbgCu, Str(g.Name ?? ""), id, UIntConst(FlagPublic));
+            Dbg(DbgGlobalVariable, Str(g.Name ?? ""), DbgType(shown), SourceOf(at.Path).DebugSource, Num(at.Line), Num(at.Column), _dbgCu, Str(g.Name ?? ""), id, UIntConst(FlagPublic));
         }
     }
 

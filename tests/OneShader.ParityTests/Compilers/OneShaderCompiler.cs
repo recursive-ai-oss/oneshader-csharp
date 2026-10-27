@@ -5,6 +5,17 @@ using System.Linq;
 
 namespace OneShader.ParityTests;
 
+/// <summary>Reads ONESHADER_DEBUG_INFO (none, lines or full) so a parity run can compile every shader with debug information and prove the results do not change.</summary>
+public static class ParityDebugInfo
+{
+    public static DebugInfoLevel Level { get; } = Environment.GetEnvironmentVariable("ONESHADER_DEBUG_INFO")?.ToUpperInvariant() switch
+    {
+        "LINES" => DebugInfoLevel.Lines,
+        "FULL" => DebugInfoLevel.Full,
+        _ => DebugInfoLevel.None,
+    };
+}
+
 /// <summary>This repository's own compiler, the candidate in every parity comparison.</summary>
 public static class OneShaderCompiler
 {
@@ -38,6 +49,7 @@ public static class OneShaderCompiler
             IncludeDirectories = [Path.GetDirectoryName(request.SourcePath)!],
             EntryPoints = [new EntryPointRequest(request.Entry, stage)],
             Optimize = optimize,
+            DebugInfo = ParityDebugInfo.Level,
             Enable16BitTypes = SizedTypes.Enabled(request.Defines),
         };
         var result = ShaderCompiler.Compile(File.ReadAllText(request.SourcePath), request.SourcePath, options);
