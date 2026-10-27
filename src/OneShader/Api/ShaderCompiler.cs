@@ -35,6 +35,11 @@ public sealed record ResolvedInclude(string Path, string Text);
 /// </summary>
 public delegate ResolvedInclude? IncludeResolver(string requested, string includingFile, bool isSystemInclude);
 
+/// <summary>A descriptor set and binding number for a descriptor heap.</summary>
+/// <param name="Set">The descriptor set.</param>
+/// <param name="Binding">The binding number in that set.</param>
+public readonly record struct HeapBinding(uint Set, uint Binding);
+
 /// <summary>An entry point to compile, when not discovered from <c>[shader("...")]</c> attributes.</summary>
 /// <param name="Name">The function name.</param>
 /// <param name="Stage">The stage to compile it for.</param>
@@ -105,6 +110,15 @@ public sealed class CompileOptions
     /// A value that does not fit the constant's type is error OSH0335; a name the shader does not declare is warning OSH0335.
     /// </summary>
     public IReadOnlyList<KeyValuePair<string, double>> SpecializationOverrides { get; init; } = [];
+
+    /// <summary>
+    /// Where <c>ResourceDescriptorHeap</c> lives in Vulkan, as DXC's <c>-fvk-bind-resource-heap</c>. Default null: the first binding of
+    /// set 0 that no other resource uses, assigned after all other resources.
+    /// </summary>
+    public HeapBinding? ResourceHeapBinding { get; init; }
+
+    /// <summary>Where <c>SamplerDescriptorHeap</c> lives in Vulkan, as DXC's <c>-fvk-bind-sampler-heap</c>. Default null: the next free binding of set 0 after the resource heap.</summary>
+    public HeapBinding? SamplerHeapBinding { get; init; }
 
     /// <summary>
     /// Source-level debug information in the output (see <see cref="DebugInfoLevel"/>). Default <see cref="DebugInfoLevel.None"/>, which leaves every blob

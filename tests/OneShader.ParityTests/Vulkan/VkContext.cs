@@ -29,6 +29,9 @@ public sealed unsafe partial class VkContext : IDisposable
 
     internal Instance Instance { get; private set; }
 
+    /// <summary>True when the device has VK_EXT_mutable_descriptor_type (enabled on the device).</summary>
+    internal bool MutableDescriptors { get; private set; }
+
     internal PhysicalDevice Physical { get; private set; }
 
     internal Device Device { get; private set; }
@@ -279,11 +282,45 @@ public sealed unsafe partial class VkContext : IDisposable
             SType = StructureType.PhysicalDeviceVulkan12Features,
             ShaderSampledImageArrayNonUniformIndexing = v12Query.ShaderSampledImageArrayNonUniformIndexing,
             ShaderStorageBufferArrayNonUniformIndexing = v12Query.ShaderStorageBufferArrayNonUniformIndexing,
+            ShaderUniformBufferArrayNonUniformIndexing = v12Query.ShaderUniformBufferArrayNonUniformIndexing,
+            ShaderStorageImageArrayNonUniformIndexing = v12Query.ShaderStorageImageArrayNonUniformIndexing,
+            // Bindless cases: unbounded arrays, partially bound and update-after-bind bindings with a variable count.
+            RuntimeDescriptorArray = v12Query.RuntimeDescriptorArray,
+            DescriptorBindingPartiallyBound = v12Query.DescriptorBindingPartiallyBound,
+            DescriptorBindingVariableDescriptorCount = v12Query.DescriptorBindingVariableDescriptorCount,
+            DescriptorBindingSampledImageUpdateAfterBind = v12Query.DescriptorBindingSampledImageUpdateAfterBind,
+            DescriptorBindingStorageImageUpdateAfterBind = v12Query.DescriptorBindingStorageImageUpdateAfterBind,
+            DescriptorBindingStorageBufferUpdateAfterBind = v12Query.DescriptorBindingStorageBufferUpdateAfterBind,
+            DescriptorBindingUniformBufferUpdateAfterBind = v12Query.DescriptorBindingUniformBufferUpdateAfterBind,
+            DescriptorIndexing = v12Query.DescriptorIndexing,
             // Sized-type cases: 16-bit arithmetic and 64-bit atomics, enabled whenever the device has them.
             ShaderFloat16 = v12Query.ShaderFloat16,
             ShaderBufferInt64Atomics = v12Query.ShaderBufferInt64Atomics,
             ShaderSharedInt64Atomics = v12Query.ShaderSharedInt64Atomics,
         };
+        // Descriptor heaps read as several kinds of resource share one binding: that needs VK_EXT_mutable_descriptor_type.
+        uint extCount = 0;
+        Api.EnumerateDeviceExtensionProperties(Physical, (byte*)null, ref extCount, null);
+        var exts = new ExtensionProperties[extCount];
+        fixed (ExtensionProperties* pe = exts)
+        {
+            Api.EnumerateDeviceExtensionProperties(Physical, (byte*)null, ref extCount, pe);
+        }
+
+        foreach (var e in exts)
+        {
+            if (SilkMarshal.PtrToString((nint)e.ExtensionName) == "VK_EXT_mutable_descriptor_type")
+            {
+                MutableDescriptors = true;
+            }
+        }
+
+        var mutableFeatures = new PhysicalDeviceMutableDescriptorTypeFeaturesEXT { SType = StructureType.PhysicalDeviceMutableDescriptorTypeFeaturesExt, MutableDescriptorType = true };
+        if (MutableDescriptors)
+        {
+            v12.PNext = &mutableFeatures;
+        }
+
         var v11 = new PhysicalDeviceVulkan11Features
         {
             SType = StructureType.PhysicalDeviceVulkan11Features,
@@ -308,15 +345,20 @@ public sealed unsafe partial class VkContext : IDisposable
             ShaderInt64 = query.Features.ShaderInt64,
             ShaderFloat64 = query.Features.ShaderFloat64,
         };
+        nint mutableName = SilkMarshal.StringToPtr("VK_EXT_mutable_descriptor_type");
+        byte** deviceExts = stackalloc byte*[] { (byte*)mutableName };
         var dci = new DeviceCreateInfo
         {
             SType = StructureType.DeviceCreateInfo,
             PNext = &v11,
+            EnabledExtensionCount = MutableDescriptors ? 1u : 0u,
+            PpEnabledExtensionNames = MutableDescriptors ? deviceExts : null,
             PEnabledFeatures = &features,
             QueueCreateInfoCount = 1,
             PQueueCreateInfos = &qci,
         };
         var result = Api.CreateDevice(Physical, &dci, null, out Device device);
+        SilkMarshal.Free(mutableName);
         if (result != Result.Success)
         {
             return "vkCreateDevice failed: " + result;

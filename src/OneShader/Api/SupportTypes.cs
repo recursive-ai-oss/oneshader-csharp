@@ -161,4 +161,7 @@ public readonly record struct ResourceBinding(
 {
     /// <summary>The value of <see cref="MetalIndex"/> when Metal was not a build target.</summary>
     public const uint NoMetalIndex = uint.MaxValue;
+
+    /// <summary>True when the shader leaves the array size open (an unbounded array or an SM 6.6 descriptor heap): <see cref="Count"/> is 0 and the host chooses the size.</summary>
+    public bool IsUnbounded => Count == 0;
 }

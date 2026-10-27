@@ -117,5 +117,26 @@ statements are split into instructions differently.
 
 ## Not supported yet (reported as OSH5002)
 
-Unbounded resource arrays (rejected by the front end),
 comparison or bit-casting of whole matrices, bool matrices, products involving one-row/column matrices.
+
+## Bindless: unbounded arrays and descriptor heaps
+
+- **Unbounded arrays** (`Texture2D Tex[] : register(t0, space1)`, also samplers, structured, byte-address and constant buffers, read-write
+  textures) are `OpTypeRuntimeArray` variables with capability `RuntimeDescriptorArray` and the extension `SPV_EXT_descriptor_indexing`,
+  as DXC emits them. A run-time index needs no `*ArrayDynamicIndexing` capability on an unbounded array (DXC adds none either).
+- **`NonUniformResourceIndex(i)`** adds `ShaderNonUniform` and decorates `NonUniform`: the index, the access chain into the array, any
+  access chain derived from it, the loaded descriptor and the sampled image built from it, and data loaded through a non-uniform buffer pointer.
+  It also declares the `*ArrayNonUniformIndexing` capability of the descriptor type. This is a superset of DXC's list: DXC omits the
+  `StorageBufferArrayNonUniformIndexing` and `UniformBufferArrayNonUniformIndexing` capabilities for buffer arrays, which Vulkan's rules
+  require, and decorates arithmetic on loaded data as well. The test `DescriptorIndexingMatchesDxc` states the allowed differences.
+- **`ResourceDescriptorHeap[i]` / `SamplerDescriptorHeap[i]`** (Shader Model 6.6) follow DXC's default "emulated heap" mapping
+  (`docs/SPIR-V.rst`, *ResourceDescriptorHeaps & SamplerDescriptorHeaps*): each resource type read from a heap becomes an unbounded array of
+  that type, and all arrays of one heap share one binding. The resource heap takes the first binding of set 0 that no other resource uses,
+  assigned after every other resource, the sampler heap the next one, unless `CompileOptions.ResourceHeapBinding` / `SamplerHeapBinding`
+  (the CLI's `-fvk-bind-resource-heap <binding> <set>` and `-fvk-bind-sampler-heap`) name them; a heap given a binding another resource
+  uses is OSH0330. A heap that is read as textures and buffers puts several descriptor types on one binding, so the host needs
+  `VK_EXT_mutable_descriptor_type` (`DeviceFeatures.MutableDescriptorType`). The element must get a resource type where it is used: a
+  variable initializer, an assignment, a cast, or an argument of a user function; anything else is OSH0336 with the line to write.
+  Differences from DXC: one variable per resource type (DXC may repeat a type), a read-write texture from a heap has no declared image
+  format (DXC derives one from the element type), and the counter heap (`-fvk-bind-counter-heap`, `IncrementCounter` on a heap buffer) is not
+  supported (append and consume buffers cannot come from a heap, OSH0350).

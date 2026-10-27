@@ -788,6 +788,8 @@ internal sealed partial class Checker
             next[r.Set] = c + 1;
         }
 
+        AssignHeapBindings(owners, Take);
+
         // WebGPU has no push constants, so the WGSL backend binds the block as a uniform buffer. It takes the binding after the
         // highest one in the highest group the shader already uses, which cannot collide with anything the shader declares.
         // Vulkan and Metal ignore this slot.

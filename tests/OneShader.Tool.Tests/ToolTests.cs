@@ -218,6 +218,43 @@ public sealed partial class ToolTests : IDisposable
     }
 
     [Fact]
+    public void HeapBindingFlagsMoveTheHeapsAndReflectionMarksThemUnbounded()
+    {
+        string json = Path.Combine(_dir, "heap.json");
+        string spv = Path.Combine(_dir, "heap.spv");
+        var (code, _, err) = InProc("-T", "cs_6_6", "-E", "CSMain", "-fvk-bind-resource-heap", "5", "3", "-fvk-bind-sampler-heap", "6", "3", "--reflect", json, "-Fo", spv, C("lang/bindless_heap.hlsl"));
+        Assert.True(code == 0, err);
+        SpirvVal(spv);
+        using var doc = JsonDocument.Parse(File.ReadAllText(json));
+        var heaps = new List<(string Heap, int Set, int Binding)>();
+        foreach (var r in doc.RootElement.GetProperty("resources").EnumerateArray())
+        {
+            if (r.TryGetProperty("heap", out var heap))
+            {
+                Assert.True(r.GetProperty("unbounded").GetBoolean());
+                Assert.Equal(0, r.GetProperty("count").GetInt32());
+                var slot = r.GetProperty("slots")[0];
+                heaps.Add((heap.GetString()!, slot.GetProperty("set").GetInt32(), slot.GetProperty("binding").GetInt32()));
+            }
+        }
+
+        Assert.Equal([("Resource", 3, 5), ("Sampler", 3, 6)], heaps);
+        var entry = doc.RootElement.GetProperty("entryPoints")[0];
+        Assert.Equal("Resource, Sampler", entry.GetProperty("descriptorHeaps").GetString());
+        Assert.Contains("MutableDescriptorType", entry.GetProperty("requiredFeatures").GetString(), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("-fvk-bind-resource-heap", "x", "1")]
+    [InlineData("-fvk-bind-sampler-heap", "1")]
+    public void HeapBindingFlagsNeedTwoNumbers(params string[] args)
+    {
+        var (code, _, err) = InProc([.. args, C("lang/bindless_heap.hlsl")]);
+        Assert.Equal(2, code);
+        Assert.Contains("oneshader: error: ", err, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void MissingInputIsAUsageError()
     {
         Assert.Equal(2, InProc("-spirv").Code);

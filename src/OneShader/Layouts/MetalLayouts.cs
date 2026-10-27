@@ -24,7 +24,58 @@ namespace OneShader.Layouts.Metal
     /// <param name="Kind">The argument class.</param>
     /// <param name="Index">The index within <paramref name="Kind"/>; an array of N resources takes N consecutive indices from here.</param>
     /// <param name="Count">The array size, at least 1.</param>
-    public readonly record struct MetalArgument(string Name, uint Set, uint Binding, ArgumentKind Kind, uint Index, uint Count);
+    public readonly record struct MetalArgument(string Name, uint Set, uint Binding, ArgumentKind Kind, uint Index, uint Count)
+    {
+        /// <summary>
+        /// True for an unbounded array or a descriptor heap. It is bound as one buffer (<see cref="Kind"/> is <see cref="ArgumentKind.Buffer"/>,
+        /// <see cref="Count"/> 1) that holds one <see cref="DescriptorStride"/>-byte descriptor per element: element <c>i</c> is at byte offset
+        /// <c>i * DescriptorStride</c>. The host writes a texture's or sampler's <c>gpuResourceID</c> (<c>MTLResourceID</c>) or a buffer's
+        /// <c>gpuAddress</c> there (see <see cref="Encoding"/>), calls <c>useResource</c> for everything it points to, and binds the buffer at
+        /// <see cref="Index"/>. Needs argument buffers tier 2 and macOS 13 / iOS 16 (Metal 3).
+        /// </summary>
+        public bool IsArgumentBuffer { get; init; }
+
+        /// <summary>The bytes of one descriptor in the argument buffer: 8, or 0 when <see cref="IsArgumentBuffer"/> is false.</summary>
+        public uint DescriptorStride { get; init; }
+
+        /// <summary>The descriptor kinds the elements may be: one for an array, several for a heap read as more than one resource type. Empty for ordinary arguments.</summary>
+        public IReadOnlyList<ResourceKind> ElementKinds
+        {
+            get => _elementKinds ?? [];
+            init => _elementKinds = value;
+        }
+
+        private readonly IReadOnlyList<ResourceKind>? _elementKinds;
+
+        /// <summary>The SM 6.6 heap this argument buffer stands for, or none.</summary>
+        public DescriptorHeaps Heap { get; init; }
+
+        /// <summary>How the host writes the descriptor of an element of kind <paramref name="kind"/>.</summary>
+        /// <param name="kind">The element's kind.</param>
+        /// <returns>The encoding.</returns>
+        public static MetalDescriptorEncoding EncodingOf(ResourceKind kind) => kind switch
+        {
+            ResourceKind.ConstantBuffer or ResourceKind.ReadOnlyStorageBuffer or ResourceKind.StorageBuffer => MetalDescriptorEncoding.BufferAddress,
+            ResourceKind.Sampler => MetalDescriptorEncoding.SamplerId,
+            _ => MetalDescriptorEncoding.TextureId,
+        };
+
+        /// <summary>The encoding of the first element kind (all of them for an array), or <see cref="MetalDescriptorEncoding.TextureId"/> for an ordinary argument.</summary>
+        public MetalDescriptorEncoding Encoding => ElementKinds.Count > 0 ? EncodingOf(ElementKinds[0]) : MetalDescriptorEncoding.TextureId;
+    }
+
+    /// <summary>What the host writes into one 8-byte descriptor of a bindless argument buffer.</summary>
+    public enum MetalDescriptorEncoding
+    {
+        /// <summary>A texture's (or texel buffer's) <c>gpuResourceID</c>.</summary>
+        TextureId = 0,
+
+        /// <summary>A sampler's <c>gpuResourceID</c>; create the sampler with <c>supportArgumentBuffers</c> set.</summary>
+        SamplerId = 1,
+
+        /// <summary>A buffer's <c>gpuAddress</c> (offset included).</summary>
+        BufferAddress = 2,
+    }
 
     /// <summary>Where a stage reads its push-constant block: <c>setVertexBytes</c>, <c>setFragmentBytes</c> or <c>setBytes</c> at this buffer index.</summary>
     /// <param name="Name">The HLSL variable name.</param>
@@ -260,6 +311,13 @@ namespace OneShader.Layouts
                         {
                             error = new LayoutError(LayoutErrorKind.MissingTarget, "The resource '" + b.Resource.Name + "' has no Metal index: add Msl to OneShaderTargets (or CompileOptions.Targets) and build again.");
                             return false;
+                        }
+
+                        if (b.Resource.IsUnbounded)
+                        {
+                            var kinds = b.Resource.HeapKinds.Count > 0 ? b.Resource.HeapKinds : [b.Resource.Kind];
+                            args.Add(new MetalArgument(b.Resource.Name, b.Resource.Set, b.Resource.Binding, ArgumentKind.Buffer, index, 1) { IsArgumentBuffer = true, DescriptorStride = 8, ElementKinds = kinds, Heap = b.Resource.Heap });
+                            continue;
                         }
 
                         args.Add(new MetalArgument(b.Resource.Name, b.Resource.Set, b.Resource.Binding, ArgumentOf(b.Resource.Kind), index, Math.Max(b.Resource.Count, 1)));

@@ -51,7 +51,7 @@ public sealed record LayoutError(LayoutErrorKind Kind, string Message)
 /// <param name="Name">The HLSL name (<c>Hits.counter</c> for the hidden counter of an append or consume buffer).</param>
 /// <param name="Set">Descriptor set (Vulkan) and bind group (WebGPU).</param>
 /// <param name="Binding">Binding number in the set.</param>
-/// <param name="Count">Array size; 1 for a single resource.</param>
+/// <param name="Count">Array size; 1 for a single resource, 0 for an unbounded array or a descriptor heap (see <see cref="ResourceLayout.IsUnbounded"/>).</param>
 /// <param name="Kind">The descriptor kind.</param>
 /// <param name="Stages">The stages that use it; for an <see cref="EntryLayout"/> that is the entry point's own stage.</param>
 /// <param name="MetalIndex">The Metal argument index within the resource's class, or <see cref="LayoutSlots.None"/> when Metal was not built.</param>
@@ -78,6 +78,22 @@ public readonly record struct ResourceLayout(
     /// anything but constant and storage buffers.
     /// </summary>
     public bool DynamicOffset { get; init; }
+
+    /// <summary>
+    /// True for an unbounded array (<c>Texture2D t[]</c>) and for a descriptor heap: <see cref="Count"/> is 0 and the host chooses the size.
+    /// Vulkan: a variable-count, partially bound descriptor array (see <c>VulkanLayoutOptions</c>); Metal: one argument buffer of
+    /// 8-byte descriptors (see <c>MetalArgument</c>); WebGPU: refused.
+    /// </summary>
+    public bool IsUnbounded => Count == 0;
+
+    /// <summary>The SM 6.6 heap this binding is, or <see cref="DescriptorHeaps.None"/>.</summary>
+    public DescriptorHeaps Heap { get; init; }
+
+    /// <summary>
+    /// For a heap: the descriptor kinds the shader reads from it. More than one means the binding holds mixed descriptor types (Vulkan:
+    /// <c>VK_EXT_mutable_descriptor_type</c>). Empty when <see cref="Heap"/> is none; then <see cref="Kind"/> is the only kind.
+    /// </summary>
+    public IReadOnlyList<ResourceKind> HeapKinds { get; init; } = [];
 }
 
 /// <summary>Sentinel values shared by the layout types.</summary>
@@ -309,7 +325,7 @@ public sealed class EntryLayout
             }
 
             var texel = r.Layout is { Kind: ReflectedTypeKind.Scalar or ReflectedTypeKind.Vector } t ? t.Scalar : ScalarKind.Float;
-            resources.Add(new ResourceLayout(r.Name, set, binding, r.Count, r.Kind, stage, metal, r.ResourceType, texel, r.HlslType == "SamplerComparisonState", r.ImageFormat));
+            resources.Add(new ResourceLayout(r.Name, set, binding, r.Count, r.Kind, stage, metal, r.ResourceType, texel, r.HlslType == "SamplerComparisonState", r.ImageFormat) { Heap = r.Heap, HeapKinds = r.HeapKinds });
             if (r.CounterSlots.Count > 0 && SlotsOf(r.CounterSlots, out uint cset, out uint cbinding, out uint cmetal))
             {
                 resources.Add(new ResourceLayout(r.Name + ".counter", cset, cbinding, 1, ResourceKind.StorageBuffer, stage, cmetal, ResourceTypeKind.RWStructuredBuffer));

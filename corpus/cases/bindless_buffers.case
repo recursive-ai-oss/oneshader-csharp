@@ -1,0 +1,22 @@
+# Bindless buffers: unbounded arrays of structured, byte-address, read-write byte-address and constant buffers chosen per thread with
+# NonUniformResourceIndex, with atomics on the chosen read-write buffer.
+case bindless_buffers
+shader lang/bindless_buffers.hlsl
+dispatch CSMain 1 1 1
+bindless 1 0
+bindless 2 0
+bindless 3 0
+bindless 4 0
+storage 1 0 element=0 : @fpm1(1,44)
+storage 1 0 element=1 : @fpm1(2,44)
+storage 1 0 element=2 : @fpm1(3,44)
+storage 2 0 element=0 out size=256
+storage 2 0 element=1 out size=256
+storage 2 0 element=2 out size=256
+storage 2 0 element=3 out size=256
+uniform 3 0 element=0 : 1.0 0.5 2.0 1.0 3u 0u 0u 0u
+uniform 3 0 element=1 : 0.25 1.5 1.0 0.75 5u 0u 0u 0u
+storage 4 0 element=0 : @u32(1,4,50)
+storage 4 0 element=1 : @u32(2,4,50)
+storage 4 0 element=2 : @u32(3,4,50)
+storage 0 0 out size=512

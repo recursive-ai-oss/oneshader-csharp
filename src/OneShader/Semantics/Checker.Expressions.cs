@@ -169,6 +169,11 @@ internal sealed partial class Checker
         }
 
         var sym = LookupQualified(n.Name, out _);
+        if (sym is null && IsHeapName(n.Name, out var heapType))
+        {
+            return heapType;
+        }
+
         if (sym is null)
         {
             ReportUndeclared(n.Name);
@@ -233,6 +238,11 @@ internal sealed partial class Checker
         if (from.IsError || target.IsError)
         {
             return true;
+        }
+
+        if (from is DescriptorHeapType heapFrom)
+        {
+            return ConvertHeapElement(e, heapFrom, target);
         }
 
         var c = TypeOps.Classify(from, target);
@@ -894,6 +904,11 @@ internal sealed partial class Checker
             return target;
         }
 
+        if (ot is DescriptorHeapType heapOperand)
+        {
+            return ConvertHeapElement(c.Operand, heapOperand, target) ? target : HlslType.Error;
+        }
+
         if (!CanCast(ot, target))
         {
             Err(SemanticCodes.TypeMismatch, "Cannot convert '" + ot + "' to '" + target + "' with a cast.", c.Span);
@@ -962,6 +977,12 @@ internal sealed partial class Checker
         if (tt.IsError)
         {
             return tt;
+        }
+
+        if (tt is DescriptorHeapType heapTarget)
+        {
+            Err(SemanticCodes.BadDescriptorHeap, "'" + name + "' cannot be used on " + heapTarget + " directly: it has no type until it is assigned. " + (heapTarget.IsElement ? HeapUsageHint(heapTarget) : "Index the heap first, for example ResourceDescriptorHeap[i]."), m.Span);
+            return HlslType.Error;
         }
 
         switch (tt)
@@ -1137,6 +1158,11 @@ internal sealed partial class Checker
         if (tt.IsError || it.IsError)
         {
             return HlslType.Error;
+        }
+
+        if (tt is DescriptorHeapType heap)
+        {
+            return CheckHeapIndex(ix, heap, it);
         }
 
         if (tt is ResourceType rt)

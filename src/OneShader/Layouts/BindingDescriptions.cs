@@ -141,7 +141,7 @@ public sealed class BindingOptions
 /// <param name="Binding">Binding number in the set.</param>
 /// <param name="Name">The HLSL name (of the first entry point that declared the slot, in a union).</param>
 /// <param name="Type">The binding kind.</param>
-/// <param name="Count">Array size; 1 for a single resource.</param>
+/// <param name="Count">Array size; 1 for a single resource; 0 for an unbounded array or a descriptor heap (see <paramref name="IsUnbounded"/>).</param>
 /// <param name="Stages">The stages that use it, including widening from the options.</param>
 /// <param name="IsDynamic">True when bound with a dynamic offset.</param>
 /// <param name="Dimension">Textures: the dimension (the first one when <see cref="Dimensions"/> has several); otherwise <see cref="TextureDimension.None"/>.</param>
@@ -150,6 +150,11 @@ public sealed class BindingOptions
 /// <param name="IsComparison">Samplers: true for <c>SamplerComparisonState</c>.</param>
 /// <param name="StorageFormat">Storage textures: the <c>[[vk::image_format]]</c> name; empty if none.</param>
 /// <param name="MetalIndex">The Metal argument index in the vertex stage's, or the first stage's that uses it, table; <see cref="LayoutSlots.None"/> if Metal was not built. Per-stage indices come from <see cref="PipelineLayout.TryToMetal"/>.</param>
+/// <param name="IsUnbounded">True for an unbounded resource array or a descriptor heap: the host picks the size (<see cref="Count"/> is 0).</param>
+/// <param name="Heap">Which SM 6.6 descriptor heap this binding is; <see cref="DescriptorHeaps.None"/> for a declared resource.</param>
+/// <param name="HeapKinds">A heap: every kind of resource the shaders read from it (a binding holding several kinds is a mutable-descriptor binding in Vulkan); otherwise empty.</param>
+/// <param name="PartiallyBound">True for an unbounded binding: entries that no shader invocation reads may be left unwritten.</param>
+/// <param name="HasVariableCount">True for an unbounded binding that is the highest binding of its set: only the last binding of a set can take its size from the allocation (Vulkan variable descriptor count).</param>
 public sealed record BindingDescription(
     uint Set,
     uint Binding,
@@ -163,7 +168,12 @@ public sealed record BindingDescription(
     TextureSampleKind SampleKind,
     bool IsComparison,
     string StorageFormat,
-    uint MetalIndex);
+    uint MetalIndex,
+    bool IsUnbounded = false,
+    DescriptorHeaps Heap = DescriptorHeaps.None,
+    IReadOnlyList<BindingType>? HeapKinds = null,
+    bool PartiallyBound = false,
+    bool HasVariableCount = false);
 
 public sealed partial class PipelineLayout
 {
@@ -179,6 +189,12 @@ public sealed partial class PipelineLayout
         var result = new List<BindingDescription>();
         foreach (var group in Groups)
         {
+            uint highest = 0;
+            foreach (var b in group.Entries)
+            {
+                highest = Math.Max(highest, b.Resource.Binding);
+            }
+
             foreach (var b in group.Entries)
             {
                 var r = b.Resource;
@@ -235,7 +251,7 @@ public sealed partial class PipelineLayout
                     r.Binding,
                     r.Name,
                     BindingTypeOf(r.Kind),
-                    Math.Max(r.Count, 1),
+                    r.IsUnbounded ? 0 : Math.Max(r.Count, 1),
                     stages,
                     dynamic && buffer,
                     dims.Count > 0 ? dims[0] : TextureDimension.None,
@@ -243,11 +259,32 @@ public sealed partial class PipelineLayout
                     sample,
                     r.Kind == ResourceKind.Sampler && r.Comparison,
                     r.Kind == ResourceKind.StorageTexture ? r.ImageFormat : "",
-                    metal));
+                    metal,
+                    r.IsUnbounded,
+                    r.Heap,
+                    HeapTypes(r),
+                    r.IsUnbounded,
+                    r.IsUnbounded && r.Binding == highest));
             }
         }
 
         return result;
+    }
+
+    private static IReadOnlyList<BindingType> HeapTypes(ResourceLayout r)
+    {
+        if (r.Heap == DescriptorHeaps.None)
+        {
+            return [];
+        }
+
+        var kinds = new List<BindingType>(r.HeapKinds.Count);
+        foreach (var k in r.HeapKinds)
+        {
+            kinds.Add(BindingTypeOf(k));
+        }
+
+        return kinds;
     }
 
     private static BindingType BindingTypeOf(ResourceKind kind) => kind switch

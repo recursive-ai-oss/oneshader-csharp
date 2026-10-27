@@ -151,6 +151,14 @@ var samplers: [(index: Int, state: MTLSamplerState)] = []
 // Texture readbacks: texture, width, height, layers, bytes per texel, output file.
 var imageOutputs: [(texture: MTLTexture, w: Int, h: Int, layers: Int, bpt: Int, out: String)] = []
 var uploads: [(texture: MTLTexture, w: Int, h: Int, layers: Int, mips: Int, bpt: Int, data: Data, depth: Bool)] = []
+// Bindless argument buffers: one 8-byte descriptor per element (a texture's or sampler's gpuResourceID, a buffer's gpuAddress), written
+// as a Metal 3 host does, with no argument encoder. Everything the descriptors point to must be made resident with useResource.
+var argumentBuffers: [Int: MTLBuffer] = [:]
+var descriptorWrites: [(index: Int, slot: Int, value: UInt64)] = []
+var residentBuffers: [(buffer: MTLBuffer, usage: MTLResourceUsage)] = []
+var residentTextures: [MTLTexture] = []
+// Samplers must stay alive: a released sampler's gpuResourceID can be handed to the next one.
+var retainedSamplers: [MTLSamplerState] = []
 
 func makeBuffer(_ data: Data) -> MTLBuffer {
     let length = max(data.count, 16)
@@ -188,6 +196,41 @@ for t in manifest {
     switch t[0] {
     case "buffer":
         buffers.append((Int(t[1])!, makeBuffer(readFile(t[2])), t[3] == "-" ? "" : t[3]))
+    case "argbuffer":
+        // argbuffer INDEX COUNT: a bindless argument buffer at buffer index INDEX with COUNT descriptors
+        let count = Int(t[2])!
+        guard let ab = device.makeBuffer(length: max(count * 8, 16), options: .storageModeShared) else { die(4, "argument buffer allocation failed") }
+        argumentBuffers[Int(t[1])!] = ab
+        buffers.append((Int(t[1])!, ab, ""))
+    case "abuffer":
+        // abuffer INDEX SLOT FILE OUT: a buffer held by element SLOT of argument buffer INDEX
+        let b = makeBuffer(readFile(t[3]))
+        descriptorWrites.append((Int(t[1])!, Int(t[2])!, b.gpuAddress))
+        residentBuffers.append((b, [.read, .write]))
+        buffers.append((-1, b, t[4] == "-" ? "" : t[4]))
+    case "atexture":
+        // atexture INDEX SLOT TYPE W H LAYERS MIPS FORMAT FILE
+        let (w, h, layers, mips) = (Int(t[4])!, Int(t[5])!, Int(t[6])!, Int(t[7])!)
+        let tex = makeTexture(type: t[3], w: w, h: h, layers: layers, mips: mips, format: t[8], usage: .shaderRead)
+        descriptorWrites.append((Int(t[1])!, Int(t[2])!, tex.gpuResourceID._impl))
+        residentTextures.append(tex)
+        uploads.append((tex, w, h, layers, mips, bytesPerTexel(t[8]), readFile(t[9]), t[8] == "depth32f"))
+    case "asampler":
+        // asampler INDEX SLOT linear|nearest repeat|clamp MIPS COMPARE
+        let d = MTLSamplerDescriptor()
+        let filter: MTLSamplerMinMagFilter = t[3] == "linear" ? .linear : .nearest
+        d.minFilter = filter
+        d.magFilter = filter
+        d.mipFilter = t[5] == "1" ? .linear : .notMipmapped
+        let mode: MTLSamplerAddressMode = t[4] == "repeat" ? .repeat : .clampToEdge
+        d.sAddressMode = mode
+        d.tAddressMode = mode
+        d.rAddressMode = mode
+        if t[6] == "1" { d.compareFunction = .lessEqual }
+        d.supportArgumentBuffers = true
+        guard let s = device.makeSamplerState(descriptor: d) else { die(4, "sampler creation failed") }
+        retainedSamplers.append(s)
+        descriptorWrites.append((Int(t[1])!, Int(t[2])!, s.gpuResourceID._impl))
     case "push":
         // push INDEX FILE
         pushes.append((Int(t[1])!, readFile(t[2])))
@@ -246,6 +289,11 @@ for t in manifest {
     }
 }
 
+for w in descriptorWrites {
+    guard let ab = argumentBuffers[w.index] else { die(2, "descriptor for argument buffer \(w.index), which the manifest does not declare") }
+    ab.contents().storeBytes(of: w.value, toByteOffset: w.slot * 8, as: UInt64.self)
+}
+
 let descriptor = MTLCommandBufferDescriptor()
 descriptor.errorOptions = .encoderExecutionStatus
 guard let commands = queue.makeCommandBuffer(descriptor: descriptor) else { die(4, "no command buffer") }
@@ -285,17 +333,21 @@ setup.endEncoding()
 // --- bindings -----------------------------------------------------------------------------------------------
 
 func bindCompute(_ e: MTLComputeCommandEncoder) {
-    for b in buffers { e.setBuffer(b.buffer, offset: 0, index: b.index) }
+    for b in buffers where b.index >= 0 { e.setBuffer(b.buffer, offset: 0, index: b.index) }
+    for r in residentBuffers { e.useResource(r.buffer, usage: r.usage) }
+    for t in residentTextures { e.useResource(t, usage: .read) }
     for p in pushes { p.data.withUnsafeBytes { e.setBytes($0.baseAddress!, length: $0.count, index: p.index) } }
     for t in textures { e.setTexture(t.texture, index: t.index) }
     for s in samplers { e.setSamplerState(s.state, index: s.index) }
 }
 
 func bindRender(_ e: MTLRenderCommandEncoder) {
-    for b in buffers {
+    for b in buffers where b.index >= 0 {
         e.setVertexBuffer(b.buffer, offset: 0, index: b.index)
         e.setFragmentBuffer(b.buffer, offset: 0, index: b.index)
     }
+    for r in residentBuffers { e.useResource(r.buffer, usage: r.usage, stages: [.vertex, .fragment]) }
+    for t in residentTextures { e.useResource(t, usage: .read, stages: [.vertex, .fragment]) }
     for p in pushes {
         p.data.withUnsafeBytes {
             e.setVertexBytes($0.baseAddress!, length: $0.count, index: p.index)

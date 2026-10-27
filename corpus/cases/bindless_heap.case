@@ -1,0 +1,32 @@
+# SM 6.6 dynamic resources: textures, buffers and samplers read from ResourceDescriptorHeap and SamplerDescriptorHeap. DXC puts the
+# resource heap on the first free binding of set 0 and the sampler heap on the next one; the resource heap holds textures and buffers, so
+# its binding is a mutable descriptor.
+case bindless_heap
+shader lang/bindless_heap.hlsl
+dispatch CSMain 1 1 1
+bindless 0 0
+bindless 0 1
+texture 0 0 8x8 rgba8 photo element=0
+texture 0 0 8x8 rgba8 checker(2) element=1
+storage 0 0 element=2 : 1u 3u 0u 3u
+storage 0 0 element=3 out size=16
+sampler 0 1 nearest clamp element=0
+sampler 0 1 linear repeat element=1
+storage 1 0 :
+  1.0 1.0 1.0 1.0 0u 1u 0u 0u
+  1.0 0.75 0.5 1.0 1u 0u 0u 0u
+  0.5 1.0 0.75 1.0 0u 1u 0u 0u
+  0.75 0.5 1.0 1.0 0u 0u 0u 0u
+  1.0 1.0 1.0 1.0 1u 1u 0u 0u
+  1.0 0.75 0.5 1.0 0u 0u 0u 0u
+  0.5 1.0 0.75 1.0 0u 1u 0u 0u
+  0.75 0.5 1.0 1.0 1u 0u 0u 0u
+  1.0 1.0 1.0 1.0 0u 1u 0u 0u
+  1.0 0.75 0.5 1.0 0u 0u 0u 0u
+  0.5 1.0 0.75 1.0 1u 1u 0u 0u
+  0.75 0.5 1.0 1.0 0u 0u 0u 0u
+  1.0 1.0 1.0 1.0 0u 1u 0u 0u
+  1.0 0.75 0.5 1.0 1u 0u 0u 0u
+  0.5 1.0 0.75 1.0 0u 1u 0u 0u
+  0.75 0.5 1.0 1.0 0u 0u 0u 0u
+storage 1 1 out size=256

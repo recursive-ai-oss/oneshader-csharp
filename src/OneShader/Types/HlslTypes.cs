@@ -43,6 +43,9 @@ public enum TypeKind
 
     /// <summary>A template parameter that has not been substituted yet.</summary>
     TemplateParameter,
+
+    /// <summary>The built-in <c>ResourceDescriptorHeap</c> / <c>SamplerDescriptorHeap</c> objects, or one element of them before it is given a resource type.</summary>
+    DescriptorHeap,
 }
 
 /// <summary>The scalar types of HLSL, including the untyped literal types used during type checking.</summary>
@@ -829,4 +832,39 @@ public sealed class TemplateParameterType : HlslType
 
     /// <inheritdoc/>
     public override string ToString() => Name;
+}
+
+/// <summary>
+/// <c>ResourceDescriptorHeap</c> or <c>SamplerDescriptorHeap</c> (Shader Model 6.6), or one element of a heap: the element has no
+/// resource type until it is assigned to a variable of one.
+/// </summary>
+internal sealed class DescriptorHeapType : HlslType
+{
+    private DescriptorHeapType(bool sampler, bool element)
+    {
+        IsSamplerHeap = sampler;
+        IsElement = element;
+    }
+
+    public static DescriptorHeapType ResourceHeap { get; } = new(false, false);
+
+    public static DescriptorHeapType SamplerHeap { get; } = new(true, false);
+
+    public static DescriptorHeapType ResourceElement { get; } = new(false, true);
+
+    public static DescriptorHeapType SamplerElement { get; } = new(true, true);
+
+    /// <summary>True for <c>SamplerDescriptorHeap</c>.</summary>
+    public bool IsSamplerHeap { get; }
+
+    /// <summary>True for <c>Heap[i]</c> rather than the heap itself.</summary>
+    public bool IsElement { get; }
+
+    public override TypeKind Kind => TypeKind.DescriptorHeap;
+
+    public override bool Equals(HlslType? other) => ReferenceEquals(this, other);
+
+    public override int GetHashCode() => IsSamplerHeap ? 11 : 10;
+
+    public override string ToString() => (IsSamplerHeap ? "SamplerDescriptorHeap" : "ResourceDescriptorHeap") + (IsElement ? "[...]" : "");
 }

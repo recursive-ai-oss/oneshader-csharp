@@ -171,13 +171,6 @@ float4 Fetch(Texture2D<float4> t, SamplerState s, float2 uv) { return t.SampleLe
     }
 
     [Fact]
-    public void UnboundedArrayIsOneClearError()
-    {
-        var l = Errors("Texture2D<float4> Tex[] : register(t0);\nRWStructuredBuffer<float4> O : register(u1);\n[shader(\"compute\")] [numthreads(1,1,1)] void CSMain() { O[0] = Tex[3].Load(int3(0,0,0)); }\n");
-        Assert.Equal(["1,19 Error OSH0350: 'Tex' is an unbounded resource array, which is not supported. Give it a size, for example 'Tex[16]'."], l);
-    }
-
-    [Fact]
     public void ResourceArrayElementCanBePassedWithARunTimeIndex()
     {
         const string text = "Texture2D<float4> Tex[4] : register(t1);\nSamplerState Smp : register(s5);\nRWStructuredBuffer<float4> Out : register(u7);\n" +

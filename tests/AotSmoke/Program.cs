@@ -94,6 +94,23 @@ if (!OneShader.Layouts.EntryLayout.TryCreate(all.Reflection!, "VS", out var vsLa
     return 9;
 }
 
+// Bindless: a descriptor heap and an unbounded array through SPIR-V and Metal, and the layouts they give each API.
+const string Bindless = "Texture2D<float4> Tex[] : register(t0);\nRWStructuredBuffer<float4> O : register(u1);\n"
+    + "[shader(\"compute\")] [numthreads(1,1,1)] void CS(uint3 id : SV_DispatchThreadID)\n"
+    + "{ Texture2D<float4> t = ResourceDescriptorHeap[NonUniformResourceIndex(id.x)]; SamplerState s = SamplerDescriptorHeap[0]; O[0] = t.SampleLevel(s, 0.5, 0) + Tex[id.x].Load(int3(0, 0, 0)); }\n";
+var bindless = ShaderCompiler.Compile(Bindless, "bindless.hlsl", new CompileOptions { Targets = [CompileTarget.SpirV, CompileTarget.Msl] });
+if (!bindless.Success || bindless.Reflection is null || !bindless.Reflection.Resources[0].IsUnbounded
+    || !bindless.Reflection.EntryPoints[0].RequiredFeatures.HasFlag(DeviceFeatures.RuntimeDescriptorArray)
+    || !OneShader.Layouts.EntryLayout.TryCreate(bindless.Reflection, "CS", out var csLayout, out _)
+    || !OneShader.Layouts.PipelineLayout.TryCreate([csLayout!], out var bindlessPipeline, out _)
+    || !bindlessPipeline!.ToVulkan().SetLayouts[0].HasBindingFlags
+    || !bindlessPipeline.TryToMetal(out _, out _)
+    || bindlessPipeline.TryToWebGpu(out _, out _))
+{
+    Console.Error.WriteLine("bindless smoke test failed");
+    return 10;
+}
+
 // Hot-reload path: an edit that only touches a body is compatible, one that moves a constant-buffer member is not.
 var edited = ShaderCompiler.Compile(Shader.Replace("i.Uv);", "i.Uv) * 0.5;", StringComparison.Ordinal), "smoke.hlsl");
 var moved = ShaderCompiler.Compile(Shader.Replace("float4x4 M;", "float4 Pad; float4x4 M;", StringComparison.Ordinal), "smoke.hlsl");

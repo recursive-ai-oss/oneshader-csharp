@@ -327,6 +327,11 @@ internal sealed partial class Lowerer
                 return vp;
             }
 
+            case CastExpression { Operand.Type: DescriptorHeapType } cast:
+                return ResourcePointer(cast.Operand);
+            case IndexExpression { Info.HeapDecl: { Global: { } heapGlobal } heapDecl } heapIndex:
+                // ResourceDescriptorHeap[i] read as a resource type: element i of the unbounded array for that type.
+                return _b.AccessChain(heapGlobal, ((ArrayType)heapDecl.Type).Element, Coerce(Rv(heapIndex.Index), ScalarType.Int));
             case IndexExpression ix when ix.Target.Type is ArrayType at:
             {
                 var basePtr = ResourcePointer(ix.Target);

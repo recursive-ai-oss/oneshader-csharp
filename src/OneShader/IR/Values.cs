@@ -285,6 +285,12 @@ public sealed class GlobalVariable : IrValue
     /// <summary>Array size of a resource array (1 for a single resource, 0 unbounded).</summary>
     public int ResourceCount { get; set; } = 1;
 
+    /// <summary>
+    /// For a global standing for <c>ResourceDescriptorHeap</c> or <c>SamplerDescriptorHeap</c> read as one resource type:
+    /// which heap. Such a global is an unbounded resource array (<see cref="ResourceCount"/> 0); every one of a heap shares its binding.
+    /// </summary>
+    public DescriptorHeaps DescriptorHeap { get; set; }
+
     /// <summary>User location for stage interface variables, or null.</summary>
     public int? Location { get; set; }
 

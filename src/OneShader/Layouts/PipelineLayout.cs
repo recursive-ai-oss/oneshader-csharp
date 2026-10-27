@@ -278,7 +278,7 @@ public sealed partial class PipelineLayout
                     // A Metal-only build has no sets: the argument index stands in for the binding, and a buffer, a texture
                     // and a sampler can all be number 0 without being the same slot.
                     bool metalOnly = r.Set == 0 && r.Binding == r.MetalIndex && b.Resource.Binding == b.Resource.MetalIndex;
-                    if (b.Resource.Set == r.Set && b.Resource.Binding == r.Binding && (!metalOnly || MetalClass(b.Resource.Kind) == MetalClass(r.Kind)))
+                    if (b.Resource.Set == r.Set && b.Resource.Binding == r.Binding && (!metalOnly || MetalClass(b.Resource) == MetalClass(r)))
                     {
                         existing = b;
                         break;
@@ -296,7 +296,7 @@ public sealed partial class PipelineLayout
                     bool lenientDimension = union && options is { IgnoreTextureDimension: true } && o.Kind == r.Kind && r.Kind is ResourceKind.SampledTexture or ResourceKind.StorageTexture;
                     bool mergeStorage = union && options is { MergeStorageAccess: true } && IsStorageBuffer(o.Kind) && IsStorageBuffer(r.Kind) && StorageFamily(o.Type) == StorageFamily(r.Type);
                     bool typeDiffers = r.Kind != ResourceKind.Sampler && o.Type != r.Type && !lenientDimension && !mergeStorage;
-                    bool differs = (o.Kind != r.Kind && !mergeStorage) || o.Count != r.Count || typeDiffers || o.Comparison != r.Comparison;
+                    bool differs = (o.Kind != r.Kind && !mergeStorage) || o.Count != r.Count || o.Heap != r.Heap || !SameKinds(o.HeapKinds, r.HeapKinds) || typeDiffers || o.Comparison != r.Comparison;
                     if (union && !differs)
                     {
                         // The texel type decides the WebGPU sample type and the image format the storage format; a union shared by pipelines must agree.
@@ -532,12 +532,33 @@ public sealed partial class PipelineLayout
         return null;
     }
 
+    // An unbounded array is one argument buffer, whatever its descriptors are.
+    internal static int MetalClass(ResourceLayout r) => r.IsUnbounded ? 0 : MetalClass(r.Kind);
+
     internal static int MetalClass(ResourceKind kind) => kind switch
     {
         ResourceKind.Sampler => 2,
         ResourceKind.SampledTexture or ResourceKind.StorageTexture or ResourceKind.UniformTexelBuffer or ResourceKind.StorageTexelBuffer => 1,
         _ => 0,
     };
+
+    private static bool SameKinds(IReadOnlyList<ResourceKind> a, IReadOnlyList<ResourceKind> b)
+    {
+        if (a.Count != b.Count)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < a.Count; i++)
+        {
+            if (a[i] != b[i])
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     private static string Num(uint v) => v.ToString(CultureInfo.InvariantCulture);
 }

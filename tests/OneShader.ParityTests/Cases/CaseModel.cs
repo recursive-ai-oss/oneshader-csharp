@@ -197,6 +197,12 @@ public sealed class CaseModel
     /// </summary>
     public bool RelaxedPrecision { get; set; }
 
+    /// <summary>
+    /// Bindings created the way a bindless renderer creates them: partially bound and update-after-bind, with a variable descriptor count when
+    /// the binding is the highest of its set, and as one mutable descriptor binding when its elements differ in kind.
+    /// </summary>
+    public List<(int Set, int Binding)> Bindless { get; } = new();
+
     public bool IsCompute => Dispatches.Count > 0;
 
     public override string ToString() => Name;

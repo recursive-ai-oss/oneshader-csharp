@@ -514,13 +514,20 @@ internal sealed partial class Lowerer
         return null;
     }
 
-    private void AddOffsets(Instruction i, CallExpression c, int argIndex)
+    private void AddOffsets(Instruction i, CallExpression c, int argIndex, BuiltinCall bi)
     {
         var offs = ConstOffsets(c.Arguments[argIndex]);
         if (offs is null)
         {
             _diag.Error(SemanticCodes.NotConstant, "A texel offset must be a compile-time constant such as int2(1, 0).", c.Arguments[argIndex].Span);
             return;
+        }
+
+        // A scalar offset on a 2D or 3D texture applies to every axis, as in DXC (Sample(s, uv, 1) is int2(1, 1)).
+        if (offs.Length == 1 && argIndex < bi.ParamTypes.Length && bi.ParamTypes[argIndex] is VectorType { Count: > 1 } want)
+        {
+            offs = new int[want.Count];
+            Array.Fill(offs, ConstOffsets(c.Arguments[argIndex])![0]);
         }
 
         i.Immediates.AddRange(offs);
@@ -589,7 +596,7 @@ internal sealed partial class Lowerer
 
         if (offsetArg >= 0)
         {
-            AddOffsets(inst, c, offsetArg);
+            AddOffsets(inst, c, offsetArg, bi);
         }
 
         return inst;

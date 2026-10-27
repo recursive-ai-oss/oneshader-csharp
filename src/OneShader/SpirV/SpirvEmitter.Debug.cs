@@ -22,7 +22,7 @@ internal sealed partial class SpirvEmitter
         DbgInlinedAt = 25, DbgLocalVariable = 26, DbgDeclare = 28, DbgValue = 29, DbgExpression = 31, DbgSource = 35,
         DbgFunctionDefinition = 101, DbgSourceContinued = 102, DbgLine = 103, DbgNoLine = 104, DbgEntryPoint = 107, DbgTypeMatrix = 108;
 
-    private const uint OpStringCode = 7, OpSourceContinuedCode = 2, OpLineCode = 8, OpNoLineCode = 317, OpExtensionCode = 10;
+    private const uint OpStringCode = 7, OpSourceContinuedCode = 2, OpLineCode = 8, OpNoLineCode = 317;
     private const uint FlagPublic = 3, FlagLocal = 4, FlagOptimized = 1u << 13, FlagUnknownLayout = 1u << 17;
 
     // Operands and strings never exceed this many UTF-16 units per instruction, which keeps every literal far below the 65535-word limit.
@@ -79,7 +79,7 @@ internal sealed partial class SpirvEmitter
 
         if (_dbgFull)
         {
-            SpirvModule.PutWithString(_s.Extensions, OpExtensionCode, [], "SPV_KHR_non_semantic_info", []);
+            _s.Extensions.Add("SPV_KHR_non_semantic_info");
             _dbgImport = _s.NewId();
             SpirvModule.PutWithString(_s.ExtImports, Op.ExtInstImport, [_dbgImport], "NonSemantic.Shader.DebugInfo.100", []);
             _dbgVoid = _s.DeclType("void", Op.TypeVoid);

@@ -227,6 +227,12 @@ internal static class TypeOps
             return Conv.Ok;
         }
 
+        // A descriptor read from a heap becomes the resource type it is given; which heap it came from decides texture/buffer or sampler.
+        if (from is DescriptorHeapType { IsElement: true } heapElement)
+        {
+            return heapElement.IsSamplerHeap ? (to is SamplerType ? Conv.Ok : Conv.None) : (to is ResourceType ? Conv.Ok : Conv.None);
+        }
+
         if (from is EnumType fe && to.ScalarElement is not null)
         {
             return Classify(fe.Underlying, to);

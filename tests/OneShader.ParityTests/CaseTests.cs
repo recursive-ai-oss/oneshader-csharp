@@ -14,7 +14,7 @@ public class CaseTests
     {
         string[] expected =
         [
-            "append_consume", "blit", "bloom_down", "bloom_down_first", "bloom_up", "blur_h", "blur_v", "cluster_build",
+            "append_consume", "bindless_buffers", "bindless_heap", "bindless_textures", "blit", "bloom_down", "bloom_down_first", "bloom_up", "blur_h", "blur_v", "cluster_build",
             "clustered_lights", "color_grade", "cull_instances", "depth_bounds", "histogram", "ibl_gold",
             "ibl_plastic", "ibl_prefilter", "ibl_sky", "image_filter", "lang_inheritance", "lang_members",
             "lang_operators", "lang_precise_math", "lang_resource_arrays", "lang_resource_locals", "lang_sizeof_static", "lang_statics_and_literals", "lang_switch_flow", "lang_templates", "light_cull", "msdf_text", "particles",

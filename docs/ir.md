@@ -151,6 +151,9 @@ module with warning OSH6001. Setting `Optimizer.VerifyEachPass` (tests do) verif
   an element is an `AccessChain` with the index. Constant-buffer members are `AccessChain(global, type, memberIndex)`.
   A function that takes a resource is compiled once per distinct resource it is called with; a run-time index into a
   resource array is passed to that copy as an ordinary `int` argument.
+- An unbounded resource array (`Texture2D t[]`) has `ResourceCount` 0. `ResourceDescriptorHeap[i]` read as a resource type is the same
+  thing: a global of `ArrayType(resource, 0)` with `ResourceCount` 0 and `DescriptorHeap` set to the heap, one global per resource
+  type, all with the heap's binding; the element is an `AccessChain` with the index.
 - `NonUniformResourceIndex(i)` is the intrinsic `NonUniformIndex`: it yields `i` and tells the SPIR-V backend to
   decorate the access chain, the loaded handle and the sampled image built from it as `NonUniform`.
 - An append or consume buffer comes with a second global, `counter.var.<name>`, a `RWByteAddressBuffer` in the same set.

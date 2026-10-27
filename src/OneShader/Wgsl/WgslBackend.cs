@@ -253,9 +253,23 @@ internal sealed partial class WgslEmitter
         CheckRecursion(callees);
 
         // One clear error per array instead of a follow-on error at every use.
+        var heapsReported = DescriptorHeaps.None;
         foreach (var g in _reachableGlobals)
         {
-            if (g.ResourceCount != 1)
+            if (g.DescriptorHeap != DescriptorHeaps.None)
+            {
+                if ((heapsReported & g.DescriptorHeap) == 0)
+                {
+                    heapsReported |= g.DescriptorHeap;
+                    string heap = g.DescriptorHeap == DescriptorHeaps.Sampler ? "SamplerDescriptorHeap" : "ResourceDescriptorHeap";
+                    Unsupported(heap + " is not available in WGSL: WebGPU has no binding arrays or descriptor indexing, so a shader cannot pick a resource by a run-time index. Bind the resources you need as separate variables (or pack textures into a Texture2DArray and buffers into one structured buffer), or build this shader for SPIR-V or MSL only.", g.Span);
+                }
+            }
+            else if (g.ResourceCount == 0)
+            {
+                Unsupported("The unbounded resource array '" + g.Name + "' is not available in WGSL: WebGPU has no binding arrays or descriptor indexing. Declare the elements of '" + g.Name + "' as separate resources, use a texture array (Texture2DArray) when the elements are textures of one size, or build this shader for SPIR-V or MSL only.", g.Span);
+            }
+            else if (g.ResourceCount != 1)
             {
                 Unsupported("Resource arrays are not available in WGSL (WebGPU has no binding arrays); declare '" + g.Name + "' as separate resources, or use a texture array (Texture2DArray) when the elements are textures of one size.", g.Span);
             }
@@ -735,7 +749,7 @@ internal sealed partial class WgslEmitter
 
         if (g.ResourceCount != 1)
         {
-            Unsupported("Resource arrays are not available in WGSL (WebGPU has no binding arrays); declare '" + g.Name + "' as separate resources or use a texture array.", g.Span);
+            // Reported once per array when the entry point's globals are collected; this only keeps the declaration from being written.
             return "";
         }
 

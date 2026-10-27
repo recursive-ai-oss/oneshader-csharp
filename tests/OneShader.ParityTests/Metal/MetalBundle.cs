@@ -101,8 +101,17 @@ public static class MetalBundle
         int MslIndex(ResourceDecl r) => (int)reflection!.Resources
             .Where(x => x.Slots.Any(s => s.Target == CompileTarget.SpirV && s.Set == r.Set && s.Binding == r.Binding))
             .SelectMany(x => x.Slots)
-            .First(s => s.Target == CompileTarget.Msl).Binding + r.Element;
+            .First(s => s.Target == CompileTarget.Msl).Binding + (reflection.Resources.Any(x => x.IsUnbounded && x.Slots.Any(s => s.Target == CompileTarget.SpirV && s.Set == r.Set && s.Binding == r.Binding)) ? 0 : r.Element);
         bool Bound(ResourceDecl r) => reflection!.Resources.Any(x => x.Slots.Any(s => s.Target == CompileTarget.SpirV && s.Set == r.Set && s.Binding == r.Binding));
+        // An unbounded array or heap is one argument buffer: its elements are descriptors in that buffer, not consecutive indices.
+        bool Bindless(ResourceDecl r) => reflection!.Resources.Any(x => x.IsUnbounded && x.Slots.Any(s => s.Target == CompileTarget.SpirV && s.Set == r.Set && s.Binding == r.Binding));
+        foreach (var group in model.Resources.Where(r => Bound(r) && Bindless(r)).GroupBy(r => (r.Set, r.Binding)))
+        {
+            int index = (int)reflection!.Resources
+                .First(x => x.IsUnbounded && x.Slots.Any(s => s.Target == CompileTarget.SpirV && s.Set == group.Key.Set && s.Binding == group.Key.Binding))
+                .Slots.First(s => s.Target == CompileTarget.Msl).Binding;
+            sb.Line($"argbuffer {index} {group.Max(r => r.Element) + 1}\n");
+        }
 
         for (int i = 0; i < model.Resources.Count; i++)
         {
@@ -112,6 +121,30 @@ public static class MetalBundle
                 continue; // The file does not declare it (a case may bind more than one entry point needs).
             }
             string input = $"in_{i}.bin";
+            if (Bindless(r))
+            {
+                // Descriptor elements: the runner puts the object's gpuResourceID or gpuAddress at this slot of the argument buffer.
+                switch (r.Kind)
+                {
+                    case ResourceKind.Uniform:
+                    case ResourceKind.Storage:
+                        File.WriteAllBytes(Path.Combine(dir, input), data.Buffers[i]);
+                        sb.Line($"abuffer {MslIndex(r)} {r.Element} {input} {(r.Output ? FileFor(r.OutputKey) : "-")}\n");
+                        break;
+                    case ResourceKind.Texture:
+                        File.WriteAllBytes(Path.Combine(dir, input), data.Images[i]);
+                        sb.Line($"atexture {MslIndex(r)} {r.Element} {(r.Cube ? "cube" : r.Layers > 0 ? "2darray" : "2d")} {r.Width} {r.Height} {r.Layers} {r.MipLevels} {FormatName(r.Format)} {input}\n");
+                        break;
+                    case ResourceKind.Sampler:
+                        sb.Line($"asampler {MslIndex(r)} {r.Element} {(r.Linear ? "linear" : "nearest")} {(r.Repeat ? "repeat" : "clamp")} {(r.MipFilter ? 1 : 0)} {(r.Compare ? 1 : 0)}\n");
+                        break;
+                    default:
+                        return "not-compiled: storage images in a bindless array are not part of the Metal runner";
+                }
+
+                continue;
+            }
+
             switch (r.Kind)
             {
                 case ResourceKind.Uniform:

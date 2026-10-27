@@ -34,3 +34,5 @@ lang_resource_arrays buffer:0.4 float 5e-4
 types_half_math buffer:0.2 half 1.5e-3
 types_half_math buffer:0.3 half 2e-3
 types_half_math buffer:0.4 float 2e-3
+# Texture filtering on the GPU differs in the last bits between Vulkan and Metal (bilinear weights are fixed-point).
+bindless_heap buffer:1.1 float 0.0005

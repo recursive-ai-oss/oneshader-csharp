@@ -34,10 +34,10 @@ internal sealed class SpirvModule
 
     public SortedSet<uint> Capabilities { get; } = [];
 
-    public List<uint> ExtImports { get; } = [];
+    /// <summary>Extension names for <c>OpExtension</c>, sorted so the output is deterministic.</summary>
+    public SortedSet<string> Extensions { get; } = new(StringComparer.Ordinal);
 
-    /// <summary><c>OpExtension</c> lines; empty unless debug information needs one.</summary>
-    public List<uint> Extensions { get; } = [];
+    public List<uint> ExtImports { get; } = [];
 
     /// <summary><c>OpString</c>, <c>OpSource</c> and <c>OpSourceContinued</c>: they precede the names in the debug section.</summary>
     public List<uint> DebugStrings { get; } = [];
@@ -162,7 +162,11 @@ internal sealed class SpirvModule
             Put(words, Op.Capability, c);
         }
 
-        words.AddRange(Extensions);
+        foreach (var e in Extensions)
+        {
+            PutWithString(words, 10, [], e, []); // OpExtension
+        }
+
         words.AddRange(ExtImports);
 
         // OpMemoryModel Logical GLSL450

@@ -33,34 +33,34 @@ public static class ReflectionFormat
         Line(sb, 0, "targets", ("list", List(targets)));
         foreach (var r in model.Resources)
         {
-            if (r.ImageFormat.Length == 0)
+            // The format and heap attributes are written only when present, so files for ordinary shaders are unchanged.
+            var attrs = new List<(string, string)>
             {
-                Line(
-                    sb,
-                    0,
-                    "resource",
-                    ("name", Q(r.Name)),
-                    ("kind", r.Kind.ToString()),
-                    ("count", N(r.Count)),
-                    ("stages", Stages(r.Stages)),
-                    ("rtype", r.ResourceType.ToString()),
-                    ("hlsl", Q(r.HlslType)));
-            }
-            else
+                ("name", Q(r.Name)),
+                ("kind", r.Kind.ToString()),
+                ("count", N(r.Count)),
+                ("stages", Stages(r.Stages)),
+                ("rtype", r.ResourceType.ToString()),
+                ("hlsl", Q(r.HlslType)),
+            };
+            if (r.ImageFormat.Length != 0)
             {
-                // Written only when present, so files for shaders without storage-image formats are unchanged.
-                Line(
-                    sb,
-                    0,
-                    "resource",
-                    ("name", Q(r.Name)),
-                    ("kind", r.Kind.ToString()),
-                    ("count", N(r.Count)),
-                    ("stages", Stages(r.Stages)),
-                    ("rtype", r.ResourceType.ToString()),
-                    ("hlsl", Q(r.HlslType)),
-                    ("format", Q(r.ImageFormat)));
+                attrs.Add(("format", Q(r.ImageFormat)));
             }
+
+            if (r.Heap != DescriptorHeaps.None)
+            {
+                var kinds = new List<string>();
+                foreach (var k in r.HeapKinds)
+                {
+                    kinds.Add(k.ToString());
+                }
+
+                attrs.Add(("heap", r.Heap.ToString()));
+                attrs.Add(("heapkinds", List(kinds)));
+            }
+
+            Line(sb, 0, "resource", attrs.ToArray());
             foreach (var s in r.Slots)
             {
                 Line(sb, 1, "slot", ("target", s.Target.ToString()), ("set", N(s.Set)), ("binding", N(s.Binding)));
@@ -142,6 +142,11 @@ public static class ReflectionFormat
             if (e.RequiredFeatures != DeviceFeatures.None)
             {
                 Line(sb, 1, "features", ("bits", N((uint)e.RequiredFeatures)));
+            }
+
+            if (e.DescriptorHeaps != DescriptorHeaps.None)
+            {
+                Line(sb, 1, "heaps", ("bits", N((uint)e.DescriptorHeaps)));
             }
         }
 
@@ -469,6 +474,8 @@ public static class ReflectionFormat
                 ResourceType = Enm<ResourceTypeKind>(n, Str(n, "rtype")),
                 HlslType = Str(n, "hlsl"),
                 ImageFormat = n.Attrs.TryGetValue("format", out var imageFormat) ? imageFormat : "",
+                Heap = n.Attrs.TryGetValue("heap", out var heap) ? Enm<DescriptorHeaps>(n, heap) : DescriptorHeaps.None,
+                HeapKinds = n.Attrs.TryGetValue("heapkinds", out var heapKinds) ? ParseHeapKinds(n, heapKinds) : [],
                 Slots = slots,
                 CounterSlots = counters,
                 Layout = layout,
@@ -534,6 +541,7 @@ public static class ReflectionFormat
             string? push = null;
             var subgroup = SubgroupOperations.None;
             var features = DeviceFeatures.None;
+            var heaps = DescriptorHeaps.None;
             var specUses = new List<string>();
             while (_pos < _nodes.Count && _nodes[_pos].Depth > 0)
             {
@@ -547,6 +555,7 @@ public static class ReflectionFormat
                     case "specuse": specUses.Add(Str(c, "name")); break;
                     case "subgroup": subgroup = (SubgroupOperations)U(c, "ops"); break;
                     case "features": features = (DeviceFeatures)U(c, "bits"); break;
+                    case "heaps": heaps = (DescriptorHeaps)U(c, "bits"); break;
                     default: break;
                 }
             }
@@ -570,6 +579,7 @@ public static class ReflectionFormat
                 UsedSpecConstants = specUses,
                 SubgroupOperations = subgroup,
                 RequiredFeatures = features,
+                DescriptorHeaps = heaps,
             };
         }
 
@@ -609,6 +619,20 @@ public static class ReflectionFormat
         {
             string v = Str(n, key);
             return v == "-" ? [] : v.Split(',');
+        }
+
+        private static List<ResourceKind> ParseHeapKinds(Node n, string v)
+        {
+            var list = new List<ResourceKind>();
+            if (v != "-")
+            {
+                foreach (var part in v.Split(','))
+                {
+                    list.Add(Enm<ResourceKind>(n, part));
+                }
+            }
+
+            return list;
         }
 
         private static ShaderStages ParseStages(Node n, string v)

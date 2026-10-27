@@ -177,7 +177,7 @@ internal static class Frontend
             }
         }
 
-        var checker = new Checker(bag, new FrontendOptions { EntryPoints = options.EntryPoints, Layout = layout, Targets = targets }, path, ct);
+        var checker = new Checker(bag, new FrontendOptions { EntryPoints = options.EntryPoints, Layout = layout, Targets = targets, ResourceHeapBinding = options.ResourceHeapBinding, SamplerHeapBinding = options.SamplerHeapBinding }, path, ct);
         checker.CheckUnit(unit);
         if (bag.HasErrors)
         {
@@ -316,6 +316,7 @@ internal sealed class Reflector
         int bufferIndex = 0, textureIndex = 0, samplerIndex = 0;
         var resources = new List<ResourceInfo>();
         var pushes = new List<PushConstantInfo>();
+        var heapInfo = new Dictionary<HeapKind, ResourceDecl>();
         foreach (var r in _ck.Resources)
         {
             var stages = ShaderStages.None;
@@ -332,8 +333,33 @@ internal sealed class Reflector
                 }
             }
 
+            if (r.Heap != HeapKind.None && heapInfo.TryGetValue(r.Heap, out var firstOfHeap))
+            {
+                // The variables of one heap share a binding and are reported as one resource: widen its stages.
+                int at = resources.FindIndex(x => x.Name == firstOfHeap.Name);
+                var prev = resources[at];
+                resources[at] = new ResourceInfo
+                {
+                    Name = prev.Name,
+                    Kind = prev.Kind,
+                    Count = prev.Count,
+                    Stages = prev.Stages | stages,
+                    HlslType = "",
+                    ResourceType = prev.ResourceType,
+                    Heap = prev.Heap,
+                    HeapKinds = AddKind(prev.HeapKinds, r.Kind),
+                    Slots = prev.Slots,
+                };
+                continue;
+            }
+
             int mslIndex;
-            if (r.Kind == ResourceKind.Sampler)
+            if (r.Count == 0)
+            {
+                // An unbounded array or a heap is one argument buffer of descriptors, whatever it holds.
+                mslIndex = bufferIndex++;
+            }
+            else if (r.Kind == ResourceKind.Sampler)
             {
                 mslIndex = samplerIndex;
                 samplerIndex += Math.Max(1, r.Count);
@@ -392,13 +418,19 @@ internal sealed class Reflector
                 Kind = r.Kind,
                 Count = (uint)r.Count,
                 Stages = stages,
-                HlslType = r.Buffer is not null ? "" : r.HlslTypeText,
+                HlslType = r.Buffer is not null || r.Heap != HeapKind.None ? "" : r.HlslTypeText,
                 ResourceType = r.ResourceType,
                 ImageFormat = r.ImageFormat ?? "",
+                Heap = r.Heap == HeapKind.Resource ? DescriptorHeaps.Resource : r.Heap == HeapKind.Sampler ? DescriptorHeaps.Sampler : DescriptorHeaps.None,
+                HeapKinds = r.Heap == HeapKind.None ? [] : [r.Kind],
                 Slots = slots,
                 CounterSlots = counterSlots,
-                Layout = LayoutOf(r),
+                Layout = r.Heap == HeapKind.None ? LayoutOf(r) : null,
             });
+            if (r.Heap != HeapKind.None)
+            {
+                heapInfo[r.Heap] = r;
+            }
         }
 
         var specs = new List<SpecConstantInfo>();
@@ -442,8 +474,23 @@ internal sealed class Reflector
                     }
                     else
                     {
-                        used.Add(r.Name);
+                        // The variables read from one heap are reported as one resource, named after the heap.
+                        string usedName = r.Heap == HeapKind.Resource ? "ResourceDescriptorHeap" : r.Heap == HeapKind.Sampler ? "SamplerDescriptorHeap" : r.Name;
+                        if (!used.Contains(usedName))
+                        {
+                            used.Add(usedName);
+                        }
                     }
+                }
+            }
+
+            var bindless = BindlessUse.Scan(_mod.EntryPoints[i]);
+            var features = WideTypeUse.Scan(_mod, _mod.EntryPoints[i]).Features | bindless.Features;
+            foreach (var info in resources)
+            {
+                if (info.Heap != DescriptorHeaps.None && info.HeapKinds.Count > 1 && (bindless.Heaps & info.Heap) != 0)
+                {
+                    features |= DeviceFeatures.MutableDescriptorType;
                 }
             }
 
@@ -459,11 +506,23 @@ internal sealed class Reflector
                 PushConstant = pushUse,
                 UsedSpecConstants = SpecNames(SpecUse.Scan(_mod, _mod.EntryPoints[i].Function)),
                 SubgroupOperations = SubgroupUse.Scan(_mod.EntryPoints[i].Function, out _, out _),
-                RequiredFeatures = WideTypeUse.Scan(_mod, _mod.EntryPoints[i]).Features,
+                RequiredFeatures = features,
+                DescriptorHeaps = bindless.Heaps,
             });
         }
 
         return new ShaderReflection { SourceName = _path, Targets = _targets, Resources = resources, PushConstants = pushes, SpecConstants = specs, EntryPoints = entries };
+    }
+
+    private static List<ResourceKind> AddKind(IReadOnlyList<ResourceKind> kinds, ResourceKind kind)
+    {
+        var list = new List<ResourceKind>(kinds);
+        if (!list.Contains(kind))
+        {
+            list.Add(kind);
+        }
+
+        return list;
     }
 
     private static List<string> SpecNames(List<SpecConstant> used)

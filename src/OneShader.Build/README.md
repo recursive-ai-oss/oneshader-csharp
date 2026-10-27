@@ -216,7 +216,7 @@ PipelineLayout? pipeline = v.Pipeline;
 ## Known limits
 
 - Clip-space Y points up in Metal and WebGPU and down in Vulkan; the shader is not adjusted, so flip with the viewport.
-- Unbounded resource arrays and `WaveMatch`/`WaveMultiPrefix*` are not supported. Wave and quad intrinsics work; a shader that uses them needs subgroup support on the device (`SubgroupOperations` on the generated entry class and `Layout`).
+- `WaveMatch`/`WaveMultiPrefix*` are not supported; unbounded resource arrays and descriptor heaps are errors on WGSL only (WebGPU has no binding arrays). Wave and quad intrinsics work; a shader that uses them needs subgroup support on the device (`SubgroupOperations` on the generated entry class and `Layout`).
 - `dotnet build` only (not Visual Studio's .NET Framework MSBuild).
 
 ## License

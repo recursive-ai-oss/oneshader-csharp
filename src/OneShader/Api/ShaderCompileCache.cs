@@ -290,6 +290,8 @@ public sealed class ShaderCompileCache
         DebugInfo = o.DebugInfo,
         DebugSourceRoot = o.DebugSourceRoot,
         SpecializationOverrides = o.SpecializationOverrides,
+        ResourceHeapBinding = o.ResourceHeapBinding,
+        SamplerHeapBinding = o.SamplerHeapBinding,
         ResolverOverride = resolver,
     };
 
@@ -339,6 +341,8 @@ public sealed class ShaderCompileCache
             Put(h, BitConverter.DoubleToInt64Bits(s.Value).ToString(System.Globalization.CultureInfo.InvariantCulture));
         }
 
+        Put(h, o.ResourceHeapBinding is { } rh ? rh.Set.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" + rh.Binding.ToString(System.Globalization.CultureInfo.InvariantCulture) : "-");
+        Put(h, o.SamplerHeapBinding is { } sh ? sh.Set.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" + sh.Binding.ToString(System.Globalization.CultureInfo.InvariantCulture) : "-");
         return Convert.ToHexString(h.GetHashAndReset());
     }
 

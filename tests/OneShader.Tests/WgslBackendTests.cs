@@ -48,6 +48,9 @@ public sealed partial class WgslBackendTests
         ["resource_arrays.hlsl"] = ("OSH5202", "WebGPU has no binding arrays"),
         ["append_consume.hlsl"] = ("OSH5202", "append and consume buffers need a hidden counter that WGSL has no place for"),
         ["lod_query.hlsl"] = ("OSH5202", "CalculateLevelOfDetail has no WGSL equivalent"),
+        ["bindless_textures.hlsl"] = ("OSH5202", "WebGPU has no binding arrays or descriptor indexing"),
+        ["bindless_buffers.hlsl"] = ("OSH5202", "WebGPU has no binding arrays or descriptor indexing"),
+        ["bindless_heap.hlsl"] = ("OSH5202", "WebGPU has no descriptor heaps"),
     };
 
     public static IEnumerable<object[]> CorpusFilesAndModes() =>

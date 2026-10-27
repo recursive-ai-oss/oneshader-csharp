@@ -46,6 +46,17 @@ The same module and options always give the same text. Unsupported constructs ar
   `array<texture2d<float>, 4>`, `array<sampler, 2>`, `array<device T*, N>` and `array<constant T*, N>` arguments; element
   `i` has Metal index `base + i`, which is what reflection reports as the slot of the array (its first index).
   `NonUniformResourceIndex(i)` is just `i`: Metal needs no hint.
+- **Unbounded arrays and descriptor heaps** (`Texture2D T[]`, `ResourceDescriptorHeap`) are argument buffers, one buffer index each
+  (counted with the other buffers in declaration order; reflection reports it as the slot). The parameter is
+  `constant T_entry* T [[buffer(n)]]` where `T_entry` is a one-member struct holding the texture, sampler or buffer pointer (Metal accepts
+  those types only as members of an argument-buffer struct), so descriptor `i` is `T[i].v`. The host fills a plain buffer of 8-byte descriptors
+  with no argument encoder: element `i` is at byte offset `8 * i`, a texture's or sampler's `gpuResourceID` (`MTLResourceID`, sampler created with
+  `supportArgumentBuffers = true`) or a buffer's `gpuAddress`; it calls `useResource`/`useResources` for everything the descriptors point to, then binds the
+  buffer. This needs argument buffers tier 2 and macOS 13 / iOS 16 (Metal 3), although the shader text compiles at language version 2.4.
+  `OneShader.Layouts` describes it (`MetalArgument.IsArgumentBuffer`, `DescriptorStride`, `ElementKinds`, `Encoding`). A heap read as several resource
+  types is one argument buffer: the first type owns the parameter and the others are `reinterpret_cast` views of it. Evidence: the corpus cases
+  `bindless_textures`, `bindless_buffers` and `bindless_heap` match the DXC/Vulkan outputs on an Apple M2 with Metal API and shader validation on. The
+  alternative, `MTLArgumentEncoder` layouts, is device dependent and cannot be described as plain data.
 - **Append and consume buffers** use the hidden counter buffer as a second buffer argument, like the SPIR-V target:
   `Append` adds one with an atomic and stores at the old value, `Consume` subtracts one and loads. `GetDimensions` on
   them is the same error as on any structured buffer.
@@ -84,7 +95,7 @@ Without the option the text has no directives.
 
 `double` (Metal has no 64-bit float); `SV_CullDistance`; `GetDimensions` on structured buffers (`ArrayLength`: Metal cannot
 query it); atomics on textures (Metal 3.1); `WaveMatch` and `WaveMultiPrefix*` (front-end error); the lane index and count in vertex shaders (Metal has no SIMD-group attribute for them); integer/bool matrices; 64-bit integer vectors in
-buffers; unbounded resource arrays; jumps out of several nested loops at once; comparison sampling on 1D/3D textures; texel offsets on cube/1D textures; overlapping `packoffset` members.
+buffers; jumps out of several nested loops at once; comparison sampling on 1D/3D textures; texel offsets on cube/1D textures; overlapping `packoffset` members.
 
 Known deviations: `discard` in a helper that was not inlined calls `discard_fragment()` and returns, so the caller keeps running with writes suppressed; memory-only barriers are emitted as full threadgroup barriers (MSL 2.4 has no fence); signed integer
 overflow is undefined in MSL where HLSL wraps; Metal enables fast-math by default, so NaN and infinity handling is not

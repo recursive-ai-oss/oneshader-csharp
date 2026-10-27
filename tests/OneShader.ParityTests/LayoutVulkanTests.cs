@@ -28,6 +28,9 @@ public sealed unsafe class LayoutVulkanTests
         { "3d/pbr_forward.hlsl", Gfx },
         { "compute/histogram.hlsl", Cs },
         { "lang/resource_arrays.hlsl", Cs },
+        { "lang/bindless_textures.hlsl", Gfx },
+        { "lang/bindless_buffers.hlsl", Cs },
+        { "lang/bindless_heap.hlsl", Cs },
     };
 
     [Theory]
@@ -61,17 +64,50 @@ public sealed unsafe class LayoutVulkanTests
             var setLayouts = new DescriptorSetLayout[info.SetLayouts.Count];
             for (int s = 0; s < setLayouts.Length; s++)
             {
-                var bindings = info.SetLayouts[s].Bindings.Select(b => new DescriptorSetLayoutBinding
+                var infoBindings = info.SetLayouts[s].Bindings;
+                var bindings = infoBindings.Select(b => new DescriptorSetLayoutBinding
                 {
                     Binding = b.Binding,
                     DescriptorType = (DescriptorType)(uint)b.DescriptorType,
                     DescriptorCount = b.DescriptorCount,
                     StageFlags = (ShaderStageFlags)(uint)b.StageFlags,
                 }).ToArray();
-                fixed (DescriptorSetLayoutBinding* pb = bindings)
+                // Unbounded arrays and heaps: the binding flags and the mutable type lists the helper describes.
+                var flags = infoBindings.Select(b => (DescriptorBindingFlags)(uint)b.BindingFlags).ToArray();
+                var mutableTypes = infoBindings.Select(b => b.MutableTypes.Select(t => (DescriptorType)(uint)t).ToArray()).ToArray();
+                var pins = mutableTypes.Select(t => GCHandle.Alloc(t, GCHandleType.Pinned)).ToArray();
+                var lists = mutableTypes.Select((t, i) => new MutableDescriptorTypeListEXT { DescriptorTypeCount = (uint)t.Length, PDescriptorTypes = t.Length > 0 ? (DescriptorType*)pins[i].AddrOfPinnedObject() : null }).ToArray();
+                try
                 {
-                    var ci = new DescriptorSetLayoutCreateInfo { SType = StructureType.DescriptorSetLayoutCreateInfo, BindingCount = (uint)bindings.Length, PBindings = pb };
-                    Assert.Equal(Result.Success, vk.CreateDescriptorSetLayout(dev, &ci, null, out setLayouts[s]));
+                    fixed (DescriptorSetLayoutBinding* pb = bindings)
+                    fixed (DescriptorBindingFlags* pf = flags)
+                    fixed (MutableDescriptorTypeListEXT* pl = lists)
+                    {
+                        var mutableInfo = new MutableDescriptorTypeCreateInfoEXT { SType = StructureType.MutableDescriptorTypeCreateInfoExt, MutableDescriptorTypeListCount = (uint)lists.Length, PMutableDescriptorTypeLists = pl };
+                        var flagsInfo = new DescriptorSetLayoutBindingFlagsCreateInfo
+                        {
+                            SType = StructureType.DescriptorSetLayoutBindingFlagsCreateInfo,
+                            BindingCount = (uint)flags.Length,
+                            PBindingFlags = pf,
+                            PNext = mutableTypes.Any(t => t.Length > 0) ? &mutableInfo : null,
+                        };
+                        var ci = new DescriptorSetLayoutCreateInfo
+                        {
+                            SType = StructureType.DescriptorSetLayoutCreateInfo,
+                            BindingCount = (uint)bindings.Length,
+                            PBindings = pb,
+                            Flags = (DescriptorSetLayoutCreateFlags)(uint)info.SetLayouts[s].CreateFlags,
+                            PNext = info.SetLayouts[s].HasBindingFlags ? &flagsInfo : null,
+                        };
+                        Assert.Equal(Result.Success, vk.CreateDescriptorSetLayout(dev, &ci, null, out setLayouts[s]));
+                    }
+                }
+                finally
+                {
+                    foreach (var pin in pins)
+                    {
+                        pin.Free();
+                    }
                 }
 
                 var copy = setLayouts[s];
@@ -99,7 +135,9 @@ public sealed unsafe class LayoutVulkanTests
             // Descriptor sets can be allocated from those layouts with a pool sized from the same data.
             var sizes = info.SetLayouts.SelectMany(s => s.Bindings).GroupBy(b => b.DescriptorType)
                 .Select(g => new DescriptorPoolSize((DescriptorType)(uint)g.Key, (uint)g.Sum(b => b.DescriptorCount))).ToArray();
-            if (sizes.Length > 0)
+            // Pools for unbounded arrays and mutable bindings need the descriptor-indexing pool flags and type lists: the layout creation above
+            // is what the helper's flags are checked by; allocation is covered by the parity runs, which build such sets.
+            if (sizes.Length > 0 && !info.SetLayouts.Any(s => s.HasBindingFlags))
             {
                 DescriptorPool pool;
                 fixed (DescriptorPoolSize* pps = sizes)

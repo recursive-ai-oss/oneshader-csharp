@@ -43,6 +43,7 @@ public sealed class CaseFormatException : Exception
 /// (resources declared at one SET BINDING with element=0,1,... form a descriptor array)
 ///   (half=X: the same for an output of 16-bit floats)
 /// spec NAME : VALUE                         (overrides a specialization constant of every entry point that reads it: true/false, an integer or a float)
+/// bindless SET BINDING                      (create the binding partially bound and update-after-bind, variable-count when it is the highest of its set, mutable when its elements differ in kind)
 /// expect NAME
 /// relaxed                                   (the outputs depend on RelaxedPrecision rounding: compared on SPIR-V only)
 /// </code>
@@ -105,6 +106,7 @@ public static class CaseFile
         var attributes = new List<VertexInputAttr>();
         string? push = null;
         var specs = new List<KeyValuePair<string, string>>();
+        var bindless = new List<(int, int)>();
         string? indexData = null;
         bool index16 = false;
         int drawCount = 0;
@@ -313,6 +315,9 @@ public static class CaseFile
                 case "expect":
                     expects.Add(new ExpectDecl(Arg(t, 1, fail)));
                     break;
+                case "bindless":
+                    bindless.Add((int.Parse(Arg(t, 1, fail), CultureInfo.InvariantCulture), int.Parse(Arg(t, 2, fail), CultureInfo.InvariantCulture)));
+                    break;
                 default:
                     throw fail($"unknown directive '{t[0]}'");
             }
@@ -330,6 +335,7 @@ public static class CaseFile
         model.Defines.AddRange(defines);
         model.RelaxedPrecision = relaxed;
         model.Specs.AddRange(specs);
+        model.Bindless.AddRange(bindless);
         model.Resources.AddRange(resources);
         model.Dispatches.AddRange(dispatches);
         model.Expects.AddRange(expects);

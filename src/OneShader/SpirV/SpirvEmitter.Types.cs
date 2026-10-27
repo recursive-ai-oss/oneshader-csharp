@@ -878,16 +878,20 @@ internal sealed partial class SpirvEmitter
 
         if (g.ResourceCount != 1)
         {
+            uint elementType = pointee;
             if (g.ResourceCount == 0)
             {
-                Unsupported("Unbounded resource arrays are not supported yet; give '" + g.Name + "' a size.", g.Span);
-                return;
+                // Vulkan: an unbounded array is a runtime array of descriptors; the host sizes it (descriptor indexing).
+                pointee = _s.DeclType("ra" + Inv(elementType), Op.TypeRuntimeArray, elementType);
+                _s.SetInfo(pointee, TypeInfoKind.Array, elementType);
+                UseDescriptorIndexing();
             }
-
-            uint len = ConstId(Constant.UInt((uint)g.ResourceCount));
-            uint elementType = pointee;
-            pointee = _s.DeclType("a" + Inv(elementType) + "x" + Inv(len), Op.TypeArray, elementType, len);
-            _s.SetInfo(pointee, TypeInfoKind.Array, elementType);
+            else
+            {
+                uint len = ConstId(Constant.UInt((uint)g.ResourceCount));
+                pointee = _s.DeclType("a" + Inv(elementType) + "x" + Inv(len), Op.TypeArray, elementType, len);
+                _s.SetInfo(pointee, TypeInfoKind.Array, elementType);
+            }
         }
 
         _ = readOnlyBuffer;

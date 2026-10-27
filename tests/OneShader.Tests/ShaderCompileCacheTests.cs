@@ -103,7 +103,7 @@ public sealed class ShaderCompileCacheTests : IDisposable
     public void ANewOptionOnCompileOptionsMustBeAddedToTheKey()
     {
         // The cache copies and hashes each option by name. If this list changes, update ShaderCompileCache.KeyOf and WithResolver, then this list.
-        string[] known = ["DebugInfo", "DebugSourceRoot", "DefaultMatrixPacking", "Defines", "Enable16BitTypes", "EntryPoints", "IncludeDirectories", "IncludeResolver", "KeepNames", "Optimize", "SpecializationOverrides", "Targets"];
+        string[] known = ["DebugInfo", "DebugSourceRoot", "DefaultMatrixPacking", "Defines", "Enable16BitTypes", "EntryPoints", "IncludeDirectories", "IncludeResolver", "KeepNames", "Optimize", "ResourceHeapBinding", "SamplerHeapBinding", "SpecializationOverrides", "Targets"];
         string[] actual = typeof(CompileOptions).GetProperties(BindingFlags.Public | BindingFlags.Instance).Select(p => p.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray();
         Assert.Equal(known, actual);
     }

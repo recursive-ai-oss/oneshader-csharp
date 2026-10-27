@@ -53,6 +53,9 @@ with `dxc -spirv -fspv-target-env=vulkan1.2`, and give every resource an explici
 | `compute/particles.hlsl` | Per-particle integration over a `RWStructuredBuffer` of structs | written for this repository | MIT OR Apache-2.0 |
 | `3d/push_lit.hlsl` | A lit sphere whose per-draw model matrix, tint, palette index, light direction, uv scale and weights (112 bytes) come from a `[[vk::push_constant]] ConstantBuffer<T>` read by both the vertex and pixel stage | written for this repository | MIT OR Apache-2.0 |
 | `compute/push_kernel.hlsl` | A kernel configured only by a struct-typed `[[vk::push_constant]]` global (64 bytes, with a `float3` and padding) | written for this repository | MIT OR Apache-2.0 |
+| `lang/bindless_textures.hlsl` | Unbounded `Texture2D[]` and `SamplerState[]` arrays indexed with `NonUniformResourceIndex` in a pixel shader, six instanced quads picking textures and samplers by instance | written for this repository | MIT OR Apache-2.0 |
+| `lang/bindless_buffers.hlsl` | Unbounded arrays of structured, byte-address, read-write byte-address and constant buffers chosen per thread, with atomics on the chosen buffer | written for this repository | MIT OR Apache-2.0 |
+| `lang/bindless_heap.hlsl` | SM 6.6 `ResourceDescriptorHeap` / `SamplerDescriptorHeap`: textures, a structured buffer and a read-write byte-address buffer from one heap, samplers from the other | written for this repository | MIT OR Apache-2.0 |
 | `lang/templates.hlsl` | Function and struct templates: deduced and explicit arguments, value parameters, defaults | written for this repository | MIT OR Apache-2.0 |
 | `lang/members.hlsl` | Member functions, this, static members, calls on buffer elements | written for this repository | MIT OR Apache-2.0 |
 | `lang/switch_flow.hlsl` | `switch` with fall-through between cases, stacked labels, a `default` in the middle, negative labels, `return` from a case and a switch inside a loop with `continue` | written for this repository | MIT OR Apache-2.0 |
@@ -100,6 +103,9 @@ written for this repository and licensed `MIT OR Apache-2.0`.
 | `ibl_gold`, `ibl_plastic`, `ibl_sky` | `3d/ibl.hlsl` | draws with cube maps (6 faces, 5 mips) and a 2D table, trilinear sampling | float image, relative tolerance 0.001 |
 | `skinned` | `3d/skinned.hlsl` | draw, indexed, two vertex buffers, depth | image, tolerance 1 |
 | `lang_resource_arrays` | `lang/resource_arrays.hlsl` | dispatch, descriptor arrays (4 textures, 2 samplers, 2 buffers, 2 constant buffers) | buffer exact vs DXC |
+| `bindless_textures` | `lang/bindless_textures.hlsl` | draw, 6 instances; 5 textures and 2 samplers in unbounded arrays (`bindless` binding flags) | image, tolerance 1 (WGSL targets skip it: OSH5202) |
+| `bindless_buffers` | `lang/bindless_buffers.hlsl` | dispatch; 3 structured, 4 read-write byte-address, 2 constant and 3 byte-address buffers in unbounded arrays | buffers exact vs DXC (WGSL targets skip it: OSH5202) |
+| `bindless_heap` | `lang/bindless_heap.hlsl` | dispatch; a mixed resource heap (mutable descriptor binding) and a sampler heap | buffers, float tolerance 5e-4 on Metal (WGSL targets skip it: OSH5202) |
 | `lang_statics_and_literals` | `lang/statics_and_literals.hlsl` | dispatch | buffer exact vs DXC |
 | `lang_switch_flow` | `lang/switch_flow.hlsl` | dispatch, 64 threads | buffers exact vs DXC |
 | `lang_precise_math` | `lang/precise_math.hlsl` | dispatch, one thread | buffer exact vs DXC (the WGSL targets skip it: OSH5205) |

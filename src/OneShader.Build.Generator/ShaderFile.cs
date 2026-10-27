@@ -68,6 +68,12 @@ internal sealed class ResourceNode
 
     /// <summary>The storage-image format name, empty if none.</summary>
     public string ImageFormat = "";
+
+    /// <summary>The <c>DescriptorHeaps</c> member name (<c>Resource</c> or <c>Sampler</c>) for a descriptor heap, empty otherwise.</summary>
+    public string Heap = "";
+
+    /// <summary>For a heap: the <c>ResourceKind</c> member names the shader reads from it.</summary>
+    public string[] HeapKinds = [];
 }
 
 /// <summary>A push-constant block: its layout, stage visibility and where each selected target takes the bytes.</summary>
@@ -393,6 +399,8 @@ internal sealed class ShaderFile
             ResourceType = r.Attrs.TryGetValue("rtype", out var rtype) ? rtype : "ConstantBuffer",
             Hlsl = r.Attrs.TryGetValue("hlsl", out var hlsl) ? hlsl : "",
             ImageFormat = r.Attrs.TryGetValue("format", out var imageFormat) ? imageFormat : "",
+            Heap = r.Attrs.TryGetValue("heap", out var heap) ? heap : "",
+            HeapKinds = r.Attrs.TryGetValue("heapkinds", out var heapKinds) && heapKinds != "-" ? heapKinds.Split(',') : [],
         };
         bool spirvSlot = false, spirvCounter = false, primary = false;
         while (pos < recs.Count && recs[pos].Depth > 0)

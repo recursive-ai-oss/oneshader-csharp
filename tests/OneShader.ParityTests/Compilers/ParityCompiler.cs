@@ -62,12 +62,19 @@ public static class DxcCompiler
     }
 
     /// <summary>Profile string DXC wants for a stage.</summary>
-    public static string Profile(ShaderStage stage, bool sixTwo = false) => stage switch
+    public static string Profile(ShaderStage stage, bool sixTwo = false, bool sixSix = false) => stage switch
     {
-        ShaderStage.Vertex => sixTwo ? "vs_6_2" : "vs_6_0",
-        ShaderStage.Pixel => sixTwo ? "ps_6_2" : "ps_6_0",
-        _ => sixTwo ? "cs_6_2" : "cs_6_0",
+        ShaderStage.Vertex => sixSix ? "vs_6_6" : sixTwo ? "vs_6_2" : "vs_6_0",
+        ShaderStage.Pixel => sixSix ? "ps_6_6" : sixTwo ? "ps_6_2" : "ps_6_0",
+        _ => sixSix ? "cs_6_6" : sixTwo ? "cs_6_2" : "cs_6_0",
     };
+
+    // ResourceDescriptorHeap and SamplerDescriptorHeap are Shader Model 6.6 features: DXC rejects them below that profile.
+    private static bool UsesDescriptorHeaps(string path)
+    {
+        string text = File.ReadAllText(path);
+        return text.Contains("ResourceDescriptorHeap", StringComparison.Ordinal) || text.Contains("SamplerDescriptorHeap", StringComparison.Ordinal);
+    }
 
     private static byte[] Compile(ShaderRequest request, string[] extraDefines)
     {
@@ -78,7 +85,7 @@ public static class DxcCompiler
         var args = new List<string>
         {
             "-spirv", "-fspv-target-env=vulkan1.2", "-HV", "2021",
-            "-T", Profile(request.Stage, SizedTypes.Enabled(request.Defines)), "-E", request.Entry,
+            "-T", Profile(request.Stage, SizedTypes.Enabled(request.Defines), UsesDescriptorHeaps(request.SourcePath)), "-E", request.Entry,
             "-I", Path.GetDirectoryName(request.SourcePath)!,
             "-Fo", output,
         };

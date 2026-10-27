@@ -371,10 +371,24 @@ internal sealed partial class MslEmitter
 
         // Resources, in declaration order.
         var resourceParams = new List<string>();
+        var heapParam = new Dictionary<DescriptorHeaps, (Res Owner, string Name)>();
         foreach (var g in _needed[f])
         {
             if (g.GlobalKind == GlobalKind.Resource && _res.TryGetValue(g, out var r))
             {
+                if (r.Bindless && g.DescriptorHeap != DescriptorHeaps.None)
+                {
+                    if (heapParam.TryGetValue(g.DescriptorHeap, out var owner))
+                    {
+                        // Another view of the same heap: the same argument buffer, read as this resource type.
+                        string viewType = ResourceParamType(r);
+                        prologueLines.Add(viewType + " " + NameOf(g) + " = reinterpret_cast<" + viewType + ">(" + owner.Name + ");");
+                        continue;
+                    }
+
+                    heapParam[g.DescriptorHeap] = (r, NameOf(g));
+                }
+
                 if (IsBufferArray(r))
                 {
                     // Metal rejects arrays of buffers as arguments (array<T*, N> and T* x[N] both fail), so each element is
