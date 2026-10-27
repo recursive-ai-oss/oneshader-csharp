@@ -137,6 +137,43 @@ and type and get the union of their stages; push-constant blocks of the same nam
   depth texture sampled with a comparison sampler, or how a storage texture is accessed, so those come from `WebGpuLayoutOptions`
   (`DepthTextures`, `StorageAccess`, ...); defaults are `float` textures and `write-only` storage textures.
 
+One layout for many pipelines:
+
+```csharp
+// A material system shares one layout across ten forward entry points and three post-effect pixel shaders (several per stage).
+if (!PipelineLayout.TryCreateUnion(allEntries, out var shared, out var error))
+    Console.WriteLine(error);     // "Set 1 binding 3 is 'Albedo' (SampledTexture, ...) in entry point 'PsTex' and 'Params' (ConstantBuffer, ...) in entry point 'PsTint'. ..."
+
+// A bind group made once has to fit pipelines that use different stages:
+var vk = shared.ToVulkan(new VulkanLayoutOptions
+{
+    WidenSets = new Dictionary<uint, ShaderStages> { [0] = ShaderStages.Vertex | ShaderStages.Pixel },
+    DynamicBindings = [(0u, 1u)],                      // by slot; DynamicBuffers = ["Frame"] does it by name
+});
+var web = shared.TryToWebGpu(out var wl, out _, new WebGpuLayoutOptions { WidenGroups = ..., DynamicBuffers = ["Frame"] });
+
+// The engine stores the colour as unorm8x4 at its own offset in a 48-byte vertex:
+var overrides = new VertexLayoutOverrides { Stride = 48, Attributes = new Dictionary<uint, VertexAttributeOverride> { [4] = new(VertexFormat.Unorm8x4, 44) } };
+if (Quad.VSMain.Layout.TryWithVertexOverrides(overrides, out var vs, out error))   // then use vs in TryCreate/TryCreateUnion
+    Console.WriteLine(vs!.Vertex!.ToMetal().Attributes[4]);                          // also ToVulkan() and ToWebGpu()
+```
+
+`TryCreateUnion` merges resources at one set and binding that agree in kind, count, type, texel type and storage format (stages are united);
+a disagreement names both entry points and the slot. Push-constant blocks of the same name and size are shared; blocks of different structs
+merge into one range covering all their stages, sized to the largest, when the members that overlap in bytes have the same type at the same
+offset (this needs the layout built by `EntryLayout.TryCreate`, which carries `PushConstantType`; generated layouts can only merge blocks of
+the same name and size). Entry points of different files number Metal resources independently, so `TryToMetal` reports a slot or push block on
+which two entry points of one stage disagree (Vulkan and WebGPU are unaffected, apart from push-constant slots in the WGSL).
+
+Options that shape the output without changing what the shader says: `WidenSets`/`WidenBindings`/`WidenPushConstants` (Vulkan) and
+`WidenGroups`/`WidenBindings`/`WidenPushConstants` (WebGPU) OR extra stages into the visibility; `DynamicBuffers` (by name),
+`DynamicBindings` (by set and binding) and `ResourceLayout.DynamicOffset` (on a layout you built) make a constant or storage buffer
+`*_BUFFER_DYNAMIC` / `hasDynamicOffset` (`DescriptorSetLayoutBindingInfo.IsDynamic`, `BindGroupLayoutEntryInfo.HasDynamicOffset`).
+`TryWithVertexOverrides` accepts a format of the same class as the shader's input (float, unorm, snorm and half formats for float inputs,
+Uint formats for `uint`, Sint formats for `int`); a different component count is fine, because Vulkan, Metal and WebGPU all drop or
+fill components. The attribute must lie inside the stride, and its offset must be a multiple of min(4, format size). Otherwise
+`LayoutErrorKind.InvalidVertexInput`.
+
 Creating layouts allocates; do it when a shader loads, not per frame.
 
 ## What works

@@ -211,7 +211,11 @@ namespace OneShader.Layouts.WebGpu
         bool Multisampled = false,
         StorageTextureAccess Access = StorageTextureAccess.WriteOnly,
         string StorageFormat = "",
-        bool IsPushConstant = false);
+        bool IsPushConstant = false)
+    {
+        /// <summary>Buffers: <c>hasDynamicOffset</c>; the host passes one offset for it at every <c>setBindGroup</c>, in binding order.</summary>
+        public bool HasDynamicOffset { get; init; }
+    }
 
     /// <summary>One <c>GPUBindGroupLayoutDescriptor</c>.</summary>
     /// <param name="Group">The group index.</param>
@@ -271,6 +275,27 @@ namespace OneShader.Layouts.WebGpu
         /// <c>read-only</c> or (for r32float, r32uint, r32sint) <c>read-write</c>.
         /// </summary>
         public IReadOnlyDictionary<string, StorageTextureAccess> StorageAccess { get; init; } = new Dictionary<string, StorageTextureAccess>();
+
+        /// <summary>Names of constant or storage buffers bound with a dynamic offset (<c>hasDynamicOffset</c>). Default: none.</summary>
+        public IReadOnlyCollection<string> DynamicBuffers { get; init; } = [];
+
+        /// <summary>
+        /// The same by slot: <c>(group, binding)</c> pairs of buffers to bind with a dynamic offset. Either this, <see cref="DynamicBuffers"/> or
+        /// <see cref="ResourceLayout.DynamicOffset"/> is enough. Slots that name no buffer are ignored. Default: none.
+        /// </summary>
+        public IReadOnlyCollection<(uint Group, uint Binding)> DynamicBindings { get; init; } = [];
+
+        /// <summary>
+        /// Extra stages OR-ed into the visibility of every entry of a bind group, by group index, so one bind group layout fits pipelines whose
+        /// shaders use different stages. Default: none.
+        /// </summary>
+        public IReadOnlyDictionary<uint, ShaderStages> WidenGroups { get; init; } = new Dictionary<uint, ShaderStages>();
+
+        /// <summary>The same for single entries, by <c>(group, binding)</c>; combined with <see cref="WidenGroups"/>. Default: none.</summary>
+        public IReadOnlyDictionary<(uint Group, uint Binding), ShaderStages> WidenBindings { get; init; } = new Dictionary<(uint Group, uint Binding), ShaderStages>();
+
+        /// <summary>Extra stages OR-ed into the visibility of the emulated push-constant buffer. Default: none.</summary>
+        public ShaderStages WidenPushConstants { get; init; }
     }
 }
 
@@ -314,6 +339,12 @@ namespace OneShader.Layouts
             var pushes = new List<PushConstantEmulation>();
             foreach (var p in PushConstants)
             {
+                if (p.WgslConflict is { } wgslConflict)
+                {
+                    error = new LayoutError(LayoutErrorKind.PushConstantConflict, wgslConflict);
+                    return false;
+                }
+
                 if (p.WgslGroup == LayoutSlots.None)
                 {
                     error = new LayoutError(LayoutErrorKind.MissingTarget, "The push-constant block '" + p.Name + "' has no WebGPU slot: add Wgsl to OneShaderTargets (or CompileOptions.Targets) and build again.");
@@ -335,7 +366,7 @@ namespace OneShader.Layouts
                 }
 
                 uint buffer = (p.Size + 15) & ~15u;
-                var vis = Visibility(p.Stages);
+                var vis = Visibility(p.Stages | options.WidenPushConstants);
                 groups[(int)p.WgslGroup].Add(new BindGroupLayoutEntryInfo(p.Name, p.WgslBinding, vis, BindingKind.Buffer, BufferBindingType.Uniform, buffer, IsPushConstant: true));
                 pushes.Add(new PushConstantEmulation(p.Name, p.WgslGroup, p.WgslBinding, p.Size, buffer, vis));
             }
@@ -389,7 +420,7 @@ namespace OneShader.Layouts
         private static bool TryEntry(ResourceLayout r, WebGpuLayoutOptions options, out BindGroupLayoutEntryInfo? entry, out LayoutError? error)
         {
             entry = null;
-            var vis = Visibility(r.Stages);
+            var vis = Visibility(r.Stages | WidenedStages(r.Set, r.Binding, options.WidenGroups, options.WidenBindings));
             if (r.Count != 1)
             {
                 error = Unsupported("'" + r.Name + "' is a resource array; WebGPU has no binding arrays. Declare separate resources or use a texture array.");
@@ -479,8 +510,24 @@ namespace OneShader.Layouts
                     return false;
             }
 
+            if (entry!.Kind == BindingKind.Buffer && IsDynamic(r, options))
+            {
+                entry = entry with { HasDynamicOffset = true };
+            }
+
             error = null;
             return true;
+        }
+
+        private static bool IsDynamic(ResourceLayout r, WebGpuLayoutOptions options)
+        {
+            bool dynamic = r.DynamicOffset || Contains(options.DynamicBuffers, r.Name);
+            foreach (var d in options.DynamicBindings)
+            {
+                dynamic |= d.Group == r.Set && d.Binding == r.Binding;
+            }
+
+            return dynamic;
         }
 
         private static LayoutError Unsupported(string message) => new(LayoutErrorKind.Unsupported, message);
