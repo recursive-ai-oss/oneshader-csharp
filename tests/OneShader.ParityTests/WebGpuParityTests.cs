@@ -180,6 +180,7 @@ public class WebGpuParityTests
         {
             Targets = [CompileTarget.Wgsl],
             Defines = model.Defines.Select(d => new KeyValuePair<string, string?>(d.Key, d.Value)).ToList(),
+            Enable16BitTypes = SizedTypes.Enabled(model.Defines),
             IncludeDirectories = [Path.GetDirectoryName(source)!],
             EntryPoints = [new EntryPointRequest(entry, stage switch
             {

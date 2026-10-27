@@ -55,12 +55,7 @@ internal sealed partial class SpirvEmitter
 
     private static bool Degenerate(MatrixType m) => m.Rows == 1 || m.Columns == 1;
 
-    private static int BitWidth(ScalarType s) => s.ScalarKind switch
-    {
-        ScalarKind.Int64 or ScalarKind.UInt64 or ScalarKind.Double => 64,
-        ScalarKind.Int16 or ScalarKind.UInt16 => 16,
-        _ => 32,
-    };
+    private int BitWidth(ScalarType s) => s.StorageBytes(_m.LayoutOptions.Enable16BitTypes) * 8;
 
     // ---- ids and emission helpers -------------------------------------------------------------
 
@@ -157,6 +152,13 @@ internal sealed partial class SpirvEmitter
 
     private void NameValue(Instruction i, uint id)
     {
+        if (i.Type is ScalarType or VectorType or MatrixType && (i.Type.ScalarElement is { IsRelaxed: true }
+            || i.Op == Opcode.Convert && i.Operands[0].Type.ScalarElement is { IsRelaxed: true }))
+        {
+            // min16float and friends: DXC computes them in 32 bits and says the precision may be relaxed.
+            _s.Decorate(id, Dec.RelaxedPrecision);
+        }
+
         if (_o.KeepNames && !string.IsNullOrEmpty(i.Name))
         {
             _s.Name(id, i.Name);
@@ -1289,6 +1291,7 @@ internal sealed partial class SpirvEmitter
         {
             ScalarKind.Bool => Constant.Bool(value != 0),
             ScalarKind.Double => Constant.Double(value),
+            ScalarKind.Half or ScalarKind.Min16Float or ScalarKind.Min10Float => Constant.FromBits(t, System.BitConverter.HalfToUInt16Bits((System.Half)value)),
             _ when t.IsFloatingPoint => Constant.Float((float)value),
             _ => Constant.FromBits(t, (ulong)(long)value),
         };
@@ -1420,7 +1423,19 @@ internal sealed partial class SpirvEmitter
 
         if (BitWidth(fs) != BitWidth(ts))
         {
-            return Emit(fk == NK.SInt ? Op.SConvert : Op.UConvert, toT, v);
+            if (fk == NK.SInt)
+            {
+                return Emit(Op.SConvert, toT, v);
+            }
+
+            if (tk == NK.UInt)
+            {
+                return Emit(Op.UConvert, toT, v);
+            }
+
+            // SPIR-V: OpUConvert must produce an unsigned type, so widen an unsigned value into a signed one through its unsigned twin.
+            var twin = BitWidth(ts) switch { 16 => ScalarType.Get(ScalarKind.UInt16), 64 => ScalarType.Get(ScalarKind.UInt64), _ => ScalarType.UInt };
+            return Emit(Op.Bitcast, toT, Emit(Op.UConvert, TypeId(Shape(twin, n)), v));
         }
 
         return Emit(Op.Bitcast, toT, v);
@@ -1449,6 +1464,11 @@ internal sealed partial class SpirvEmitter
         }
 
         uint none = UIntConst(0);
+        if (i.Type is ScalarType { ScalarKind: ScalarKind.Int64 or ScalarKind.UInt64 })
+        {
+            _s.Capabilities.Add(Cap.Int64Atomics);
+        }
+
         if (i.Op == Opcode.AtomicCompareExchange)
         {
             // SPIR-V takes the new value before the comparand; the IR keeps HLSL's order (comparand, value).

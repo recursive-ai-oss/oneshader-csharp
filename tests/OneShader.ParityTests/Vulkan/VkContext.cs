@@ -279,12 +279,19 @@ public sealed unsafe partial class VkContext : IDisposable
             SType = StructureType.PhysicalDeviceVulkan12Features,
             ShaderSampledImageArrayNonUniformIndexing = v12Query.ShaderSampledImageArrayNonUniformIndexing,
             ShaderStorageBufferArrayNonUniformIndexing = v12Query.ShaderStorageBufferArrayNonUniformIndexing,
+            // Sized-type cases: 16-bit arithmetic and 64-bit atomics, enabled whenever the device has them.
+            ShaderFloat16 = v12Query.ShaderFloat16,
+            ShaderBufferInt64Atomics = v12Query.ShaderBufferInt64Atomics,
+            ShaderSharedInt64Atomics = v12Query.ShaderSharedInt64Atomics,
         };
         var v11 = new PhysicalDeviceVulkan11Features
         {
             SType = StructureType.PhysicalDeviceVulkan11Features,
             PNext = &v12,
             ShaderDrawParameters = v11Query.ShaderDrawParameters,
+            StorageBuffer16BitAccess = v11Query.StorageBuffer16BitAccess,
+            UniformAndStorageBuffer16BitAccess = v11Query.UniformAndStorageBuffer16BitAccess,
+            StoragePushConstant16 = v11Query.StoragePushConstant16,
         };
         // Descriptor arrays indexed at run time need the dynamic-indexing features; shaders that use SV_ClipDistance /
         // SV_CullDistance declare capabilities that need the clip and cull features.
@@ -296,6 +303,9 @@ public sealed unsafe partial class VkContext : IDisposable
             ShaderStorageBufferArrayDynamicIndexing = query.Features.ShaderStorageBufferArrayDynamicIndexing,
             ShaderUniformBufferArrayDynamicIndexing = query.Features.ShaderUniformBufferArrayDynamicIndexing,
             ShaderStorageImageArrayDynamicIndexing = query.Features.ShaderStorageImageArrayDynamicIndexing,
+            ShaderInt16 = query.Features.ShaderInt16,
+            ShaderInt64 = query.Features.ShaderInt64,
+            ShaderFloat64 = query.Features.ShaderFloat64,
         };
         var dci = new DeviceCreateInfo
         {

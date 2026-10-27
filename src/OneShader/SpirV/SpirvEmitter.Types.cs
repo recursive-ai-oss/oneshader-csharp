@@ -178,7 +178,8 @@ internal sealed partial class SpirvEmitter
             case ScalarKind.Half or ScalarKind.Min16Float or ScalarKind.Min10Float:
                 if (_m.LayoutOptions.Enable16BitTypes)
                 {
-                    Unsupported("16-bit floating point types are not supported by the SPIR-V backend yet; compile without 16-bit types.");
+                    _s.Capabilities.Add(Cap.Float16);
+                    return _s.DeclType("f16", Op.TypeFloat, 16);
                 }
 
                 return _s.DeclType("f32", Op.TypeFloat, 32);
@@ -471,7 +472,7 @@ internal sealed partial class SpirvEmitter
                     {
                         kids[i] = LayoutType(l.Members[i].Layout, false, null);
                         sb.Append('|').Append(Inv(kids[i])).Append('@').Append(Inv((uint)l.Members[i].Offset))
-                            .Append(MatrixSignature(l.Members[i].Layout));
+                            .Append(MatrixSignature(l.Members[i].Layout)).Append(l.Members[i].Layout.Type.ScalarElement is { IsRelaxed: true } ? "r" : "");
                     }
 
                     string key = sb.ToString();
@@ -497,6 +498,10 @@ internal sealed partial class SpirvEmitter
                         var ml = l.Members[i];
                         _s.MemberDecorate(id, (uint)i, Dec.Offset, (uint)ml.Offset);
                         DecorateMatrix(id, (uint)i, ml.Layout);
+                        if (ml.Layout.Type.ScalarElement is { IsRelaxed: true })
+                        {
+                            _s.MemberDecorate(id, (uint)i, Dec.RelaxedPrecision);
+                        }
                     }
 
                     if (_o.KeepNames)
@@ -639,6 +644,12 @@ internal sealed partial class SpirvEmitter
         bool input = g.GlobalKind == GlobalKind.Input;
         uint sc = input ? Sc.Input : Sc.Output;
         uint t = TypeId(g.ValueType);
+        if ((TypeFeatures.Of(g.ValueType, _m.LayoutOptions.Enable16BitTypes) & WideTypes.Bits16) != 0)
+        {
+            // Stage inputs and outputs that are 16-bit need their own capability (and the device's storageInputOutput16 feature).
+            _s.Capabilities.Add(Cap.StorageInputOutput16);
+        }
+
         uint builtIn = 0;
         bool isBuiltIn = g.BuiltIn != BuiltIn.None;
         bool sampleMask = false;
@@ -846,6 +857,12 @@ internal sealed partial class SpirvEmitter
         }
 
         _ = readOnlyBuffer;
+        if (valueType is ResourceType { Element: { } bufferElement } && sc is Sc.Uniform or Sc.StorageBuffer or Sc.PushConstant && (TypeFeatures.Of(bufferElement, _m.LayoutOptions.Enable16BitTypes) & WideTypes.Bits16) != 0)
+        {
+            // Vulkan: 16-bit members of a buffer block need the matching storage capability (core since 1.1).
+            _s.Capabilities.Add(sc == Sc.PushConstant ? Cap.StoragePushConstant16 : sc == Sc.Uniform ? Cap.UniformAndStorageBuffer16BitAccess : Cap.StorageBuffer16BitAccess);
+        }
+
         uint id = NewVariable(g, PointerTo(sc, pointee), sc, pointee, 0);
         if (!push)
         {

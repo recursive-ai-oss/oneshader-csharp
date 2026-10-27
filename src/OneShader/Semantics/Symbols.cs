@@ -83,6 +83,12 @@ public static class SemanticCodes
     /// <summary>An attribute is unknown or misused.</summary>
     public const string BadAttribute = "OSH0340";
 
+    /// <summary>A 16-bit scalar type was used without enabling 16-bit types.</summary>
+    public const string SixteenBitTypesOff = "OSH0360";
+
+    /// <summary>A double argument is narrowed to float because the intrinsic only exists for float.</summary>
+    public const string DoubleNarrowed = "OSH0361";
+
     /// <summary>A language feature the compiler does not support yet.</summary>
     public const string Unsupported = "OSH0350";
 

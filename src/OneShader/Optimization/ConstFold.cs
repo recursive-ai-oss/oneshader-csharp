@@ -11,7 +11,7 @@ namespace OneShader.Optimization;
 /// anything whose result could differ between a CPU and a GPU (division by zero, NaN results, subnormal
 /// values, float-to-int conversions out of range, transcendental functions) is left for the driver.
 /// </summary>
-internal static class ConstFold
+internal static partial class ConstFold
 {
     private const uint SignBit32 = 0x8000_0000u;
     private const ulong SignBit64 = 0x8000_0000_0000_0000UL;
@@ -85,7 +85,7 @@ internal static class ConstFold
     }
 
     private static bool Supported(ScalarType t) =>
-        t.ScalarKind is ScalarKind.Bool or ScalarKind.Int or ScalarKind.UInt or ScalarKind.Float or ScalarKind.Double;
+        t.ScalarKind is ScalarKind.Bool or ScalarKind.Int or ScalarKind.UInt or ScalarKind.Float or ScalarKind.Double || IsWide(Norm(t.ScalarKind));
 
     /// <summary>Components of a scalar or vector constant; false for matrices, arrays, structs and unsupported scalar kinds.</summary>
     private static bool Components(IrValue v, out IReadOnlyList<Constant> parts, out ScalarType element)
@@ -141,7 +141,7 @@ internal static class ConstFold
         var bits = new ulong[a.Count];
         for (int k = 0; k < bits.Length; k++)
         {
-            if (!EvalBinary(i.Op, ea.ScalarKind, a[k].Bits, b[k].Bits, out bits[k]))
+            if (!EvalBinary(i.Op, Norm(ea.ScalarKind), a[k].Bits, b[k].Bits, out bits[k]))
             {
                 return null;
             }
@@ -161,6 +161,16 @@ internal static class ConstFold
         for (int k = 0; k < bits.Length; k++)
         {
             ulong x = a[k].Bits;
+            if (IsWide(Norm(ea.ScalarKind)))
+            {
+                if (i.Op is not (Opcode.Neg or Opcode.BitNot) || !EvalWideUnary(i.Op, Norm(ea.ScalarKind), x, out bits[k]))
+                {
+                    return null;
+                }
+
+                continue;
+            }
+
             switch (i.Op)
             {
                 case Opcode.Neg:
@@ -240,14 +250,16 @@ internal static class ConstFold
         {
             if (i.Op == Opcode.Bitcast)
             {
-                if (from.ScalarKind is ScalarKind.Bool or ScalarKind.Double || to.ScalarKind is ScalarKind.Bool or ScalarKind.Double)
+                // Only a same-width, same-shape reinterpretation is folded; bool and shape changes (uint2 to double) are left alone.
+                if (from.ScalarKind == ScalarKind.Bool || to.ScalarKind == ScalarKind.Bool || WidthOf(Norm(from.ScalarKind)) != WidthOf(Norm(to.ScalarKind))
+                    || (i.Type is VectorType bv ? bv.Count : 1) != a.Count)
                 {
                     return null;
                 }
 
-                bits[k] = a[k].Bits & 0xFFFF_FFFFu;
+                bits[k] = a[k].Bits & MaskOf(WidthOf(Norm(to.ScalarKind)));
             }
-            else if (!ConvertScalar(from.ScalarKind, to.ScalarKind, a[k].Bits, out bits[k]))
+            else if (!ConvertScalar(Norm(from.ScalarKind), Norm(to.ScalarKind), a[k].Bits, out bits[k]))
             {
                 return null;
             }
@@ -433,7 +445,7 @@ internal static class ConstFold
             ulong x = a[k].Bits;
             ulong y = n > 1 ? parts[1][k].Bits : 0;
             ulong z = n > 2 ? parts[2][k].Bits : 0;
-            if (!EvalIntrinsic(i.Intrinsic, e.ScalarKind, x, y, z, out bits[k]))
+            if (!EvalIntrinsic(i.Intrinsic, Norm(e.ScalarKind), x, y, z, out bits[k]))
             {
                 return null;
             }
@@ -445,6 +457,11 @@ internal static class ConstFold
     private static bool EvalIntrinsic(Intrinsic fn, ScalarKind k, ulong x, ulong y, ulong z, out ulong r)
     {
         r = 0;
+        if (IsWide(k))
+        {
+            return EvalWideIntrinsic(fn, k, x, y, z, out r);
+        }
+
         switch (k)
         {
             case ScalarKind.Int or ScalarKind.UInt:
@@ -562,6 +579,16 @@ internal static class ConstFold
     private static bool EvalBinary(Opcode op, ScalarKind k, ulong a, ulong b, out ulong r)
     {
         r = 0;
+        if (k == ScalarKind.Half)
+        {
+            return EvalHalf(op, a, b, out r);
+        }
+
+        if (IsWideInt(k))
+        {
+            return EvalWideInt(op, k, a, b, out r);
+        }
+
         switch (k)
         {
             case ScalarKind.Bool:
@@ -865,6 +892,11 @@ internal static class ConstFold
         {
             r = bits;
             return true;
+        }
+
+        if (IsWide(from) || IsWide(to))
+        {
+            return ConvertWide(from, to, bits, out r);
         }
 
         // Read the source as a double (exact for every 32-bit source) or as a boolean.

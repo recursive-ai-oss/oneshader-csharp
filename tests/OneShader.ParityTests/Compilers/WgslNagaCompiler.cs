@@ -44,6 +44,7 @@ public static class WgslNagaCompiler
         {
             Targets = [CompileTarget.Wgsl],
             Defines = request.Defines.Select(d => new KeyValuePair<string, string?>(d.Key, d.Value)).ToList(),
+            Enable16BitTypes = SizedTypes.Enabled(request.Defines),
             IncludeDirectories = [Path.GetDirectoryName(request.SourcePath)!],
             EntryPoints = [new EntryPointRequest(request.Entry, stage)],
             Optimize = Environment.GetEnvironmentVariable("ONESHADER_OPTIMIZE") != "0",

@@ -38,6 +38,7 @@ public static class OneShaderCompiler
             IncludeDirectories = [Path.GetDirectoryName(request.SourcePath)!],
             EntryPoints = [new EntryPointRequest(request.Entry, stage)],
             Optimize = optimize,
+            Enable16BitTypes = SizedTypes.Enabled(request.Defines),
         };
         var result = ShaderCompiler.Compile(File.ReadAllText(request.SourcePath), request.SourcePath, options);
         var blob = result.Find(request.Entry, CompileTarget.SpirV);

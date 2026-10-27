@@ -240,6 +240,10 @@ internal sealed partial class Lowerer
                 return v.Type.ScalarElement == bi.Result.ScalarElement ? v : _b.Bitcast(v, bi.Result);
             }
 
+            case BuiltinKind.JoinDouble:
+                return LowerJoinDouble(c, bi);
+            case BuiltinKind.SplitDouble:
+                return LowerSplitDouble(c, bi);
             case BuiltinKind.Select:
                 return _b.Select(Arg(c, bi, 0), Arg(c, bi, 1), Arg(c, bi, 2));
             case BuiltinKind.Clip:
@@ -264,6 +268,44 @@ internal sealed partial class Lowerer
             default:
                 return LowerTexture(c, bi);
         }
+    }
+
+    private IrValue LowerJoinDouble(CallExpression c, BuiltinCall bi)
+    {
+        var lo = Arg(c, bi, 0);
+        var hi = Arg(c, bi, 1);
+        var word2 = HlslType.Vector(ScalarType.UInt, 2);
+        int n = bi.Result is VectorType v ? v.Count : 1;
+        var lanes = new IrValue[n];
+        for (int i = 0; i < n; i++)
+        {
+            var l = n == 1 ? lo : _b.Extract(lo, ScalarType.UInt, i);
+            var h = n == 1 ? hi : _b.Extract(hi, ScalarType.UInt, i);
+            lanes[i] = _b.Bitcast(_b.Construct(word2, l, h), ScalarType.Double);
+        }
+
+        return n == 1 ? lanes[0] : _b.Construct(bi.Result, lanes);
+    }
+
+    private IrValue LowerSplitDouble(CallExpression c, BuiltinCall bi)
+    {
+        var d = Arg(c, bi, 0);
+        var word2 = HlslType.Vector(ScalarType.UInt, 2);
+        int n = d.Type is VectorType v ? v.Count : 1;
+        var los = new IrValue[n];
+        var his = new IrValue[n];
+        for (int i = 0; i < n; i++)
+        {
+            var lane = n == 1 ? d : _b.Extract(d, ScalarType.Double, i);
+            var words = _b.Bitcast(lane, word2);
+            los[i] = _b.Extract(words, ScalarType.UInt, 0);
+            his[i] = _b.Extract(words, ScalarType.UInt, 1);
+        }
+
+        var wordType = bi.ParamTypes[1];
+        Store(c.Arguments[1], Coerce(n == 1 ? los[0] : _b.Construct(wordType, los), c.Arguments[1].Type!));
+        Store(c.Arguments[2], Coerce(n == 1 ? his[0] : _b.Construct(wordType, his), c.Arguments[2].Type!));
+        return Constant.Zero(ScalarType.Int);
     }
 
     private IrValue LowerMul(CallExpression c, BuiltinCall bi)

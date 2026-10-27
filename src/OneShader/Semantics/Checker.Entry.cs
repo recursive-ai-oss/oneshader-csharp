@@ -109,6 +109,22 @@ internal sealed partial class Checker
             return (VertexFormat)((int)VertexFormat.Float32 + i);
         }
 
+        // 16-bit attributes exist as two- and four-component formats only.
+        if (n is 2 or 4 && TypeOps.BitWidth(s) == 16)
+        {
+            if (s.IsFloatingPoint)
+            {
+                return n == 2 ? VertexFormat.Float16x2 : VertexFormat.Float16x4;
+            }
+
+            if (s.IsSignedInteger)
+            {
+                return n == 2 ? VertexFormat.Sint16x2 : VertexFormat.Sint16x4;
+            }
+
+            return n == 2 ? VertexFormat.Uint16x2 : VertexFormat.Uint16x4;
+        }
+
         if (s.ScalarKind == ScalarKind.Int)
         {
             return (VertexFormat)((int)VertexFormat.Sint32 + i);
@@ -665,7 +681,7 @@ internal sealed partial class Checker
                 fmt = DefaultFormat(s, n);
                 if (fmt is null)
                 {
-                    Err(SemanticCodes.BadSemantic, "'" + v.Name + "' has type '" + v.Type + "', which has no vertex format; use float, int or uint vectors, or name a format with [[oneshader::format(\"...\")]].", v.Span);
+                    Err(SemanticCodes.BadSemantic, "'" + v.Name + "' has type '" + v.Type + "', which has no vertex format; use float, int or uint vectors (or two- or four-component 16-bit vectors), or name a format with [[oneshader::format(\"...\")]].", v.Span);
                     continue;
                 }
             }

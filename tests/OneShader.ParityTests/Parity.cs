@@ -45,6 +45,7 @@ public static class Parity
             {
                 Targets = [CompileTarget.Wgsl],
                 Defines = model.Defines.Select(d => new KeyValuePair<string, string?>(d.Key, d.Value)).ToList(),
+                Enable16BitTypes = SizedTypes.Enabled(model.Defines),
                 IncludeDirectories = [Path.GetDirectoryName(source)!],
             });
         var push = result.Reflection is { PushConstants.Count: > 0 } r ? r.PushConstants[0] : throw new InvalidOperationException("the shader has no push-constant block in its WGSL reflection");
@@ -64,6 +65,19 @@ public static class Parity
         var data = CaseData.Build(model);
         var a = Run(ctx, model, data, reference);
         var b = Run(ctx, model, data, candidate);
+        if (Environment.GetEnvironmentVariable("ONESHADER_DUMP_OUTPUTS") is { Length: > 0 } dump)
+        {
+            // For looking at what a case actually computed: one file per output buffer of each run.
+            Directory.CreateDirectory(dump);
+            foreach (var o in a.Outputs)
+            {
+                File.WriteAllBytes(Path.Combine(dump, model.Name + "." + o.Key.Replace('/', '_') + ".ref.bin"), o.Bytes);
+            }
+            foreach (var o in b.Outputs)
+            {
+                File.WriteAllBytes(Path.Combine(dump, model.Name + "." + o.Key.Replace('/', '_') + ".cand.bin"), o.Bytes);
+            }
+        }
         // WGSL implementations, naga included, may fuse multiply-adds, so cases that declare a float tolerance get it here.
         return CompareRuns(model, a, b, reference.Name, candidate.Name, allowFloatBufferTolerance: candidate.Name.EndsWith("wgsl", StringComparison.Ordinal));
     }

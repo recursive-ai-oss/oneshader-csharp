@@ -14,6 +14,7 @@ internal sealed partial class Lowerer
     private readonly Checker _ck;
     private readonly DiagnosticBag _diag;
     private readonly IrModule _mod = new();
+    private readonly Dictionary<Constant, double> _exactLiterals = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<FunctionSymbol, IrFunction> _fns = [];
     private readonly HashSet<string> _fnNames = new(StringComparer.Ordinal);
     private IrFunction? _initFn;

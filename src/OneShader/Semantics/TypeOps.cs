@@ -41,8 +41,9 @@ internal readonly struct ConstValue
 
     private static double RoundFloat(ScalarType t, double v) => t.ScalarKind switch
     {
-        ScalarKind.Float or ScalarKind.LiteralFloat => (double)(float)v,
+        ScalarKind.Float => (double)(float)v,
         ScalarKind.Half or ScalarKind.Min16Float or ScalarKind.Min10Float => (double)(Half)v,
+        // An unsuffixed literal keeps double precision until it meets a concrete type (DXC: 0.1 added to a double is the double 0.1).
         _ => v,
     };
 
@@ -165,7 +166,8 @@ internal static class TypeOps
         {
             if (fa == fb)
             {
-                return a;
+                // A min-precision value mixed with a plain one is plain (DXC: min16float * float is float).
+                return a.IsRelaxed && !b.IsRelaxed ? b : a;
             }
 
             return fa > fb ? a : b;
@@ -188,7 +190,7 @@ internal static class TypeOps
 
         if (a == b)
         {
-            return a;
+            return a.IsRelaxed && !b.IsRelaxed ? b : a;
         }
 
         int wa = BitWidth(a);

@@ -229,10 +229,37 @@ public sealed class ScalarType : HlslType
 {
     private static readonly ScalarType[] All = CreateAll();
 
-    private ScalarType(ScalarKind scalarKind)
+    private ScalarType(ScalarKind scalarKind, bool relaxed = false)
     {
         ScalarKind = scalarKind;
+        IsRelaxed = relaxed;
     }
+
+    private static readonly ScalarType RelaxedFloat = new(ScalarKind.Float, true);
+    private static readonly ScalarType RelaxedInt = new(ScalarKind.Int, true);
+    private static readonly ScalarType RelaxedUInt = new(ScalarKind.UInt, true);
+
+    /// <summary>
+    /// True for <c>float</c>, <c>int</c> and <c>uint</c> values that stand for min-precision HLSL types (<c>min16float</c>, <c>min16int</c>,
+    /// <c>min16uint</c>, <c>min10float</c>) in a compilation without 16-bit types. They are 32-bit like their plain twins and compare equal to them;
+    /// the flag only lets the SPIR-V backend say RelaxedPrecision, as DXC does.
+    /// </summary>
+    public bool IsRelaxed { get; }
+
+    /// <summary>The min-precision twin of a 32-bit kind: the same type marked <see cref="IsRelaxed"/>; other kinds are returned unchanged.</summary>
+    public static ScalarType Relaxed(ScalarType plain) => plain.ScalarKind switch
+    {
+        ScalarKind.Float => RelaxedFloat,
+        ScalarKind.Int => RelaxedInt,
+        ScalarKind.UInt => RelaxedUInt,
+        _ => plain,
+    };
+
+    /// <inheritdoc/>
+    public override bool Equals(HlslType? other) => other is ScalarType s && s.ScalarKind == ScalarKind;
+
+    /// <inheritdoc/>
+    public override int GetHashCode() => HashCode.Combine(7, (int)ScalarKind);
 
     /// <summary>Which scalar this is.</summary>
     public ScalarKind ScalarKind { get; }

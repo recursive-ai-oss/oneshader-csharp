@@ -14,6 +14,19 @@ namespace OneShader.ParityTests;
 /// <param name="Defines">Preprocessor definitions (name, value) the case asks for.</param>
 public sealed record ShaderRequest(string SourcePath, string Entry, ShaderStage Stage, IReadOnlyList<KeyValuePair<string, string>> Defines);
 
+/// <summary>
+/// A case that defines <see cref="Define"/> is compiled with 16-bit types on (DXC's <c>-enable-16bit-types</c>, shader model 6.2);
+/// the macro is also visible to the shader.
+/// </summary>
+public static class SizedTypes
+{
+    /// <summary>The case-level macro that switches 16-bit types on.</summary>
+    public const string Define = "ONESHADER_16BIT";
+
+    /// <summary>True when <paramref name="defines"/> asks for 16-bit types.</summary>
+    public static bool Enabled(IEnumerable<KeyValuePair<string, string>> defines) => defines.Any(d => d.Key == Define && d.Value != "0");
+}
+
 /// <summary>Compiles one entry point to SPIR-V (Vulkan 1.2) bytes; throws with the compiler's message on failure.</summary>
 public delegate byte[] ShaderCompile(ShaderRequest request);
 
@@ -49,11 +62,11 @@ public static class DxcCompiler
     }
 
     /// <summary>Profile string DXC wants for a stage.</summary>
-    public static string Profile(ShaderStage stage) => stage switch
+    public static string Profile(ShaderStage stage, bool sixTwo = false) => stage switch
     {
-        ShaderStage.Vertex => "vs_6_0",
-        ShaderStage.Pixel => "ps_6_0",
-        _ => "cs_6_0",
+        ShaderStage.Vertex => sixTwo ? "vs_6_2" : "vs_6_0",
+        ShaderStage.Pixel => sixTwo ? "ps_6_2" : "ps_6_0",
+        _ => sixTwo ? "cs_6_2" : "cs_6_0",
     };
 
     private static byte[] Compile(ShaderRequest request, string[] extraDefines)
@@ -65,10 +78,14 @@ public static class DxcCompiler
         var args = new List<string>
         {
             "-spirv", "-fspv-target-env=vulkan1.2", "-HV", "2021",
-            "-T", Profile(request.Stage), "-E", request.Entry,
+            "-T", Profile(request.Stage, SizedTypes.Enabled(request.Defines)), "-E", request.Entry,
             "-I", Path.GetDirectoryName(request.SourcePath)!,
             "-Fo", output,
         };
+        if (SizedTypes.Enabled(request.Defines))
+        {
+            args.Add("-enable-16bit-types");
+        }
         foreach (var d in request.Defines)
         {
             args.Add("-D");

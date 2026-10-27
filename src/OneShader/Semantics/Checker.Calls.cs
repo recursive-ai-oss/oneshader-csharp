@@ -27,8 +27,14 @@ internal enum BuiltinKind
     /// <summary><c>sign</c>, which returns int.</summary>
     Sign,
 
-    /// <summary><c>asfloat</c>, <c>asint</c>, <c>asuint</c>.</summary>
+    /// <summary><c>asfloat</c>, <c>asint</c>, <c>asuint</c>, <c>asfloat16</c>, <c>asint16</c>, <c>asuint16</c>.</summary>
     AsType,
+
+    /// <summary><c>asdouble(lo, hi)</c>: two 32-bit words joined into a double (per component for vectors).</summary>
+    JoinDouble,
+
+    /// <summary><c>asuint(d, lo, hi)</c>: a double split into two 32-bit output words (per component for vectors).</summary>
+    SplitDouble,
 
     /// <summary><c>clip</c>.</summary>
     Clip,
@@ -133,7 +139,7 @@ internal sealed partial class Checker
     private static readonly string[] OtherBuiltins =
     [
         "dot", "length", "distance", "normalize", "cross", "reflect", "refract", "faceforward", "all", "any", "determinant",
-        "mul", "transpose", "mad", "sign", "fmod", "asfloat", "asint", "asuint", "clip", "select", "sincos", "modf", "frexp",
+        "mul", "transpose", "mad", "sign", "fmod", "asfloat", "asint", "asuint", "asdouble", "asfloat16", "asint16", "asuint16", "clip", "select", "sincos", "modf", "frexp",
         "NonUniformResourceIndex", "countbits", "reversebits", "firstbithigh", "firstbitlow", "f16tof32", "f32tof16",
     ];
 
@@ -388,6 +394,22 @@ internal sealed partial class Checker
         return TypeOps.Reshape(shape!, scalar!);
     }
 
+    /// <summary>
+    /// DXC defines most math intrinsics for float only: a double argument is converted to float, the function runs in float, and the
+    /// result is float. Native double forms are limited to arithmetic, comparison, min, max, clamp, saturate, abs, sign, fma, mad, rcp
+    /// and dot. The warning names the narrowing so a shader that wanted double precision knows.
+    /// </summary>
+    private HlslType NarrowDouble(CallExpression c, string name, HlslType u)
+    {
+        if (u.ScalarElement is not { ScalarKind: ScalarKind.Double })
+        {
+            return u;
+        }
+
+        Warn(SemanticCodes.DoubleNarrowed, "'" + name + "' has no double version: the argument is converted to float, so the result has float precision. Use +, -, *, /, min, max, abs, clamp or fma to keep double precision.", c.Span);
+        return TypeOps.Reshape(u, ScalarType.Float);
+    }
+
     private static HlslType[] Fill(HlslType t, int n)
     {
         var a = new HlslType[n];
@@ -422,6 +444,11 @@ internal sealed partial class Checker
                 return true;
             }
 
+            if (entry.Cat != Cat.NumericKeep && name is not ("saturate" or "rcp" or "fma"))
+            {
+                u = NarrowDouble(c, name, u);
+            }
+
             info.Builtin = new BuiltinCall { Kind = BuiltinKind.Intrinsic, Ir = entry.Ir, Name = name, ParamTypes = Fill(u, entry.Arity), Result = entry.Cat == Cat.FloatToBool ? TypeOps.Reshape(u, ScalarType.Bool) : u };
             result = info.Builtin.Result;
             return true;
@@ -447,6 +474,7 @@ internal sealed partial class Checker
                     return true;
                 }
 
+                u = NarrowDouble(c, name, u);
                 info.Builtin = new BuiltinCall { Kind = BuiltinKind.Op, Op = Opcode.Rem, Name = name, ParamTypes = Fill(u, 2), Result = u };
                 result = u;
                 return true;
@@ -657,6 +685,78 @@ internal sealed partial class Checker
                 }
 
                 return true;
+            case "asdouble":
+            {
+                if (!ArityOk(c, name, 2) || AnyError(at))
+                {
+                    return true;
+                }
+
+                var lo = at[0].ScalarElement;
+                var hi = at[1].ScalarElement;
+                if (lo is null || hi is null || at[0] is MatrixType || at[1] is MatrixType || !lo.IsInteger || !hi.IsInteger || TypeOps.BitWidth(lo) != 32 || TypeOps.BitWidth(hi) != 32
+                    || !TypeOps.SameShape(at[0], at[1]) || at[0] is VectorType { Count: var lc } && at[1] is VectorType { Count: var hc } && lc != hc)
+                {
+                    Err(SemanticCodes.TypeMismatch, "'asdouble' joins two 32-bit unsigned integers (uint or vectors of the same size) into a double; the arguments are '" + at[0] + "' and '" + at[1] + "'.", c.Span);
+                    return true;
+                }
+
+                var wordType = TypeOps.Reshape(at[0], ScalarType.UInt);
+                result = TypeOps.Reshape(at[0], ScalarType.Double);
+                info.Builtin = new BuiltinCall { Kind = BuiltinKind.JoinDouble, Name = name, ParamTypes = [wordType, wordType], Result = result };
+                return true;
+            }
+
+            case "asfloat16" or "asint16" or "asuint16":
+            {
+                if (!ArityOk(c, name, 1) || AnyError(at))
+                {
+                    return true;
+                }
+
+                var s16 = at[0].ScalarElement;
+                if (s16 is null || at[0] is MatrixType || TypeOps.BitWidth(s16) != 16)
+                {
+                    Err(SemanticCodes.TypeMismatch, "'" + name + "' reinterprets 16-bit values (half, int16_t, uint16_t), not '" + at[0] + "'. Compile with 16-bit types enabled (-enable-16bit-types).", c.Arguments[0].Span);
+                    return true;
+                }
+
+                var to16 = name == "asfloat16" ? ScalarType.Half : name == "asint16" ? ScalarType.Get(ScalarKind.Int16) : ScalarType.Get(ScalarKind.UInt16);
+                result = TypeOps.Reshape(at[0], to16);
+                info.Builtin = new BuiltinCall { Kind = BuiltinKind.AsType, Name = name, ParamTypes = [at[0]], Result = result };
+                return true;
+            }
+
+            case "asuint" when c.Arguments.Count == 3:
+            {
+                if (AnyError(at))
+                {
+                    return true;
+                }
+
+                var ds = at[0].ScalarElement;
+                if (ds is null || ds.ScalarKind != ScalarKind.Double || at[0] is MatrixType)
+                {
+                    Err(SemanticCodes.TypeMismatch, "The three-argument form of 'asuint' splits a double (or a double vector) into low and high words; the first argument is '" + at[0] + "'.", c.Arguments[0].Span);
+                    return true;
+                }
+
+                var wordType = TypeOps.Reshape(at[0], ScalarType.UInt);
+                for (int i = 1; i < 3; i++)
+                {
+                    string why = WriteBlocker(c.Arguments[i]);
+                    if (why.Length > 0)
+                    {
+                        Err(SemanticCodes.NotAssignable, "Argument " + Num(i + 1) + " of 'asuint' receives a result and must be a variable: " + why, c.Arguments[i].Span);
+                        return true;
+                    }
+                }
+
+                result = HlslType.Void;
+                info.Builtin = new BuiltinCall { Kind = BuiltinKind.SplitDouble, Name = name, ParamTypes = [at[0], wordType, wordType], Result = result };
+                return true;
+            }
+
             case "asfloat" or "asint" or "asuint":
             {
                 if (!ArityOk(c, name, 1) || AnyError(at))

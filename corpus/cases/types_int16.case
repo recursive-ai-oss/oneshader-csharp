@@ -1,0 +1,11 @@
+# 16-bit integers (16-bit types on): wrapping arithmetic, shifts, division, clamping and conversions through a constant buffer and structured buffers.
+# The constant buffer is Offset | Mask, Step, Limit (4 x uint16_t), Bias.
+case types_int16
+shader types/int16.hlsl
+define ONESHADER_16BIT=1
+dispatch CSMain 4 1 1
+uniform 0 0 : 0x00FF0064u 0xFFFB0007u 0x012C03E8u 0x0011EA60u -12345i
+storage 0 1 : @s16(5,768,60000,-30000)
+storage 0 2 out size=1536
+storage 0 3 out size=1024
+storage 0 4 out size=128

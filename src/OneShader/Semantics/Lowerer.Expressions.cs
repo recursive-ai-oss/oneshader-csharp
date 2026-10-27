@@ -37,9 +37,21 @@ internal sealed partial class Lowerer
 
     private IrValue ConvertScalar(IrValue v, ScalarType to)
     {
+        if (to.IsRelaxed && to.ScalarKind is ScalarKind.Int or ScalarKind.UInt && v is Constant { ConstantKind: ConstantKind.Scalar, Type: ScalarType { IsInteger: true } } wide)
+        {
+            // A constant that becomes a min16int / min16uint is cut to 16 bits, though the arithmetic on it stays 32-bit (what DXC does).
+            long cut = to.ScalarKind == ScalarKind.Int ? (short)wide.Bits : (ushort)wide.Bits;
+            return Constant.FromBits(to, to.ScalarKind == ScalarKind.Int ? (uint)(int)cut : (uint)cut);
+        }
+
         if (v.Type.Equals(to))
         {
             return v;
+        }
+
+        if (v is Constant exactSource && to.IsFloatingPoint && _exactLiterals.TryGetValue(exactSource, out double exact))
+        {
+            return ConstOf(new ConstValue(ScalarType.Float, 0, exact), to);
         }
 
         if (ValueOf(v) is { } cv)
@@ -143,6 +155,11 @@ internal sealed partial class Lowerer
     private IrValue Coerce(IrValue v, HlslType to)
     {
         var from = v.Type;
+        if (to is ScalarType { IsRelaxed: true } relaxedTarget && from is ScalarType)
+        {
+            return ConvertScalar(v, relaxedTarget);
+        }
+
         if (from.Equals(to) || to.IsError || from.IsError)
         {
             return v;
@@ -427,7 +444,14 @@ internal sealed partial class Lowerer
 
         if (e.Info?.Const is { } cv && e.Type is ScalarType st)
         {
-            return ConstOf(cv, st);
+            var constant = ConstOf(cv, st);
+            if (st.ScalarKind == ScalarKind.Float && cv.Float != (double)(float)cv.Float && !double.IsNaN(cv.Float))
+            {
+                // An unsuffixed literal such as 0.1 only becomes a float if nothing wider asks for it first.
+                _exactLiterals[constant] = cv.Float;
+            }
+
+            return constant;
         }
 
         var saved = _b.Span;
@@ -546,8 +570,8 @@ internal sealed partial class Lowerer
             return _b.Compare(o, l, r);
         }
 
-        var i = _b.Binary(o, l, r);
-        return i;
+        // The result takes the checker's operand type, not the left value's: a min-precision value mixed with a plain one is plain.
+        return operand.Equals(l.Type) ? _b.Emit(o, operand, l, r) : _b.Binary(o, l, r);
     }
 
     private IrValue RvBinary(BinaryExpression b)

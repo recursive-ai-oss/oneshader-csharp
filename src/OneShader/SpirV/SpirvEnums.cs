@@ -57,18 +57,19 @@ internal static class Glsl
 /// <summary>Capabilities.</summary>
 internal static class Cap
 {
-    public const uint Matrix = 0, Shader = 1, Geometry = 2, Float16 = 9, Float64 = 10, Int64 = 11, Int16 = 22, ClipDistance = 32, CullDistance = 33,
+    public const uint Matrix = 0, Shader = 1, Geometry = 2, Float16 = 9, Float64 = 10, Int64 = 11, Int64Atomics = 12, Int16 = 22, ClipDistance = 32, CullDistance = 33,
         ImageCubeArray = 34, SampleRateShading = 35, Sampled1D = 43, Image1D = 44, SampledCubeArray = 45,
         SampledBuffer = 46, ImageBuffer = 47, ImageMSArray = 48, StorageImageExtendedFormat = 49, ImageQuery = 50, DerivativeControl = 51,
         StorageImageReadWithoutFormat = 55, StorageImageWriteWithoutFormat = 56, ShaderLayer = 69, ShaderViewportIndex = 70,
         GroupNonUniform = 61, GroupNonUniformVote = 62, GroupNonUniformArithmetic = 63, GroupNonUniformBallot = 64,
-        GroupNonUniformShuffle = 65, GroupNonUniformQuad = 68;
+        GroupNonUniformShuffle = 65, GroupNonUniformQuad = 68, StorageBuffer16BitAccess = 4433, UniformAndStorageBuffer16BitAccess = 4434,
+        StoragePushConstant16 = 4435, StorageInputOutput16 = 4436;
 }
 
 /// <summary>Decorations.</summary>
 internal static class Dec
 {
-    public const uint Block = 2, RowMajor = 4, ColMajor = 5, ArrayStride = 6, MatrixStride = 7, BuiltIn = 11,
+    public const uint RelaxedPrecision = 0, Block = 2, RowMajor = 4, ColMajor = 5, ArrayStride = 6, MatrixStride = 7, BuiltIn = 11,
         NoPerspective = 13, Flat = 14, Centroid = 16, Sample = 17, NonWritable = 24, Location = 30, Binding = 33,
         DescriptorSet = 34, Offset = 35, NoContraction = 42, NonUniform = 5300;
 }
