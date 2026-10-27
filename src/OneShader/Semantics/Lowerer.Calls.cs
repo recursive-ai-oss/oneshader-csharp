@@ -680,6 +680,11 @@ internal sealed partial class Lowerer
         switch (s)
         {
             case BlockStatement b:
+                if (_curSource is { } blockOwner && _blockSeen.Add((b.Span.Path, b.Span.Offset)))
+                {
+                    blockOwner.Blocks.Add(b.Span);
+                }
+
                 LowerBlockBody(b.Statements);
                 break;
             case ExpressionStatement e:
@@ -713,6 +718,7 @@ internal sealed partial class Lowerer
                     }
 
                     var slot = _b.Alloca(sym.Type, sym.Name);
+                    slot.DebugVariable = new SourceVariable(sym.Name, sym.Type, d.Span, 0);
                     sym.Ir = slot;
                     if (d.Initializer is not null)
                     {

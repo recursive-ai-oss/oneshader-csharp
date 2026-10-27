@@ -460,6 +460,7 @@ internal static class InstCombine
         var e = IrUtil.Make(like.Parent!, Opcode.CompositeExtract, type, source);
         e.Immediates.AddRange(path);
         e.Span = like.Span;
+        e.InlinedAt = like.InlinedAt;
         e.Name = like.Name;
         emit.Add(e);
         return e;
@@ -529,6 +530,7 @@ internal static class InstCombine
 
             var made = IrUtil.Make(i.Parent!, Opcode.CompositeConstruct, rt, parts);
             made.Span = i.Span;
+            made.InlinedAt = i.InlinedAt;
             made.Name = i.Name;
             emit.Add(made);
             return made;

@@ -62,6 +62,12 @@ read as one half of `unpack2x16float(word)` and written with `pack2x16float`; be
 buffer written with halves is declared `array<atomic<u32>>` and a store clears and sets only its own 16 bits with `atomicAnd`/`atomicOr`. WebGPU does not require half arithmetic
 to round exactly as Vulkan does, so results can differ in the last bit of a half (the parity case allows 0.4%). There are no 16-bit integers.
 
+## Debug information
+
+`CompileOptions.DebugInfo` does not change the WGSL. WGSL has no line directive and the browsers' WebGPU implementations do not map shader positions back
+to another language, so there is nothing a consumer could use; comments carrying `file:line` would make the text differ between debug and release
+builds for no tool's benefit. Source names are kept by the option `KeepNames`.
+
 ## Not available (diagnostic OSH5202)
 
 clip and cull distances (optional WebGPU feature); `CalculateLevelOfDetail`; wave and quad intrinsics in vertex shaders (WebGPU's subgroup functions and built-ins exist only in compute and fragment shaders); resource arrays (WebGPU has no

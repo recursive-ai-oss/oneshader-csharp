@@ -74,6 +74,45 @@ public sealed partial class ToolTests : IDisposable
         SpirvVal(o);
     }
 
+    [Theory]
+    [InlineData("-Zi", DebugInfoLevel.Lines)]
+    [InlineData("-fspv-debug=line", DebugInfoLevel.Lines)]
+    [InlineData("-fspv-debug=vulkan-with-source", DebugInfoLevel.Full)]
+    [InlineData("-fspv-debug=vulkan", DebugInfoLevel.Full)]
+    public void DebugFlagsGiveTheMatchingDebugInfoAndTheOutputValidates(string flag, DebugInfoLevel level)
+    {
+        string src = C("2d/sprite.hlsl");
+        string o = Path.Combine(_dir, "dbg.spv");
+        var (code, _, err) = InProc("-T", "ps_6_0", "-E", "PSMain", flag, "-Od", src, "-Fo", o);
+        Assert.Equal(0, code);
+        Assert.Equal("", err);
+        var api = ShaderCompiler.CompileFile(src, new CompileOptions { EntryPoints = [new EntryPointRequest("PSMain", ShaderStage.Pixel)], DebugInfo = level, Optimize = false }, TestContext.Current.CancellationToken);
+        Assert.Equal(api.Find("PSMain", CompileTarget.SpirV)!.ToArray(), File.ReadAllBytes(o));
+        Assert.Contains(level == DebugInfoLevel.Full ? "NonSemantic.Shader.DebugInfo.100" : "sprite.hlsl", Encoding.Latin1.GetString(File.ReadAllBytes(o)), StringComparison.Ordinal);
+        SpirvVal(o);
+    }
+
+    [Fact]
+    public void DebugRootMakesPathsRelativeAndMslGetsLineDirectives()
+    {
+        string src = C("2d/sprite.hlsl");
+        var (code, bytes, err) = InProc("-T", "ps_6_0", "-E", "PSMain", "--target", "msl", "-Zi", "--debug-root", Corpus, src);
+        Assert.Equal(0, code);
+        Assert.Equal("", err);
+        string msl = Encoding.UTF8.GetString(bytes);
+        Assert.Contains("#line ", msl, StringComparison.Ordinal);
+        Assert.Contains("\"2d/sprite.hlsl\"", msl, StringComparison.Ordinal);
+        Assert.DoesNotContain(Corpus, msl, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void UnknownDebugKindIsAUsageError()
+    {
+        var (code, _, err) = InProc("-fspv-debug=everything", C("2d/sprite.hlsl"));
+        Assert.Equal(2, code);
+        Assert.Contains("-fspv-debug=everything", err, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void MslAndWgslEqualTheApi()
     {
@@ -149,7 +188,7 @@ public sealed partial class ToolTests : IDisposable
     [Theory]
     [InlineData("--bogus")]
     [InlineData("-fvk-b-shift")]
-    [InlineData("-Zi")]
+    [InlineData("-Fd")]
     [InlineData("-HV")]
     public void UnknownOrUnsupportedFlagIsAUsageError(string flag)
     {

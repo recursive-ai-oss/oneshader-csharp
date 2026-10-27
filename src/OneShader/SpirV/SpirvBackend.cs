@@ -12,6 +12,15 @@ public sealed class SpirvOptions
 {
     /// <summary>Emit <c>OpName</c>/<c>OpMemberName</c> debug names from source names. Default true.</summary>
     public bool KeepNames { get; init; } = true;
+
+    /// <summary>Source-level debug information to write. Default none, which leaves the output unchanged.</summary>
+    public DebugInfoLevel DebugInfo { get; init; }
+
+    /// <summary>Directory file paths in debug information are made relative to; see <see cref="DebugPaths.Normalize"/>.</summary>
+    public string? DebugSourceRoot { get; init; }
+
+    /// <summary>True when the module went through the optimizer; recorded in the function descriptions of debug information.</summary>
+    public bool Optimized { get; init; }
 }
 
 /// <summary>Stable diagnostic codes of the SPIR-V backend (OSH5000-OSH5099). Codes are never reused.</summary>
@@ -96,7 +105,8 @@ internal sealed partial class SpirvEmitter
 
         _ep = ep;
         _s.Capabilities.Add(Cap.Shader);
-        if (_o.KeepNames)
+        InitDebug();
+        if (_o.KeepNames && _o.DebugInfo != DebugInfoLevel.Lines)
         {
             SpirvModule.Put(_s.Debug, Op.Source, 5, 600);
         }
@@ -175,6 +185,8 @@ internal sealed partial class SpirvEmitter
             DeclareGlobal(g);
         }
 
+        DebugGlobalVariables(declared);
+
         foreach (var f in order)
         {
             _fnIds[f] = _s.NewId();
@@ -186,6 +198,7 @@ internal sealed partial class SpirvEmitter
         }
 
         EmitEntryPoint(declared);
+        DebugEntry();
         if (_failed)
         {
             return null;

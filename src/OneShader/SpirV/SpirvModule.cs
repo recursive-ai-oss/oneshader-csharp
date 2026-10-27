@@ -36,6 +36,15 @@ internal sealed class SpirvModule
 
     public List<uint> ExtImports { get; } = [];
 
+    /// <summary><c>OpExtension</c> lines; empty unless debug information needs one.</summary>
+    public List<uint> Extensions { get; } = [];
+
+    /// <summary><c>OpString</c>, <c>OpSource</c> and <c>OpSourceContinued</c>: they precede the names in the debug section.</summary>
+    public List<uint> DebugStrings { get; } = [];
+
+    /// <summary>Debug-info records that live among the global declarations, after every type and constant they refer to.</summary>
+    public List<uint> DebugGlobals { get; } = [];
+
     public List<uint> EntryPoints { get; } = [];
 
     public List<uint> ExecutionModes { get; } = [];
@@ -153,15 +162,18 @@ internal sealed class SpirvModule
             Put(words, Op.Capability, c);
         }
 
+        words.AddRange(Extensions);
         words.AddRange(ExtImports);
 
         // OpMemoryModel Logical GLSL450
         Put(words, Op.MemoryModel, 0, 1);
         words.AddRange(EntryPoints);
         words.AddRange(ExecutionModes);
+        words.AddRange(DebugStrings);
         words.AddRange(Debug);
         words.AddRange(Annotations);
         words.AddRange(Types);
+        words.AddRange(DebugGlobals);
         words.AddRange(Code);
 
         var bytes = new byte[words.Count * 4];

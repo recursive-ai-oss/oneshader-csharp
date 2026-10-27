@@ -43,11 +43,14 @@ internal sealed class FuzzInput
         return null;
     }
 
-    public CompileOptions Options(bool optimize, params CompileTarget[] targets) => new()
+    public CompileOptions Options(bool optimize, params CompileTarget[] targets) => Options(optimize, DebugInfoLevel.None, targets);
+
+    public CompileOptions Options(bool optimize, DebugInfoLevel debugInfo, params CompileTarget[] targets) => new()
     {
         IncludeResolver = Resolve,
         Targets = targets.Length == 0 ? [CompileTarget.SpirV, CompileTarget.Msl, CompileTarget.Wgsl] : targets,
         Optimize = optimize,
+        DebugInfo = debugInfo,
     };
 }
 
@@ -223,7 +226,10 @@ internal static class Targets
     {
         // The unoptimized and optimized paths are both reachable from user code (Optimize = false).
         bool optimize = (input.Main.Length & 1) == 0;
-        var options = input.Options(optimize);
+
+        // Debug information is a third axis: the emitters must stay valid and deterministic with it on, whatever the input.
+        var debugInfo = (DebugInfoLevel)((input.Main.Length >> 1) % 3);
+        var options = input.Options(optimize, debugInfo);
         var r1 = ShaderCompiler.Compile(input.Main, "fuzz.hlsl", options);
         CheckNoInternalError(r1.Diagnostics);
         var r2 = ShaderCompiler.Compile(input.Main, "fuzz.hlsl", options);
