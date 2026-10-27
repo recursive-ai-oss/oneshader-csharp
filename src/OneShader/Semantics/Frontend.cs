@@ -340,6 +340,7 @@ internal sealed class Reflector
                 Stages = stages,
                 HlslType = r.Buffer is not null ? "" : r.HlslTypeText,
                 ResourceType = r.ResourceType,
+                ImageFormat = r.ImageFormat ?? "",
                 Slots = slots,
                 CounterSlots = counterSlots,
                 Layout = LayoutOf(r),

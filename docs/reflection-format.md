@@ -37,7 +37,7 @@ entry name="VSMain" stage=Vertex workgroup=0,0,0 stride=32
   uses name="Frame"
 ```
 
-- `resource`: `kind` is `ResourceKind`; `stages` a list of `Vertex`, `Pixel`, `Compute` (`-` for none);
+- `resource`: an optional `format` attribute holds the `[[vk::image_format]]` name of a read-write texture; `kind` is `ResourceKind`; `stages` a list of `Vertex`, `Pixel`, `Compute` (`-` for none);
   `rtype` is `ResourceTypeKind`; `hlsl` the type as written. Child `slot` records give one slot per
   target (`target` is `SpirV`, `Msl` or `Wgsl`; Metal uses the argument index as `binding` and 0 as `set`).
   `count` is the array size (1 for a single resource); an array occupies one `slot`. A `layout` child holds a `type` tree.
