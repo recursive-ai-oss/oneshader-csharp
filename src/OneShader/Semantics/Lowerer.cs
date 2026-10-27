@@ -25,6 +25,9 @@ internal sealed partial class Lowerer
     private readonly List<(BasicBlock Break, BasicBlock? Continue)> _jumps = [];
     private int _depth;
     private SourceSpan _span;
+    private readonly Dictionary<FunctionSymbol, SourceFunction> _sourceFns = [];
+    private readonly HashSet<(string Path, int Offset)> _blockSeen = [];
+    private SourceFunction? _curSource;
 
     public Lowerer(Checker checker, DiagnosticBag diag, string moduleName)
     {
@@ -216,10 +219,36 @@ internal sealed partial class Lowerer
 
     private void Declare(FunctionSymbol sym) => Declare(sym, null);
 
+    /// <summary>The debug description of a source function, created on first use and shared by every IR copy of it.</summary>
+    private SourceFunction SourceOf(FunctionSymbol sym)
+    {
+        if (_sourceFns.TryGetValue(sym, out var known))
+        {
+            return known;
+        }
+
+        var ps = new List<SourceParameter>(sym.Params.Count);
+        foreach (var p in sym.Params)
+        {
+            ps.Add(new SourceParameter(p.Name, p.Type, p.Decl?.Span ?? sym.Span));
+        }
+
+        var extent = sym.Decl.Span;
+        if (sym.Decl.Body is { } body && body.Span.Path == extent.Path && body.Span.Offset + body.Span.Length > extent.Offset + extent.Length)
+        {
+            extent = extent with { Length = body.Span.Offset + body.Span.Length - extent.Offset };
+        }
+
+        var made = new SourceFunction(sym.Name, sym.Span, extent, sym.ReturnType, ps);
+        _sourceFns[sym] = made;
+        _mod.SourceFunctions.Add(made);
+        return made;
+    }
+
     private IrFunction Declare(FunctionSymbol sym, IrValue?[]? bound)
     {
         string name = sym.Name;
-        var f = new IrFunction(UniqueFunctionName(sym.IrName ?? name), sym.ReturnType) { Span = sym.Span };
+        var f = new IrFunction(UniqueFunctionName(sym.IrName ?? name), sym.ReturnType) { Span = sym.Span, Source = SourceOf(sym) };
         for (int i = 0; i < sym.Params.Count; i++)
         {
             var p = sym.Params[i];
@@ -394,6 +423,7 @@ internal sealed partial class Lowerer
         _returnsPrecise = (sym.Decl.Modifiers & Modifiers.Precise) != 0;
         _span = sym.Span;
         _b.Span = _span;
+        _curSource = f.Source;
         int next = 0;
         for (int i = 0; i < sym.Params.Count; i++)
         {
@@ -429,6 +459,7 @@ internal sealed partial class Lowerer
             else
             {
                 var slot = _b.Alloca(p.Type, p.Name);
+                slot.DebugVariable = new SourceVariable(p.Name, p.Type, p.Decl?.Span ?? sym.Span, i + 1);
                 _b.Store(slot, arg);
                 vs.Ir = slot;
             }
@@ -461,6 +492,7 @@ internal sealed partial class Lowerer
         var bodySym = e.Function;
         var body = _fns[bodySym];
         var wrapper = new IrFunction(UniqueFunctionName(bodySym.Name + "_entry"), HlslType.Void) { Span = bodySym.Span };
+        wrapper.Source = new SourceFunction(bodySym.Name + "_entry", bodySym.Span, SourceOf(bodySym).Extent, HlslType.Void, []);
         // The wrapper carries the entry point's name; make that name available by renaming it after creation.
         // Another overload (or a helper) may hold the name already; the entry point's name is the one that must stay as written.
         foreach (var other in _mod.Functions)

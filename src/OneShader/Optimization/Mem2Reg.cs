@@ -339,6 +339,7 @@ internal static class Mem2Reg
                         var ex = IrUtil.Make(block, Opcode.CompositeExtract, i.Type, cur);
                         ex.Immediates.AddRange(la.Path);
                         ex.Span = i.Span;
+                        ex.InlinedAt = i.InlinedAt;
                         ex.Name = i.Name;
                         output.Add(ex);
                         map[i] = ex;
@@ -362,6 +363,7 @@ internal static class Mem2Reg
                         var ins = IrUtil.Make(block, Opcode.CompositeInsert, sa.Variable.Type, IrUtil.Resolve(map, current[vi]), value);
                         ins.Immediates.AddRange(sa.Path);
                         ins.Span = i.Span;
+                        ins.InlinedAt = i.InlinedAt;
                         output.Add(ins);
                         current[vi] = ins;
                     }

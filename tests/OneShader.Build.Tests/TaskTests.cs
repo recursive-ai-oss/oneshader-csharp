@@ -116,6 +116,35 @@ public sealed class TaskTests : IDisposable
         Assert.Contains("Vertex, Pixel or Compute", e.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void BadDebugInfoValueIsReportedWithTheFix()
+    {
+        Write("Shaders/Sprite.hlsl", Valid);
+        var engine = new Engine();
+        var item = new TaskItem(Path.Combine(_dir, "Shaders", "Sprite.hlsl"));
+        var task = new CompileShaders { BuildEngine = engine, Shaders = [item], OutputDirectory = "obj/oneshader", ProjectDirectory = _dir, DefaultNamespace = "Test.Shaders", DefaultDebugInfo = "yes" };
+        Assert.False(task.Execute());
+        var e = Assert.Single(engine.Errors);
+        Assert.Equal("OSH0901", e.Code);
+        Assert.Contains("Use true, full, lines or false", e.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TurningDebugInfoOnOrOffRecompilesTheShader()
+    {
+        Write("Shaders/Sprite.hlsl", Valid);
+        var plain = new Engine();
+        var item = new TaskItem(Path.Combine(_dir, "Shaders", "Sprite.hlsl"));
+        CompileShaders Make(string debug, Engine e) => new() { BuildEngine = e, Shaders = [item], OutputDirectory = "obj/oneshader", ProjectDirectory = _dir, DefaultNamespace = "Test.Shaders", DefaultDebugInfo = debug };
+        Assert.True(Make("", plain).Execute());
+        byte[] before = File.ReadAllBytes(OutputPath);
+        Assert.True(Make("true", new Engine()).Execute());
+        byte[] debug = File.ReadAllBytes(OutputPath);
+        Assert.NotEqual(before, debug);
+        Assert.True(Make("", new Engine()).Execute());
+        Assert.Equal(before, File.ReadAllBytes(OutputPath));
+    }
+
     /// <summary>Writes the output file a successful compile of the current shader would have left.</summary>
     private void SeedOutput(string defines = "", params string[] includes)
     {

@@ -49,6 +49,7 @@ internal static class Sroa
                     var p = IrUtil.Make(entry, Opcode.Alloca, new PointerType(AddressSpace.Function, et));
                     p.Name = inst.Name is null ? null : inst.Name + "." + k;
                     p.Span = inst.Span;
+                    p.InlinedAt = inst.InlinedAt;
                     pieces[k] = p;
                 }
 
@@ -80,12 +81,14 @@ internal static class Sroa
                     {
                         var ld = IrUtil.Make(block, Opcode.Load, ((PointerType)lpieces[k].Type).Pointee, lpieces[k]);
                         ld.Span = i.Span;
+                        ld.InlinedAt = i.InlinedAt;
                         output.Add(ld);
                         parts[k] = ld;
                     }
 
                     var whole = IrUtil.Make(block, Opcode.CompositeConstruct, i.Type, parts);
                     whole.Span = i.Span;
+                    whole.InlinedAt = i.InlinedAt;
                     whole.Name = i.Name;
                     output.Add(whole);
                     map[i] = whole;
@@ -99,9 +102,11 @@ internal static class Sroa
                         var ex = IrUtil.Make(block, Opcode.CompositeExtract, ((PointerType)spieces[k].Type).Pointee, i.Operands[1]);
                         ex.Immediates.Add(k);
                         ex.Span = i.Span;
+                        ex.InlinedAt = i.InlinedAt;
                         output.Add(ex);
                         var st = IrUtil.Make(block, Opcode.Store, HlslType.Void, spieces[k], ex);
                         st.Span = i.Span;
+                        st.InlinedAt = i.InlinedAt;
                         output.Add(st);
                     }
 

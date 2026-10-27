@@ -137,6 +137,7 @@ internal sealed partial class MslEmitter
                 return Flow.Left;
             }
 
+            Mark(t.Span);
             Next step;
             switch (t.Op)
             {

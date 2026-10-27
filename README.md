@@ -148,7 +148,7 @@ generated code follow [Semantic Versioning](https://semver.org/); the
 - **Using it:** the package guides ([build](src/OneShader.Build/README.md),
   [compiler](src/OneShader/README.md)), the
   [generated bindings](docs/generated-bindings.md), and the
-  [reflection format](docs/reflection-format.md).
+  [reflection format](docs/reflection-format.md); [debugging shaders](docs/debugging.md) in RenderDoc, Nsight and Xcode.
 - **Backends:** [SPIR-V](docs/spirv-backend.md), [MSL](docs/msl-backend.md),
   [WGSL](docs/wgsl-backend.md), the shared [IR](docs/ir.md), and
   [browser WebGPU parity](docs/webgpu-parity.md).

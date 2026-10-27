@@ -10,6 +10,12 @@ public sealed class MslOptions
 {
     /// <summary>Keep source-level names (variables, struct members) in the output where they are legal MSL. Default true; false gives short numbered names.</summary>
     public bool KeepNames { get; init; } = true;
+
+    /// <summary>Write <c>#line</c> directives that map statements back to the HLSL source. Any level but none does; default none, which leaves the output unchanged.</summary>
+    public DebugInfoLevel DebugInfo { get; init; }
+
+    /// <summary>Directory file paths in <c>#line</c> directives are made relative to; see <see cref="DebugPaths.Normalize"/>.</summary>
+    public string? DebugSourceRoot { get; init; }
 }
 
 /// <summary>Stable diagnostic codes of the MSL backend (OSH5100-OSH5149). Codes are never reused.</summary>

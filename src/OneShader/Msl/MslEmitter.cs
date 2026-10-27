@@ -62,6 +62,11 @@ internal sealed partial class MslEmitter
 
     private void W(string line)
     {
+        if (_pendingMark.IsKnown)
+        {
+            FlushMark();
+        }
+
         _out.Append(' ', _indent * 4).Append(line).Append('\n');
     }
 
@@ -71,6 +76,7 @@ internal sealed partial class MslEmitter
         var saved = _out;
         _out = new StringBuilder();
         _indent++;
+        ForgetMark();
         try
         {
             body();
@@ -80,6 +86,7 @@ internal sealed partial class MslEmitter
         {
             _indent--;
             _out = saved;
+            ForgetMark();
         }
     }
 

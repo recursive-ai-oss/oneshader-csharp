@@ -433,6 +433,72 @@ public sealed class PackageTests : IClassFixture<PackageFixture>
         Assert.Equal(0, Regex.Count(result.Output, "OSH0300") - matches.Count);
     }
 
+    /// <summary>Copies the Sprite sample to <paramref name="folder"/>/Sprite with a props file of its own, so the folder name is the only difference between copies.</summary>
+    private string CopySprite(string folder)
+    {
+        string root = Path.Combine(_fx.Root, folder);
+        string project = Path.Combine(root, "Sprite");
+        Directory.CreateDirectory(Path.Combine(project, "Shaders"));
+        string source = Path.Combine(Harness.RepoRoot, "samples", "Sprite");
+        foreach (string file in new[] { "Sprite.csproj", "Program.cs", Path.Combine("Shaders", "Sprite.hlsl") })
+        {
+            File.Copy(Path.Combine(source, file), Path.Combine(project, file));
+        }
+
+        File.WriteAllText(
+            Path.Combine(root, "Directory.Build.props"),
+            "<Project><PropertyGroup><TargetFramework>net10.0</TargetFramework><Nullable>enable</Nullable><ArtifactsPath>$(ONESHADER_ARTIFACTS)</ArtifactsPath></PropertyGroup></Project>");
+        return project;
+    }
+
+    private (string Blobs, string Generated) BuildCopy(string project, string artifacts, params string[] extra)
+    {
+        string packages = Path.Combine(_fx.Root, "packages");
+        var restore = PackageFixture.Run(Dotnet, ["restore", "Sprite.csproj", "--source", _fx.Feed, "-v", "quiet"], project, artifacts, packages);
+        Assert.True(restore.Code == 0, restore.Output);
+        var build = PackageFixture.Run(Dotnet, ["build", "Sprite.csproj", "--no-restore", "-nologo", "-p:EmitCompilerGeneratedFiles=true", "-p:OneShaderTargets=SpirV%3BMsl", .. extra], project, artifacts, packages);
+        Assert.True(build.Code == 0, build.Output);
+        return (Find(artifacts, "Sprite.hlsl.oneshader"), Find(artifacts, "*.Sprite.g.cs"));
+    }
+
+    private static List<byte[]> Blobs(string oneshaderFile) =>
+        File.ReadAllLines(oneshaderFile)
+            .Where(l => l.StartsWith("blob ", StringComparison.Ordinal))
+            .Select(l => Convert.FromBase64String(Regex.Match(l, "data=\"([^\"]*)\"").Groups[1].Value))
+            .ToList();
+
+    [Fact]
+    public void DebugInfoEmbedsProjectRelativeSourcesAndTheGeneratedCodeOtherwiseStaysTheSame()
+    {
+        var (blobsA, csA) = BuildCopy(CopySprite("debug-a"), Path.Combine(_fx.Root, "art-debug-a"), "-p:OneShaderDebugInfo=true");
+
+        // The same project in a differently named folder gives the same bytes: nothing about where it lives is recorded.
+        var (blobsB, csB) = BuildCopy(CopySprite("elsewhere-b"), Path.Combine(_fx.Root, "art-debug-b"), "-p:OneShaderDebugInfo=true");
+        Assert.Equal(File.ReadAllBytes(blobsA), File.ReadAllBytes(blobsB));
+        Assert.Equal(File.ReadAllBytes(csA), File.ReadAllBytes(csB));
+
+        var blobs = Blobs(blobsA);
+        Assert.Equal(4, blobs.Count);
+        foreach (byte[] blob in blobs)
+        {
+            string text = System.Text.Encoding.Latin1.GetString(blob);
+            Assert.Contains("Shaders/Sprite.hlsl", text, StringComparison.Ordinal);
+            foreach (string leak in new[] { _fx.Root, Path.GetTempPath().TrimEnd('/', '\\'), "debug-a", "elsewhere-b", "/home/", "/Users/", ":\\" })
+            {
+                Assert.DoesNotContain(leak, text, StringComparison.Ordinal);
+            }
+        }
+
+        Assert.Contains(blobs, b => System.Text.Encoding.Latin1.GetString(b).Contains("NonSemantic.Shader.DebugInfo.100", StringComparison.Ordinal));
+        Assert.Contains(blobs, b => System.Text.Encoding.Latin1.GetString(b).Contains("#line ", StringComparison.Ordinal));
+
+        // Without the property: no debug records, and the generated C# differs from the debug build only in the bytes of the blobs.
+        var (blobsPlain, csPlain) = BuildCopy(CopySprite("plain"), Path.Combine(_fx.Root, "art-debug-plain"));
+        Assert.All(Blobs(blobsPlain), b => Assert.DoesNotContain("NonSemantic", System.Text.Encoding.Latin1.GetString(b), StringComparison.Ordinal));
+        static string[] Code(string file) => File.ReadAllLines(file).Where(l => !l.TrimStart().StartsWith("0x", StringComparison.Ordinal)).ToArray();
+        Assert.Equal(Code(csPlain), Code(csA));
+    }
+
     [Fact]
     public void ProjectReferencesWorkWithoutAPackage()
     {
