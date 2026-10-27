@@ -96,6 +96,7 @@ internal sealed partial class Lowerer
                 Set = r.Set,
                 Binding = r.Binding,
                 ResourceCount = r.Count,
+                DescriptorHeap = r.Heap == HeapKind.Resource ? DescriptorHeaps.Resource : r.Heap == HeapKind.Sampler ? DescriptorHeaps.Sampler : DescriptorHeaps.None,
                 Layout = r.Layout,
                 ImageFormat = r.ImageFormat,
                 Span = r.Span,

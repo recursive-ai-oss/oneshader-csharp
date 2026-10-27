@@ -55,6 +55,12 @@ internal sealed partial class Checker
             return HlslType.Error;
         }
 
+        if (tt is DescriptorHeapType heapTarget)
+        {
+            Err(SemanticCodes.BadDescriptorHeap, "'" + name + "' cannot be called on " + heapTarget + " directly: it has no type until it is assigned. " + (heapTarget.IsElement ? HeapUsageHint(heapTarget) : "Index the heap first, for example ResourceDescriptorHeap[i]."), ma.Span);
+            return HlslType.Error;
+        }
+
         if (tt is ArrayType { Element: ResourceType })
         {
             Err(SemanticCodes.BadOperator, "Index the resource array first, for example " + name + "[0]." + name + "(...).", ma.Span);

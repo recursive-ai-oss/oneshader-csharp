@@ -154,6 +154,41 @@ public enum DeviceFeatures
 
     /// <summary>64-bit atomics (Vulkan <c>shaderBufferInt64Atomics</c> / <c>shaderSharedInt64Atomics</c>).</summary>
     Int64Atomics = 256,
+
+    /// <summary>
+    /// Unbounded resource arrays and descriptor heaps (Vulkan <c>runtimeDescriptorArray</c> and <c>descriptorBindingVariableDescriptorCount</c>;
+    /// Metal: argument buffers tier 2 and Metal 3's <c>gpuResourceID</c>).
+    /// </summary>
+    RuntimeDescriptorArray = 512,
+
+    /// <summary>
+    /// Resource arrays indexed with <c>NonUniformResourceIndex</c> (Vulkan <c>shader*ArrayNonUniformIndexing</c> for the descriptor types the
+    /// array holds: see the resource's <see cref="ResourceInfo.Kind"/>).
+    /// </summary>
+    NonUniformIndexing = 1024,
+
+    /// <summary>
+    /// A descriptor heap read as more than one kind of resource, so one binding holds several descriptor types (Vulkan
+    /// <c>VK_EXT_mutable_descriptor_type</c>, <c>mutableDescriptorType</c>).
+    /// </summary>
+    MutableDescriptorType = 2048,
+}
+
+/// <summary>
+/// The Shader Model 6.6 descriptor heaps. As a resource's <see cref="ResourceInfo.Heap"/> it is one value; as an entry point's
+/// <see cref="EntryPointInfo.DescriptorHeaps"/> it is the set of heaps the entry point reads.
+/// </summary>
+[Flags]
+public enum DescriptorHeaps
+{
+    /// <summary>Not a heap (for a resource), or no heap used (for an entry point).</summary>
+    None = 0,
+
+    /// <summary><c>ResourceDescriptorHeap</c>: textures, buffers and constant buffers.</summary>
+    Resource = 1,
+
+    /// <summary><c>SamplerDescriptorHeap</c>: samplers.</summary>
+    Sampler = 2,
 }
 
 /// <summary>
@@ -288,6 +323,24 @@ public sealed class ResourceInfo
 
     /// <summary>Array size; 1 for a single resource, 0 when unbounded.</summary>
     public uint Count { get; init; } = 1;
+
+    /// <summary>
+    /// True for an unbounded resource array (<c>Texture2D t[]</c>) and for a descriptor heap: <see cref="Count"/> is 0 and the host
+    /// sizes the binding when it creates it. Needs <see cref="DeviceFeatures.RuntimeDescriptorArray"/>.
+    /// </summary>
+    public bool IsUnbounded => Count == 0;
+
+    /// <summary>
+    /// Which SM 6.6 heap this binding is: all resources read from <c>ResourceDescriptorHeap</c> share one binding, as do those from
+    /// <c>SamplerDescriptorHeap</c>, and each is reported as one resource named after the heap. <see cref="DescriptorHeaps.None"/> for ordinary resources.
+    /// </summary>
+    public DescriptorHeaps Heap { get; init; }
+
+    /// <summary>
+    /// For a heap: the descriptor kinds the shader reads from it, in order of first use (<see cref="Kind"/> is the first). More than one
+    /// means the binding holds mixed descriptor types. Empty for ordinary resources.
+    /// </summary>
+    public IReadOnlyList<ResourceKind> HeapKinds { get; init; } = [];
 
     /// <summary>Stages whose entry points use it.</summary>
     public ShaderStages Stages { get; init; }
@@ -458,8 +511,11 @@ public sealed class EntryPointInfo
     /// <summary>True when the entry point needs subgroup support from the device (Vulkan subgroup operations, Metal SIMD-group functions, the WebGPU <c>subgroups</c> feature).</summary>
     public bool UsesSubgroups => SubgroupOperations != SubgroupOperations.None;
 
-    /// <summary>The optional device features this entry point needs for 16-bit and 64-bit types; <see cref="DeviceFeatures.None"/> when it uses only 32-bit scalars.</summary>
+    /// <summary>The optional device features this entry point needs for 16-bit and 64-bit types and for descriptor indexing; <see cref="DeviceFeatures.None"/> when it needs none.</summary>
     public DeviceFeatures RequiredFeatures { get; init; }
+
+    /// <summary>The SM 6.6 descriptor heaps this entry point reads; each is also listed by name in <see cref="UsedResources"/>.</summary>
+    public DescriptorHeaps DescriptorHeaps { get; init; }
 }
 
 /// <summary>Everything tooling and generated code need to know about one compiled shader file.</summary>

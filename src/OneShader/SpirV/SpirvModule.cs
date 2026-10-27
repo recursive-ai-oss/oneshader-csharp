@@ -34,6 +34,9 @@ internal sealed class SpirvModule
 
     public SortedSet<uint> Capabilities { get; } = [];
 
+    /// <summary>Extension names for <c>OpExtension</c>, sorted so the output is deterministic.</summary>
+    public SortedSet<string> Extensions { get; } = new(StringComparer.Ordinal);
+
     public List<uint> ExtImports { get; } = [];
 
     public List<uint> EntryPoints { get; } = [];
@@ -151,6 +154,11 @@ internal sealed class SpirvModule
         foreach (var c in Capabilities)
         {
             Put(words, Op.Capability, c);
+        }
+
+        foreach (var e in Extensions)
+        {
+            PutWithString(words, 10, [], e, []); // OpExtension
         }
 
         words.AddRange(ExtImports);

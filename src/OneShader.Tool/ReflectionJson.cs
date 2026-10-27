@@ -42,6 +42,24 @@ internal static class ReflectionJson
                 w.WriteString("hlslType", res.HlslType);
                 w.WriteString("resourceType", res.ResourceType.ToString());
                 w.WriteNumber("count", res.Count);
+                if (res.IsUnbounded)
+                {
+                    // Written only for unbounded arrays and heaps, so other shaders' files stay as they were.
+                    w.WriteBoolean("unbounded", true);
+                }
+
+                if (res.Heap != DescriptorHeaps.None)
+                {
+                    w.WriteString("heap", res.Heap.ToString());
+                    w.WriteStartArray("heapKinds");
+                    foreach (var k in res.HeapKinds)
+                    {
+                        w.WriteStringValue(k.ToString());
+                    }
+
+                    w.WriteEndArray();
+                }
+
                 Stages(w, "stages", res.Stages);
                 Slots(w, "slots", res.Slots);
                 Slots(w, "counterSlots", res.CounterSlots);
@@ -127,6 +145,16 @@ internal static class ReflectionJson
                 }
 
                 w.WriteEndArray();
+                if (e.DescriptorHeaps != DescriptorHeaps.None)
+                {
+                    w.WriteString("descriptorHeaps", e.DescriptorHeaps.ToString());
+                }
+
+                if (e.RequiredFeatures != DeviceFeatures.None)
+                {
+                    w.WriteString("requiredFeatures", e.RequiredFeatures.ToString());
+                }
+
                 if (e.PushConstant is not null)
                 {
                     w.WriteString("pushConstant", e.PushConstant);

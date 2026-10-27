@@ -44,7 +44,27 @@ internal sealed partial class MslEmitter
         public string ElementType { get; set; } = "";
 
         public bool ElementWrapped { get; set; }
+
+        /// <summary>
+        /// True for an unbounded array or a descriptor heap. It is one argument buffer (a buffer-index argument) holding one 8-byte
+        /// descriptor per element: a texture's or sampler's <c>gpuResourceID</c>, a buffer's <c>gpuAddress</c>.
+        /// </summary>
+        public bool Bindless { get; init; }
+
+        /// <summary>For a bindless array: the name of the struct that wraps one descriptor, declared on first use.</summary>
+        public string EntryType { get; set; } = "";
     }
+
+    private static ResClass? ClassOfElement(HlslType elem) => elem switch
+    {
+        SamplerType => ResClass.Sampler,
+        ResourceType rt when rt.IsTexture => ResClass.Texture,
+        ResourceType { ResourceKind: ResourceTypeKind.Buffer or ResourceTypeKind.RWBuffer } => ResClass.TexelBuffer,
+        ResourceType { ResourceKind: ResourceTypeKind.ConstantBuffer } => ResClass.ConstantBuffer,
+        ResourceType { ResourceKind: ResourceTypeKind.ByteAddressBuffer or ResourceTypeKind.RWByteAddressBuffer } => ResClass.ByteAddressBuffer,
+        ResourceType => ResClass.StructuredBuffer,
+        _ => null,
+    };
 
     private readonly Dictionary<GlobalVariable, Res> _res = [];
 
@@ -61,6 +81,7 @@ internal sealed partial class MslEmitter
     private void AssignBindings()
     {
         int buffers = 0, textures = 0, samplers = 0;
+        var heapIndex = new Dictionary<DescriptorHeaps, int>();
         foreach (var g in _m.Globals)
         {
             if (g.GlobalKind != GlobalKind.Resource)
@@ -70,6 +91,29 @@ internal sealed partial class MslEmitter
 
             int count = Math.Max(1, g.ResourceCount);
             var elem = g.ValueType is ArrayType resourceArray ? resourceArray.Element : g.ValueType;
+            if (g.ResourceCount == 0)
+            {
+                // Unbounded arrays and heaps: one argument buffer each, whatever the elements are. The variables read from one heap
+                // are views of the same argument buffer and share its index.
+                if (ClassOfElement(elem) is not { } bindlessClass)
+                {
+                    Malformed("The resource '" + g.Name + "' is not a texture, sampler or buffer.", g.Span);
+                    continue;
+                }
+
+                if (g.DescriptorHeap == DescriptorHeaps.None || !heapIndex.TryGetValue(g.DescriptorHeap, out int bindlessIndex))
+                {
+                    bindlessIndex = buffers++;
+                    if (g.DescriptorHeap != DescriptorHeaps.None)
+                    {
+                        heapIndex[g.DescriptorHeap] = bindlessIndex;
+                    }
+                }
+
+                _res[g] = new Res { G = g, Class = bindlessClass, Index = bindlessIndex, Count = 1, Elem = elem, Bindless = true };
+                continue;
+            }
+
             ResClass cls;
             int index;
             switch (elem)
@@ -132,7 +176,7 @@ internal sealed partial class MslEmitter
 
             // A vertex function that fetches attributes reads them from MslBackend.VertexBufferIndex, so that slot is not available to resources.
             int bufferLimit = _ep.Stage == ShaderStage.Vertex && HasVertexAttributes() ? MslBackend.VertexBufferIndex : MaxBuffers;
-            bool over = r.Class switch
+            bool over = r.Bindless ? r.Index + r.Count > bufferLimit : r.Class switch
             {
                 ResClass.Sampler => r.Index + r.Count > MaxSamplers,
                 ResClass.Texture or ResClass.TexelBuffer => r.Index + r.Count > MaxTextures,
@@ -140,8 +184,9 @@ internal sealed partial class MslEmitter
             };
             if (over)
             {
-                Fail(MslCodes.TooManyResources, "The resource '" + g.Name + "' would need Metal " + (r.Class == ResClass.Sampler ? "sampler" : r.Class is ResClass.Texture or ResClass.TexelBuffer ? "texture" : "buffer") +
-                    " index " + Inv(r.Index + r.Count - 1) + ", beyond the limit of " + (r.Class == ResClass.Sampler ? Inv(MaxSamplers) : r.Class is ResClass.Texture or ResClass.TexelBuffer ? Inv(MaxTextures) : Inv(bufferLimit)) +
+                bool asBuffer = r.Bindless;
+                Fail(MslCodes.TooManyResources, "The resource '" + g.Name + "' would need Metal " + (!asBuffer && r.Class == ResClass.Sampler ? "sampler" : !asBuffer && r.Class is ResClass.Texture or ResClass.TexelBuffer ? "texture" : "buffer") +
+                    " index " + Inv(r.Index + r.Count - 1) + ", beyond the limit of " + (!asBuffer && r.Class == ResClass.Sampler ? Inv(MaxSamplers) : !asBuffer && r.Class is ResClass.Texture or ResClass.TexelBuffer ? Inv(MaxTextures) : Inv(bufferLimit)) +
                     " per function; merge or remove resources.", g.Span);
             }
         }
@@ -377,6 +422,11 @@ internal sealed partial class MslEmitter
     /// <summary>The MSL type of a resource global as a function parameter, without the name or attribute.</summary>
     private string ResourceParamType(Res r)
     {
+        if (r.Bindless)
+        {
+            return "constant " + BindlessEntryType(r) + "*";
+        }
+
         string one = ResourceElementParamType(r);
         return r.G.ResourceCount != 1 && r.Count >= 1 && r.G.ResourceCount > 0 ? "array<" + one + ", " + Inv(r.Count) + ">" : one;
     }
@@ -411,7 +461,44 @@ internal sealed partial class MslEmitter
         return one;
     }
 
-    private static string ResourceAttribute(Res r) => r.Class switch
+    /// <summary>
+    /// The struct that wraps one descriptor of a bindless array, declared on first use: a texture, sampler or buffer pointer is only
+    /// legal in an argument buffer as a struct member, and an argument buffer is only read through a pointer to such a struct.
+    /// </summary>
+    private string BindlessEntryType(Res r)
+    {
+        if (r.EntryType.Length > 0)
+        {
+            return r.EntryType;
+        }
+
+        string member;
+        switch (r.Class)
+        {
+            case ResClass.Sampler:
+                member = "sampler";
+                break;
+            case ResClass.Texture or ResClass.TexelBuffer:
+                member = TextureTypeText(r);
+                break;
+            case ResClass.ConstantBuffer:
+                PrepareBuffer(r);
+                member = "constant " + r.ElementType + "*";
+                break;
+            default:
+                PrepareBuffer(r);
+                member = (((ResourceType)r.Elem).IsReadWrite ? "device " : "const device ") + r.ElementType + "*";
+                break;
+        }
+
+        string name = _names.Claim(NameOf(r.G) + "_entry", "type");
+        _typeText.Append("// One 8-byte descriptor of the argument buffer '").Append(NameOf(r.G)).Append("'.\n");
+        _typeText.Append("struct ").Append(name).Append("\n{\n    ").Append(member).Append(" v;\n};\n\n");
+        r.EntryType = name;
+        return name;
+    }
+
+    private static string ResourceAttribute(Res r) => r.Bindless ? "[[buffer(" + Inv(r.Index) + ")]]" : r.Class switch
     {
         ResClass.Sampler => "[[sampler(" + Inv(r.Index) + ")]]",
         ResClass.Texture or ResClass.TexelBuffer => "[[texture(" + Inv(r.Index) + ")]]",
@@ -571,7 +658,7 @@ internal sealed partial class MslEmitter
         switch (p.Kind)
         {
             case PlaceKind.Pending:
-                return ResolveResource(p.Resource!, p.Expr + "[" + IndexText(index) + "]");
+                return ResolveResource(p.Resource!, p.Expr + "[" + IndexText(index) + "]" + (p.Resource!.Bindless ? ".v" : ""));
             case PlaceKind.BufferRoot:
             {
                 var r = p.Resource!;

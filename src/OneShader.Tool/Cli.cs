@@ -38,6 +38,8 @@ internal static class Cli
         public bool Optimize = true;
         public bool KeepNames = true;
         public bool Enable16Bit;
+        public HeapBinding? ResourceHeap;
+        public HeapBinding? SamplerHeap;
         public bool WarningsAsErrors;
         public MatrixPacking Packing = MatrixPacking.ColumnMajor;
     }
@@ -132,6 +134,21 @@ internal static class Cli
             else if (TryValue(args, ref i, "-I", out v))
             {
                 s.Includes.Add(v);
+            }
+            else if (a is "-fvk-bind-resource-heap" or "-fvk-bind-sampler-heap")
+            {
+                // DXC spells these <binding> <set>.
+                string binding = Next(args, ref i, a);
+                string set = Next(args, ref i, a);
+                var heap = new HeapBinding(ParseHeapNumber(set, a), ParseHeapNumber(binding, a));
+                if (a == "-fvk-bind-resource-heap")
+                {
+                    s.ResourceHeap = heap;
+                }
+                else
+                {
+                    s.SamplerHeap = heap;
+                }
             }
             else if (a == "--target" || a.StartsWith("--target=", StringComparison.Ordinal))
             {
@@ -296,6 +313,11 @@ internal static class Cli
         return args[++i];
     }
 
+    private static uint ParseHeapNumber(string text, string flag) =>
+        uint.TryParse(text, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out uint n)
+            ? n
+            : throw new UsageException("option '" + flag + "' takes a binding number and a set number, as in '" + flag + " 0 1'; '" + text + "' is not a number.");
+
     private static ShaderStage? ParseProfileOrNull(string profile)
     {
         // vs_6_0 .. ps_6_9, cs_5_0: shader model 5 and 6 profiles for the three stages.
@@ -335,6 +357,8 @@ internal static class Cli
             EntryPoints = discover ? [] : [new EntryPointRequest(s.Entry ?? "main", s.Stage!.Value)],
             DefaultMatrixPacking = s.Packing,
             Enable16BitTypes = s.Enable16Bit,
+            ResourceHeapBinding = s.ResourceHeap,
+            SamplerHeapBinding = s.SamplerHeap,
             Optimize = s.Optimize,
             KeepNames = s.KeepNames,
         };
@@ -480,6 +504,8 @@ internal static class Cli
           -HV 2021           HLSL version (2021 is the only one implemented)
           -WX                treat warnings as errors
           -enable-16bit-types  half and min16* are 16-bit
+          -fvk-bind-resource-heap <binding> <set>   where ResourceDescriptorHeap lives (default: first free binding of set 0)
+          -fvk-bind-sampler-heap <binding> <set>    where SamplerDescriptorHeap lives (default: the next free binding)
           -fspv-target-env=vulkan1.2   accepted (output is valid for Vulkan 1.2 and newer)
           Other -fvk-* and -fspv-* options are rejected with a message.
 

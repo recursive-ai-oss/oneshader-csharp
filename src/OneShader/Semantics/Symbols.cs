@@ -83,6 +83,9 @@ public static class SemanticCodes
     /// <summary>A <c>[[vk::constant_id]]</c> specialization constant is declared in a way that cannot work.</summary>
     public const string BadSpecConstant = "OSH0335";
 
+    /// <summary><c>ResourceDescriptorHeap</c> or <c>SamplerDescriptorHeap</c> is used in a way that cannot work.</summary>
+    public const string BadDescriptorHeap = "OSH0336";
+
     /// <summary>An attribute is unknown or misused.</summary>
     public const string BadAttribute = "OSH0340";
 
@@ -186,6 +189,14 @@ internal sealed class VariableSymbol : Symbol
     public string? IrName { get; set; }
 }
 
+/// <summary>Which SM 6.6 descriptor heap a resource variable was created for.</summary>
+internal enum HeapKind
+{
+    None,
+    Resource,
+    Sampler,
+}
+
 /// <summary>A resource as declared: everything binding assignment and reflection need.</summary>
 internal sealed class ResourceDecl
 {
@@ -211,6 +222,9 @@ internal sealed class ResourceDecl
 
     /// <summary>True for a <c>[[vk::push_constant]]</c> block: no descriptor, a struct laid out like a structured-buffer element.</summary>
     public bool IsPushConstant { get; set; }
+
+    /// <summary>For a variable standing for <c>ResourceDescriptorHeap</c> or <c>SamplerDescriptorHeap</c> read as one resource type: which heap. None for ordinary resources.</summary>
+    public HeapKind Heap { get; init; }
 
     /// <summary>Lower-case <c>[[vk::image_format]]</c> name of a storage texture, or null.</summary>
     public string? ImageFormat { get; set; }
@@ -514,4 +528,7 @@ internal sealed class ExprInfo
 
     /// <summary>For an operator or subscript that calls a user function: the arguments after the object.</summary>
     public IReadOnlyList<Expression>? Args { get; set; }
+
+    /// <summary>For <c>ResourceDescriptorHeap[i]</c> / <c>SamplerDescriptorHeap[i]</c> once it is given a resource type: the heap variable of that type.</summary>
+    public ResourceDecl? HeapDecl { get; set; }
 }

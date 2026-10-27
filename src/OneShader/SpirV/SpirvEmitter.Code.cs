@@ -626,11 +626,21 @@ internal sealed partial class SpirvEmitter
         if (pointee == want)
         {
             Direct(i, Op.Load, want, p);
+            if (_nonUniform.Contains(i.Operands[0]) && i.Type is not ResourceType and not SamplerType)
+            {
+                // DXC decorates data loaded through a non-uniform descriptor as well.
+                MarkNonUniform(i);
+            }
+
             return;
         }
 
         uint loaded = Emit(Op.Load, pointee, p);
         Finish(i, LayoutToPlain(loaded, pointee, i.Type));
+        if (_nonUniform.Contains(i.Operands[0]))
+        {
+            MarkNonUniform(i);
+        }
     }
 
     private void EmitStore(Instruction i)
@@ -846,7 +856,7 @@ internal sealed partial class SpirvEmitter
         if (baseValue is GlobalVariable { ResourceCount: not 1 } && k < i.Operands.Count)
         {
             // Indexing an array of resources; a non-constant index needs the matching dynamic-indexing capability.
-            if (i.Operands[k] is not Constant)
+            if (i.Operands[k] is not Constant && baseValue is GlobalVariable { ResourceCount: > 0 })
             {
                 _s.Capabilities.Add(DynamicIndexingCapability(cur is ArrayType resourceElements ? resourceElements.Element : cur));
             }
@@ -887,7 +897,7 @@ internal sealed partial class SpirvEmitter
         }
 
         _ptrPointee[i] = pe;
-        bool nonUniformChain = baseValue is GlobalVariable { ResourceCount: not 1 } && i.Operands.Count > 1 && IsNonUniform(i.Operands[1]);
+        bool nonUniformChain = (baseValue is GlobalVariable { ResourceCount: not 1 } && i.Operands.Count > 1 && IsNonUniform(i.Operands[1])) || _nonUniform.Contains(baseValue);
         if (idx.Count == 0)
         {
             Finish(i, bp);
@@ -902,13 +912,22 @@ internal sealed partial class SpirvEmitter
         if (nonUniformChain)
         {
             MarkNonUniform(i);
-            var element = ((PointerType)baseValue.Type).Pointee is ArrayType resourceElements ? resourceElements.Element : cur;
-            _s.Capabilities.Add(5301); // ShaderNonUniform
-            _s.Capabilities.Add(NonUniformIndexingCapability(element));
+            if (baseValue is GlobalVariable)
+            {
+                var element = ((PointerType)baseValue.Type).Pointee is ArrayType resourceElements ? resourceElements.Element : cur;
+                _s.Capabilities.Add(NonUniformIndexingCapability(element));
+            }
         }
     }
 
     private readonly HashSet<IrValue> _nonUniform = [];
+
+    /// <summary>RuntimeDescriptorArray with the extension DXC declares next to it.</summary>
+    private void UseDescriptorIndexing()
+    {
+        _s.Capabilities.Add(5302); // RuntimeDescriptorArray
+        _s.Extensions.Add("SPV_EXT_descriptor_indexing");
+    }
 
     // The index may pass through a sign conversion on its way into the access chain.
     private static bool IsNonUniformIntrinsic(IrValue v) => v is Instruction { Op: Opcode.CallIntrinsic, Intrinsic: Intrinsic.NonUniformIndex };
@@ -928,6 +947,7 @@ internal sealed partial class SpirvEmitter
     {
         _nonUniform.Add(v);
         _s.Capabilities.Add(5301); // ShaderNonUniform
+        _s.Extensions.Add("SPV_EXT_descriptor_indexing");
         _s.Decorate(Id(v), Dec.NonUniform);
     }
 

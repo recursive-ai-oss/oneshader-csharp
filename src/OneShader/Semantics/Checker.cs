@@ -19,6 +19,10 @@ internal sealed class FrontendOptions
     public LayoutOptions Layout { get; init; } = LayoutOptions.Default;
 
     public IReadOnlyList<CompileTarget> Targets { get; init; } = [CompileTarget.SpirV];
+
+    public HeapBinding? ResourceHeapBinding { get; init; }
+
+    public HeapBinding? SamplerHeapBinding { get; init; }
 }
 
 internal sealed class StructInfo
@@ -1205,13 +1209,7 @@ internal sealed partial class Checker
                 return;
             }
 
-            if (at.Length == 0)
-            {
-                Err(SemanticCodes.Unsupported, "'" + name.Text + "' is an unbounded resource array, which is not supported. Give it a size, for example '" + name.Text + "[16]'.", name.Span);
-                Define(scope, new VariableSymbol(name.Text, name.Span, VarKind.Global, HlslType.Error, v.Modifiers));
-                return;
-            }
-
+            // An unbounded array (t[]) has Count 0: the host sizes it when it creates the descriptor set.
             element = at.Element;
             count = at.Length;
         }
@@ -1248,36 +1246,7 @@ internal sealed partial class Checker
         }
 
         ApplyImageFormat(rd, v.Attributes, element);
-        if (element is ResourceType rt)
-        {
-            if (rt.IsStorageBuffer && rt.ResourceKind != ResourceTypeKind.ByteAddressBuffer && rt.ResourceKind != ResourceTypeKind.RWByteAddressBuffer)
-            {
-                if (rt.Element is null || rt.Element.IsError)
-                {
-                    Err(SemanticCodes.BadType, "'" + rt.ResourceKind + "' needs an element type, for example '" + rt.ResourceKind + "<float4>'.", name.Span);
-                }
-                else
-                {
-                    ComputeBufferLayout(rd, rt.Element, BufferLayoutRules.StorageBuffer, name.Span);
-                }
-            }
-            else if (rt.ResourceKind == ResourceTypeKind.ConstantBuffer)
-            {
-                if (rt.Element is StructType)
-                {
-                    // DXC lays a push-constant block out like a structured-buffer element (vector-relaxed std430), not like a cbuffer.
-                    ComputeBufferLayout(rd, rt.Element, push ? BufferLayoutRules.StorageBuffer : BufferLayoutRules.ConstantBuffer, name.Span);
-                    if (push && rd.Layout is { } pl && pl.Size > 128)
-                    {
-                        Warn(SemanticCodes.PushConstantSize, "The push-constant block '" + name.Text + "' is " + Num((int)pl.Size) + " bytes; Vulkan only guarantees maxPushConstantsSize of 128 bytes. Shrink it or move the rest into a constant buffer.", name.Span);
-                    }
-                }
-                else
-                {
-                    Err(SemanticCodes.BadType, "ConstantBuffer needs a struct type, for example 'ConstantBuffer<MyData>'.", name.Span);
-                }
-            }
-        }
+        ApplyResourceLayout(rd, element, name.Text, name.Span, push);
 
         if (element is ResourceType { ResourceKind: ResourceTypeKind.AppendStructuredBuffer or ResourceTypeKind.ConsumeStructuredBuffer })
         {
@@ -1291,6 +1260,41 @@ internal sealed partial class Checker
         }
 
         Resources.Add(rd);
+    }
+
+    /// <summary>Computes the buffer layout of a structured buffer or constant buffer resource; textures and samplers have none.</summary>
+    private void ApplyResourceLayout(ResourceDecl rd, HlslType element, string nameText, SourceSpan span, bool push)
+    {
+        if (element is ResourceType rt)
+        {
+            if (rt.IsStorageBuffer && rt.ResourceKind != ResourceTypeKind.ByteAddressBuffer && rt.ResourceKind != ResourceTypeKind.RWByteAddressBuffer)
+            {
+                if (rt.Element is null || rt.Element.IsError)
+                {
+                    Err(SemanticCodes.BadType, "'" + rt.ResourceKind + "' needs an element type, for example '" + rt.ResourceKind + "<float4>'.", span);
+                }
+                else
+                {
+                    ComputeBufferLayout(rd, rt.Element, BufferLayoutRules.StorageBuffer, span);
+                }
+            }
+            else if (rt.ResourceKind == ResourceTypeKind.ConstantBuffer)
+            {
+                if (rt.Element is StructType)
+                {
+                    // DXC lays a push-constant block out like a structured-buffer element (vector-relaxed std430), not like a cbuffer.
+                    ComputeBufferLayout(rd, rt.Element, push ? BufferLayoutRules.StorageBuffer : BufferLayoutRules.ConstantBuffer, span);
+                    if (push && rd.Layout is { } pl && pl.Size > 128)
+                    {
+                        Warn(SemanticCodes.PushConstantSize, "The push-constant block '" + nameText + "' is " + Num((int)pl.Size) + " bytes; Vulkan only guarantees maxPushConstantsSize of 128 bytes. Shrink it or move the rest into a constant buffer.", span);
+                    }
+                }
+                else
+                {
+                    Err(SemanticCodes.BadType, "ConstantBuffer needs a struct type, for example 'ConstantBuffer<MyData>'.", span);
+                }
+            }
+        }
     }
 
     private void ApplyImageFormat(ResourceDecl rd, IReadOnlyList<AttributeSyntax> attrs, HlslType element)
