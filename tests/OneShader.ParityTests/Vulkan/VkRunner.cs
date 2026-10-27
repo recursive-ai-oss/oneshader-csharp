@@ -749,25 +749,30 @@ public static unsafe class VkRunner
                         counts[s] = variableCounts.GetValueOrDefault(s);
                     }
 
-                    fixed (DescriptorSet* pa = allocated)
-                    fixed (uint* pc = counts)
+                    // One allocation per set: the variable-count information belongs only to sets that have such a binding.
+                    for (int s = 0; s < setCount; s++)
                     {
+                        uint count = counts[s];
                         var countInfo = new DescriptorSetVariableDescriptorCountAllocateInfo
                         {
                             SType = StructureType.DescriptorSetVariableDescriptorCountAllocateInfo,
-                            DescriptorSetCount = (uint)setCount,
-                            PDescriptorCounts = pc,
+                            DescriptorSetCount = 1,
+                            PDescriptorCounts = &count,
                         };
                         var ai = new DescriptorSetAllocateInfo
                         {
                             SType = StructureType.DescriptorSetAllocateInfo,
                             DescriptorPool = pool,
-                            DescriptorSetCount = (uint)setCount,
-                            PSetLayouts = pl,
-                            PNext = variableCounts.Count > 0 ? &countInfo : null,
+                            DescriptorSetCount = 1,
+                            PSetLayouts = pl + s,
+                            PNext = variableCounts.ContainsKey(s) ? &countInfo : null,
                         };
-                        Check(vk.AllocateDescriptorSets(dev, &ai, pa), "vkAllocateDescriptorSets");
+                        fixed (DescriptorSet* pa = &allocated[s])
+                        {
+                            Check(vk.AllocateDescriptorSets(dev, &ai, pa), "vkAllocateDescriptorSets");
+                        }
                     }
+
                     for (int s = 0; s < setCount; s++)
                     {
                         sets[s] = allocated[s];

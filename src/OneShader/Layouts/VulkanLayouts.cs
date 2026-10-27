@@ -228,6 +228,27 @@ namespace OneShader.Layouts.Vulkan
         /// <summary>The <c>VkDescriptorSetLayoutCreateInfo</c> flags: <see cref="DescriptorSetLayoutCreateFlags.UpdateAfterBindPool"/> when a binding is update-after-bind.</summary>
         public DescriptorSetLayoutCreateFlags CreateFlags { get; init; }
 
+        /// <summary>
+        /// True when a binding has <see cref="DescriptorBindingFlags.VariableDescriptorCount"/>. Allocate such a set with a
+        /// <c>VkDescriptorSetVariableDescriptorCountAllocateInfo</c> naming its count, and allocate the sets of a pipeline one at a time:
+        /// chaining that structure to an allocation that includes a set without a variable binding (an empty set 0, say) crashes some drivers.
+        /// </summary>
+        public bool HasVariableCount
+        {
+            get
+            {
+                foreach (var b in Bindings)
+                {
+                    if (b.IsVariableCount)
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+        }
+
         /// <summary>True when any binding has flags, so the layout needs a <c>VkDescriptorSetLayoutBindingFlagsCreateInfo</c> (and descriptor indexing enabled).</summary>
         public bool HasBindingFlags
         {

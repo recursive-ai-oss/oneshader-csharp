@@ -120,6 +120,9 @@ its `Layout` resource carries `Heap` and `HeapKinds` (more than one kind: a muta
 binding a variable-count, partially bound descriptor array (see `VulkanLayoutOptions`), `TryToMetal` an argument buffer and `TryToWebGpu` a `LayoutError`;
 `RequiredFeatures` lists `RuntimeDescriptorArray`, `NonUniformIndexing` and `MutableDescriptorType` as the shader needs. Variants work as for any binding.
 WebGPU cannot express them: building WGSL for such a shader is OSH5202.
+Allocate the descriptor sets of a bindless pipeline one at a time, and chain `VkDescriptorSetVariableDescriptorCountAllocateInfo` only to sets whose layout
+has a variable-count binding (`DescriptorSetLayoutInfo.HasVariableCount`): chaining it to an allocation that includes a set without one, such as an empty set 0,
+crashes the NVIDIA driver (595) in `vkAllocateDescriptorSets`.
 
 ### Append and consume buffers
 

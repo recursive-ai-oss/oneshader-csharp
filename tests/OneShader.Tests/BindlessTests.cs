@@ -309,6 +309,8 @@ public partial class BindlessTests
         Assert.Equal(DescriptorSetLayoutCreateFlags.None, info.SetLayouts[1].CreateFlags);
         Assert.Equal(DescriptorType.Sampler, info.SetLayouts[2].Bindings.Single().DescriptorType);
         Assert.True(info.SetLayouts[1].HasBindingFlags);
+        Assert.True(info.SetLayouts[1].HasVariableCount);
+        Assert.False(info.SetLayouts[0].HasVariableCount);
         Assert.False(info.SetLayouts[0].HasBindingFlags);
         Assert.Equal(DeviceFeatures.RuntimeDescriptorArray | DeviceFeatures.NonUniformIndexing, info.RequiredFeatures);
     }
