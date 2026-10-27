@@ -63,9 +63,17 @@ function constants cannot build a pipeline state as it is, even when every defau
 number (float 3, int 29, uint 33, bool 53) and the 32-bit pattern for `setConstantValue(_:type:index:)`; a Metal bool is one byte. Only the constants an
 entry point reads are declared.
 
+## 16-bit and 64-bit types
+
+`half`, `short`, `ushort`, `long` and `ulong` are the native MSL types (with `Enable16BitTypes`; without it `half` and min-precision are 32-bit).
+The only 64-bit atomics are `atomic_max_explicit` and `atomic_min_explicit` on an `atomic_ulong` in device memory, returning void (MSL
+spec 6.16.4.6, Apple silicon); the backend emits exactly that for unsigned `InterlockedMax`/`InterlockedMin` on a buffer whose result is unused. Any other 64-bit
+atomic, any use of `double`, and 64-bit integer vectors in buffers (no packed long vectors) are errors (OSH5102) at the line of the first use. Min-precision
+`RelaxedPrecision` has no MSL equivalent: values are computed in 32 bits.
+
 ## Not supported (errors)
 
-`double` and 64-bit float; `SV_CullDistance`; `GetDimensions` on structured buffers (`ArrayLength`: Metal cannot
+`double` (Metal has no 64-bit float); `SV_CullDistance`; `GetDimensions` on structured buffers (`ArrayLength`: Metal cannot
 query it); atomics on textures (Metal 3.1); `WaveMatch` and `WaveMultiPrefix*` (front-end error); the lane index and count in vertex shaders (Metal has no SIMD-group attribute for them); integer/bool matrices; 64-bit integer vectors in
 buffers; unbounded resource arrays; jumps out of several nested loops at once; comparison sampling on 1D/3D textures; texel offsets on cube/1D textures; overlapping `packoffset` members.
 
