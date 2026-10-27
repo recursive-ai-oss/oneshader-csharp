@@ -432,9 +432,14 @@ internal sealed class Reflector
                     {
                         pushUse ??= r.Name;
                     }
-                    else if (!used.Contains(r.Name))
+                    else
                     {
-                        used.Add(r.Name);
+                        // The variables read from one heap are reported as one resource, named after the heap.
+                        string usedName = r.Heap == HeapKind.Resource ? "ResourceDescriptorHeap" : r.Heap == HeapKind.Sampler ? "SamplerDescriptorHeap" : r.Name;
+                        if (!used.Contains(usedName))
+                        {
+                            used.Add(usedName);
+                        }
                     }
                 }
             }
