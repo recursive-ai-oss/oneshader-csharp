@@ -213,17 +213,7 @@ PipelineLayout? pipeline = v.Pipeline;
   `InterfaceCompatibility.Compare` tells whether a shader recompiled at run time still matches
   them (see the `RecursiveAI.OneShader` package).
 
-## Known limits
-
-- Clip-space Y points up in Metal and WebGPU and down in Vulkan; the shader is not adjusted, so flip with the viewport.
-- `WaveMatch`/`WaveMultiPrefix*` are not supported; unbounded resource arrays and descriptor heaps are errors on WGSL only (WebGPU has no binding arrays). Wave and quad intrinsics work; a shader that uses them needs subgroup support on the device (`SubgroupOperations` on the generated entry class and `Layout`).
-- `dotnet build` only (not Visual Studio's .NET Framework MSBuild).
-
-## License
-
-MIT OR Apache-2.0, at your option. Copyright © Recursive AI, LLC.
-
-### Debugging shaders
+## Debugging shaders
 
 `OneShaderDebugInfo` puts source-level debug information in the embedded blobs so RenderDoc, Nsight and Xcode show your HLSL (SPIR-V:
 `NonSemantic.Shader.DebugInfo.100`; MSL: `#line` directives; WGSL: unchanged). It is off by default. To use it in Debug builds only:
@@ -237,3 +227,13 @@ MIT OR Apache-2.0, at your option. Copyright © Recursive AI, LLC.
 
 File names in the blobs are relative to the project directory, so the output does not depend on where the project is checked out. The generated C# is
 the same apart from the blob bytes. See docs/debugging.md in the repository for details and a RenderDoc walkthrough.
+
+## Known limits
+
+- Clip-space Y points up in Metal and WebGPU and down in Vulkan; the shader is not adjusted, so flip with the viewport.
+- `WaveMatch`/`WaveMultiPrefix*` are not supported; unbounded resource arrays and descriptor heaps are errors on WGSL only (WebGPU has no binding arrays). Wave and quad intrinsics work; a shader that uses them needs subgroup support on the device (`SubgroupOperations` on the generated entry class and `Layout`).
+- `dotnet build` only (not Visual Studio's .NET Framework MSBuild).
+
+## License
+
+MIT OR Apache-2.0, at your option. Copyright © Recursive AI, LLC.

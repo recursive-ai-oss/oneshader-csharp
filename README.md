@@ -133,11 +133,13 @@ byte[] spirv = result.Find("PSMain", CompileTarget.SpirV)!.ToArray();
 
 ## Status
 
-**Version 1.0.** Vertex, pixel and compute shaders compile to
+**Version 1.4.** Vertex, pixel and compute shaders compile to
 optimized SPIR-V, Metal Shading Language and WGSL with reflection; the build
 package embeds each selected target next to generated C# bindings (the
-`OneShaderTargets` switch), and the runtime API supports hot reload with a
-layout-compatibility check. Not supported: geometry, tessellation, mesh and
+`OneShaderTargets` switch) and compiles shader variants, and the runtime API
+supports hot reload with a layout-compatibility check. Wave intrinsics,
+16-bit and 64-bit types, specialization constants, source-level debug
+information and bindless resources are supported. Not supported: geometry, tessellation, mesh and
 ray-tracing stages, bindless resources on WebGPU (it has no binding arrays) and the SM 6.5 partitioned wave operations (`WaveMatch`, `WaveMultiPrefix*`), and some
 features on some targets (the backend pages list them). The public API and the
 generated code follow [Semantic Versioning](https://semver.org/); the

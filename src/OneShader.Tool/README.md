@@ -47,6 +47,8 @@ parse. Exit code: **0** success, **1** the shader did not compile (or an output 
 | `-HV 2021` | Accepted (`202x` too); other versions are rejected. |
 | `-WX` | Warnings are errors. |
 | `-enable-16bit-types` | `half` and `min16*` are 16-bit. |
+| `-fvk-bind-resource-heap <binding> <set>` | Where `ResourceDescriptorHeap` lives (default: the first free binding of set 0). |
+| `-fvk-bind-sampler-heap <binding> <set>` | Where `SamplerDescriptorHeap` lives (default: the next free binding). |
 | `-fspv-target-env=vulkan1.2` | Accepted (`vulkan1.3` too); the output is valid for Vulkan 1.2 and newer. |
 | `-Zi` | Debug information: SPIR-V `OpSource` with the sources and `OpLine`, MSL `#line` directives, as DXC's `-Zi`. |
 | `-fspv-debug=vulkan-with-source` | `NonSemantic.Shader.DebugInfo.100` in SPIR-V for RenderDoc and Nsight (`vulkan` is the same; `file`, `source`, `line` and `tool` give the `-Zi` form). Combine with `-Od` for one step per statement. |

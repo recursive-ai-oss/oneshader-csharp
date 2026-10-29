@@ -37,7 +37,7 @@ for f in fuzz/regressions/*.hlsl; do dotnet <dir>/OneShader.Fuzz.dll --file $f a
 
 ## Campaign results
 
-Final run, one batched job on a 32-core AMD Ryzen 9 7950X3D (.NET SDK 10.0.402, load 0.07 before), all five targets in parallel, 600 s each, instrumented `OneShader.dll`, seeded from `corpus/` (push-constant shaders included), lock held:
+Last full campaign, run before 1.0 (16/64-bit types, variants, specialization constants, debug information and bindless resources came later and have had shorter uninstrumented runs only), one batched job on a 32-core AMD Ryzen 9 7950X3D (.NET SDK 10.0.402, load 0.07 before), all five targets in parallel, 600 s each, instrumented `OneShader.dll`, seeded from `corpus/` (push-constant shaders included), lock held:
 
 | Target | Seed | Inputs run | Execs/s | Coverage features | Findings |
 |---|---|---|---|---|---|

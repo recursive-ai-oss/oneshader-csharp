@@ -1,11 +1,9 @@
 # OneShader
 
 **A HLSL compiler for .NET, written in C#, with no dependency beyond .NET itself.** Modern HLSL
-(Shader Model 6 style) for vertex, pixel and compute shaders goes in; SPIR-V for Vulkan comes out,
-with reflection: inputs and outputs, resource bindings, buffer layouts and thread-group sizes.
-NativeAOT and trimming are supported.
-
-Compiles to SPIR-V (Vulkan), Metal Shading Language and WGSL (WebGPU).
+(Shader Model 6 style) for vertex, pixel and compute shaders goes in; SPIR-V for Vulkan, Metal
+Shading Language and WGSL for WebGPU come out, with reflection: inputs and outputs, resource bindings,
+buffer layouts and thread-group sizes. NativeAOT and trimming are supported.
 
 Most projects want [RecursiveAI.OneShader.Build](https://www.nuget.org/packages/RecursiveAI.OneShader.Build),
 which compiles `*.hlsl` during `dotnet build` and generates C# bindings. This package is the
