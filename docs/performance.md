@@ -2,7 +2,7 @@
 
 OneShader compiles a shader about 2.4 times faster than DXC when both run as native processes, and about 14 times slower when it runs as an ordinary .NET process that has to start the runtime and JIT-compile the compiler first. Both are measured below, on the same 68 entry points, with the compiler's SPIR-V compared against DXC's SPIR-V. This page prints all of it: the tables, the losses and the method.
 
-Every number comes from the files in [`bench/results/`](../bench/results), measured on one workstation (see [Method](#method)). Treat them as local measurements, not promises for your hardware.
+Every number comes from the files in [`bench/results/`](../bench/results), measured on version 0.3.0-dev (commit f0f3274, shortly before 0.3.0-preview.1; not re-measured since) on one workstation (see [Method](#method)). Treat them as local measurements, not promises for your hardware.
 
 ## Results at a glance
 

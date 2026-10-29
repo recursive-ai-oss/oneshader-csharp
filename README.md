@@ -14,8 +14,8 @@ and binding code that match the compiled shader.
 
 How many times faster or slower OneShader compiles a shader than DXC (the
 released binary, SPIR-V output), one process per entry point over 68 corpus
-entry points, geometric mean, log scale. A bar to the right is a win for
-OneShader, a bar to the left is a loss:
+entry points, geometric mean, log scale, measured on version 0.3.0-dev (commit
+f0f3274). A bar to the right is a win for OneShader, a bar to the left is a loss:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/recursive-ai-oss/oneshader-csharp/main/docs/img/oneshader-hero-dark.svg">
@@ -49,7 +49,7 @@ OneShader, a bar to the left is a loss:
   bad input yields diagnostics, never an exception or a stack overflow, and
   the front end is fuzzed ([fuzzing](fuzz/README.md)). It contains no
   `unsafe` code, uses no reflection, and is NativeAOT and trim clean.
-- **Fast, with the losses shown.** As a NativeAOT binary it compiles the
+- **Fast, with the losses shown.** Measured on version 0.3.0-dev: as a NativeAOT binary it compiles the
   corpus about 2.4 times faster than DXC, warm, and every one of the 68 entry
   points is faster. Run as an ordinary .NET process it is slower than DXC on
   every one of them (about 6 times with ReadyToRun, 14 times with the JIT),
