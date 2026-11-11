@@ -1,0 +1,6 @@
+# Guarded continue in nested unrolled loops: optimizer on, off and the reference compiler must agree.
+case opt_continue_unrolled
+shader lang/continue_unrolled.hlsl
+dispatch Main 1 1 1
+uniform 0 0 : 3u 2u
+storage 0 1 out : @fill(7,16)

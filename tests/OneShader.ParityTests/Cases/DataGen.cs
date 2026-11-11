@@ -185,6 +185,18 @@ public static class DataGen
                     }
                     break;
                 }
+            case "fill":
+                {
+                    // @fill(value,count): the same 32-bit word repeated, for output buffers that must start with a known pattern.
+                    uint value = uint.Parse(a[0], c);
+                    int n = int.Parse(a[1], c);
+                    for (int i = 0; i < n; i++)
+                    {
+                        words.Add(value);
+                    }
+
+                    break;
+                }
             case "quadindex":
                 {
                     int n = int.Parse(a[0], c);
