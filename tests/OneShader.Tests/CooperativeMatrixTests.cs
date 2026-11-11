@@ -193,6 +193,19 @@ public sealed class CooperativeMatrixTests
     }
 
     [Fact]
+    public void MslThreadgroupMemoryIsExactlyTheDeclaredGroupshared()
+    {
+        // Eight simdgroups, two 64x64 float tiles = 32768 bytes. Cooperative loads read the tiles in place: nothing else is declared in the
+        // threadgroup address space (a Metal pipeline's reported bytes then equal the declared ones; see docs/msl-backend.md).
+        var r = Compile(CorpusFile("coop_gemm_f32.hlsl"), CompileTarget.Msl);
+        Assert.True(r.Success, Describe(r));
+        string m = r.Blobs[0].AsText();
+        Assert.Equal(2, Count(m, "threadgroup array<float, 4096> "));
+        Assert.Equal(2, Count(m, "    threadgroup "));
+        Assert.Equal(12, Count(m, "simdgroup_load("));
+    }
+
+    [Fact]
     public void MslWritesOneSimdgroupLoadPerTileAndTransposesColumnMajor()
     {
         var r = Compile(CorpusFile("coop_f16.hlsl"), CompileTarget.Msl);

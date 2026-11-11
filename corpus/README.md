@@ -82,6 +82,7 @@ with `dxc -spirv -fspv-target-env=vulkan1.2`, and give every resource an explici
 | `coop/coop_f16.hlsl` | 16x16x16 `float16_t` cooperative-matrix product with operands staged through groupshared memory, float accumulator (a consumer's request, lightly adapted) | a consumer's request for the feature, adapted by the authors | MIT OR Apache-2.0 |
 | `coop/coop_bf16.hlsl` | The same product with `bfloat16_t` operands, one converted from float in the shader (a consumer's request, lightly adapted) | a consumer's request for the feature, adapted by the authors | MIT OR Apache-2.0 |
 | `coop/coop_layouts.hlsl` | 16x32 by 32x16 product in two steps: column-major A from a buffer with element offset and runtime stride, row-major B from groupshared memory (stride 20), column-major store (stride 19), and a copy doubled through `Length()` and `m[i]` | written for this repository | MIT OR Apache-2.0 |
+| `coop/coop_gemm_f32.hlsl` | 64x128 by 128x64 `float` GEMM tile by eight simdgroups (256 threads); two 64x64 `float` tiles in groupshared memory, exactly 32768 bytes, read by cooperative-matrix loads | written for this repository | MIT OR Apache-2.0 |
 
 ## Cases
 
@@ -160,6 +161,7 @@ as `RGBA16F`, `RGBA32F` or `R32F` and compared with the case's relative toleranc
 | `coop_f16` | `coop/coop_f16.hlsl` | dispatch, one subgroup | buffer vs CPU, float tolerance 1e-4 |
 | `coop_bf16` | `coop/coop_bf16.hlsl` | dispatch, one subgroup | buffer vs CPU, float tolerance 1e-4 |
 | `coop_layouts` | `coop/coop_layouts.hlsl` | dispatch, one subgroup, constant buffer with offset and stride | two buffers vs CPU, float tolerance 1e-4 |
+| `coop_gemm_f32` | `coop/coop_gemm_f32.hlsl` | dispatch, eight simdgroups; on Metal the runner also reports the pipeline's threadgroup bytes (32768) | buffer vs CPU, float tolerance 1e-4 |
 
 ## Probes
 

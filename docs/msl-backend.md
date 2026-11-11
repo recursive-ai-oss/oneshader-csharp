@@ -99,6 +99,21 @@ array at the tile's element offset with the runtime stride; column-major swaps t
 (`MTLLanguageVersion.version3_1`, or `-std=metal3.1` for the command line compiler). The corpus cases `coop_f16`, `coop_bf16` and `coop_layouts` run on an Apple M2
 bit-exact against the CPU result (`tools/run-metal-parity.sh`; the runner takes the language version from the manifest's `language` line).
 
+### Threadgroup memory
+
+The MSL declares exactly the HLSL's `groupshared` variables as `threadgroup` variables, once each, in the kernel; cooperative-matrix loads and
+stores read and write them in place (`simdgroup_load`/`simdgroup_store` on a pointer into the array), with no staging copy and no scratch. On an
+Apple M2 `staticThreadgroupMemoryLength` equals the declared bytes: `coop_gemm_f32` (eight simdgroups, two 64x64 `float` tiles, 32768 bytes declared)
+reports 32768, `coop_f16` 1024, `coop_layouts` 1280. Two things make a host's number differ from the HLSL's:
+
+- **Shader validation doubles it.** With `MTL_SHADER_VALIDATION=1` (Xcode's scheme option, and the corpus runner's default) Metal instruments the
+  kernel and reports twice the bytes (65536 for `coop_gemm_f32`), which fails pipeline use above 16 KB of declared memory. Measure budgets with
+  shader validation off; `tools/run-metal-parity.sh run` reruns a case without it when the instrumented figure exceeds the limit and prints
+  each kernel's reported bytes.
+- **Three-component vectors are 16 bytes in MSL.** An HLSL `float3` element costs 12 bytes in the HLSL's own packing but 16 in a `threadgroup`
+  `float3` (and `float3x3` 48 instead of 36). Use `float4`, or three scalars, in a tile that has to
+  stay under the limit. `bool` elements shrink to one byte.
+
 ## Debug information
 
 With `CompileOptions.DebugInfo` set to `Lines` or `Full` the source has `#line N "file"` directives (file names as in [debugging.md](debugging.md)) before the first

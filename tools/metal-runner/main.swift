@@ -375,6 +375,12 @@ for d in dispatches {
     do { pipeline = try device.makeComputePipelineState(function: function(file: d.file, name: d.fn)) } catch {
         die(3, "compute pipeline for \(d.fn) failed: \(error)")
     }
+    // What the pipeline really reserves (declared threadgroup variables plus anything the Metal compiler adds); hosts budget on this number.
+    // It goes to a file of its own so stdout stays the runner's verdict.
+    if let line = "\(d.fn) \(pipeline.staticThreadgroupMemoryLength)\n".data(using: .utf8) {
+        let path = caseDir.appendingPathComponent("threadgroup-memory.txt")
+        if let h = try? FileHandle(forWritingTo: path) { h.seekToEndOfFile(); h.write(line); try? h.close() } else { try? line.write(to: path) }
+    }
     if d.group[0] * d.group[1] * d.group[2] > pipeline.maxTotalThreadsPerThreadgroup {
         die(4, "\(d.fn): threadgroup \(d.group) exceeds the device limit \(pipeline.maxTotalThreadsPerThreadgroup)")
     }

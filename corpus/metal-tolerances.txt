@@ -40,5 +40,6 @@ bindless_heap buffer:1.1 float 0.0005
 # Cooperative-matrix products against the CPU result: products of 16-bit operands accumulated in float, in a different order than the CPU sum.
 coop_f16 buffer:0.2 float 1e-4
 coop_bf16 buffer:0.2 float 1e-4
+coop_gemm_f32 buffer:0.2 float 1e-4
 coop_layouts buffer:0.2 float 1e-4
 coop_layouts buffer:0.4 float 1e-4

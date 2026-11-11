@@ -47,13 +47,11 @@ case "$mode" in
     mkdir -p "$work"
     # -swift-version 5: the runner is a single-threaded script and does not need Swift 6 concurrency checking.
     xcrun swiftc -O -swift-version 5 "$here/metal-runner/main.swift" -o "$work/metal-runner"
-    count=0
-    for dir in "$bundle"/*/; do
-      [ -f "$dir/case.txt" ] || continue
-      rm -rf "$dir/metal" "$dir/exit.txt"
+    # Runs the case in $dir once and sets $code; $shader_validation is MTL_SHADER_VALIDATION's value.
+    run_one() {
       code=0
       # macOS has no timeout(1): a watchdog kills a case that hangs.
-      MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION=1 ONESHADER_METAL_MATH="${ONESHADER_METAL_MATH:-fast}" \
+      MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION="$shader_validation" ONESHADER_METAL_MATH="${ONESHADER_METAL_MATH:-fast}" \
         "$work/metal-runner" "$dir" >"$dir/stdout.log" 2>"$dir/stderr.log" &
       pid=$!
       ( sleep 120; kill -9 "$pid" 2>/dev/null ) >/dev/null 2>&1 &
@@ -63,8 +61,25 @@ case "$mode" in
       pkill -P "$watchdog" 2>/dev/null || true
       kill "$watchdog" 2>/dev/null || true
       wait "$watchdog" 2>/dev/null || true
+    }
+    count=0
+    for dir in "$bundle"/*/; do
+      [ -f "$dir/case.txt" ] || continue
+      rm -rf "$dir/metal" "$dir/exit.txt" "$dir/threadgroup-memory.txt"
+      shader_validation=1
+      run_one
+      # Shader validation instruments each kernel and doubles the threadgroup memory Metal reports for it. A case that fits the
+      # 32 KB limit only without the instrumentation runs again with shader validation off (the API layer stays on); the table says so.
+      if [ "$code" -ne 0 ] && grep -q 'threadgroupMemoryLength' "$dir/stderr.log"; then
+        rm -rf "$dir/metal" "$dir/threadgroup-memory.txt"
+        shader_validation=0
+        run_one
+        echo "$(basename "$dir"): shader validation off (instrumented threadgroup memory exceeds the limit)"
+      fi
       echo "$code" >"$dir/exit.txt"
       echo "$(basename "$dir"): exit $code $(head -c 160 "$dir/stdout.log" | head -1)"
+      # Threadgroup bytes the pipeline reserves per kernel, as Metal reports them (declared variables plus whatever the compiler adds).
+      [ -f "$dir/threadgroup-memory.txt" ] && sed 's/^/    threadgroup memory: /' "$dir/threadgroup-memory.txt"
       count=$((count + 1))
     done
     echo "ran $count cases"

@@ -5,6 +5,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Metal threadgroup memory of cooperative-matrix kernels, investigated after a report that an 8-simdgroup `float` GEMM with 32768 declared bytes showed 37888 on an Apple M2: the MSL declares each `groupshared` variable once and cooperative-matrix loads and stores use it in place, so on the M2 the pipeline's `staticThreadgroupMemoryLength` equals the declared bytes (new corpus case `coop_gemm_f32`: 32768). The figure rises when Metal shader validation is on (it doubles it) and for three-component vectors, which are 16 bytes in MSL (a `float3` array element is 12 bytes in HLSL); both are now described in docs/msl-backend.md. No generated code changes. The Metal runner and `tools/run-metal-parity.sh` print each kernel's reported threadgroup bytes and rerun a case without shader validation when the instrumented figure exceeds Metal's 32 KB limit.
+
 ## [1.5.0]
 
 - The build package's generated C# embeds each shader blob (`SpirV`, `Msl`, `Wgsl`) as a base64 UTF-8 string literal that is decoded into a byte array on first read, instead of a per-byte array initializer. The C# compiler keeps a syntax node and a constant for every element of an initializer, so a project with many variants needed gigabytes to compile (64 variants of one pixel shader, three targets: 3.4 GB peak, now 0.5 GB; 256 variants ran out of memory, now 1.2 GB). The public members are unchanged (`ReadOnlySpan<byte>`, same bytes, no allocation per access); the first read of a blob allocates an array of its size, which later reads reuse. The generated source of every shader changes.
