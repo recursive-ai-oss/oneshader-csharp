@@ -105,6 +105,7 @@ internal sealed partial class SpirvEmitter
 
         _ep = ep;
         _s.Capabilities.Add(Cap.Shader);
+        DetectMemoryModel();
         InitDebug();
         if (_o.KeepNames && _o.DebugInfo != DebugInfoLevel.Lines)
         {

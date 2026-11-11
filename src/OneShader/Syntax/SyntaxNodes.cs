@@ -465,9 +465,15 @@ public sealed class CallExpression(SourceSpan span, Expression callee, IReadOnly
     public FunctionDeclaration? ResolvedFunction { get; set; }
 }
 
-/// <summary>A constructor call spelled with a type: <c>float3(1, 2, 3)</c>, <c>float4x4(...)</c>, <c>Light(...)</c>.</summary>
-public sealed class ConstructExpression(SourceSpan span, TypeSyntax type, IReadOnlyList<Expression> arguments) : Expression(span)
+/// <summary>
+/// A constructor call spelled with a type: <c>float3(1, 2, 3)</c>, <c>float4x4(...)</c>, <c>Light(...)</c>. With <see cref="StaticMember"/> it is a
+/// static member call on a template type: <c>CooperativeMatrix&lt;float, 16, 16, MatrixUse::Accumulator&gt;::Zero()</c>.
+/// </summary>
+public sealed class ConstructExpression(SourceSpan span, TypeSyntax type, IReadOnlyList<Expression> arguments, Identifier? staticMember = null) : Expression(span)
 {
+    /// <summary>The member named after <c>::</c> for a static member call; null for a constructor.</summary>
+    public Identifier? StaticMember { get; } = staticMember;
+
     /// <summary>The constructed type.</summary>
     public TypeSyntax ConstructedType { get; } = type;
 

@@ -61,6 +61,8 @@ with `dxc -spirv -fspv-target-env=vulkan1.2`, and give every resource an explici
 | `lang/templates.hlsl` | Function and struct templates: deduced and explicit arguments, value parameters, defaults | written for this repository | MIT OR Apache-2.0 |
 | `lang/members.hlsl` | Member functions, this, static members, calls on buffer elements | written for this repository | MIT OR Apache-2.0 |
 | `lang/switch_flow.hlsl` | `switch` with fall-through between cases, stacked labels, a `default` in the middle, negative labels, `return` from a case and a switch inside a loop with `continue` | written for this repository | MIT OR Apache-2.0 |
+| `lang/loop_exits.hlsl` | guarded `continue`, `break` and `return` in `[unroll]`, `[loop]`, `while` and `do`/`while` loops, nested ifs and else arms, a switch in a loop, nested loops, helpers and an early `return` from the entry point | written for this repository | MIT OR Apache-2.0 |
+| `lang/continue_unrolled.hlsl` | guarded `continue` in nested `[unroll]` loops with a runtime bound | written for this repository, reduced from a user report | MIT OR Apache-2.0 |
 | `lang/precise_math.hlsl` | `precise` variables and functions: a multiply-add that differs when fused, `(x + y) - x`, Kahan summation | written for this repository | MIT OR Apache-2.0 |
 | `lang/inheritance.hlsl` | Struct inheritance: inherited members, hiding, base-typed parameters, buffers of derived structs | written for this repository | MIT OR Apache-2.0 |
 | `lang/operators.hlsl` | Member operator overloads: arithmetic, bitwise, comparison, subscript, call | written for this repository | MIT OR Apache-2.0 |
@@ -77,6 +79,9 @@ with `dxc -spirv -fspv-target-env=vulkan1.2`, and give every resource an explici
 | `2d/spec_const_pixel.hlsl` | Fullscreen triangle whose pixel shader branches on a bool specialization constant and quantizes with an int one | written for this repository | MIT OR Apache-2.0 |
 | `compute/append_consume.hlsl` | Work list drained with `ConsumeStructuredBuffer` into an `AppendStructuredBuffer`, explicit counter bindings | written for this repository | MIT OR Apache-2.0 |
 | `lang/resource_locals.hlsl` | Resource-typed locals and parameters resolved at compile time | written for this repository | MIT OR Apache-2.0 |
+| `coop/coop_f16.hlsl` | 16x16x16 `float16_t` cooperative-matrix product with operands staged through groupshared memory, float accumulator (a consumer's request, lightly adapted) | a consumer's request for the feature, adapted by the authors | MIT OR Apache-2.0 |
+| `coop/coop_bf16.hlsl` | The same product with `bfloat16_t` operands, one converted from float in the shader (a consumer's request, lightly adapted) | a consumer's request for the feature, adapted by the authors | MIT OR Apache-2.0 |
+| `coop/coop_layouts.hlsl` | 16x32 by 32x16 product in two steps: column-major A from a buffer with element offset and runtime stride, row-major B from groupshared memory (stride 20), column-major store (stride 19), and a copy doubled through `Length()` and `m[i]` | written for this repository | MIT OR Apache-2.0 |
 
 ## Cases
 
@@ -110,6 +115,8 @@ written for this repository and licensed `MIT OR Apache-2.0`.
 | `bindless_heap` | `lang/bindless_heap.hlsl` | dispatch; a mixed resource heap (mutable descriptor binding) and a sampler heap | buffers, float tolerance 5e-4 on Metal (WGSL targets skip it: OSH5202) |
 | `lang_statics_and_literals` | `lang/statics_and_literals.hlsl` | dispatch | buffer exact vs DXC |
 | `lang_switch_flow` | `lang/switch_flow.hlsl` | dispatch, 64 threads | buffers exact vs DXC |
+| `lang_loop_exits` | `lang/loop_exits.hlsl` | dispatch, 64 threads; the output starts as 7s so skipped writes show | buffer exact vs DXC |
+| `lang_continue_unrolled` | `lang/continue_unrolled.hlsl` | dispatch, one thread, Count = (3, 2); the output starts as 7s | buffer exact vs DXC and vs the CPU result |
 | `lang_precise_math` | `lang/precise_math.hlsl` | dispatch, one thread | buffer exact vs DXC (the WGSL targets skip it: OSH5205) |
 | `append_consume` | `compute/append_consume.hlsl` | dispatch, 56 items, 48 consumed and appended when even | buffers exact vs DXC (result list as a sorted set), counters |
 | `cull_instances` | `compute/cull_instances.hlsl` | dispatch, 1000 instances | buffers exact (index list as a sorted set), CPU result |
@@ -141,6 +148,18 @@ The 3D cases build their inputs from generators described in the harness (`MeshG
 and planes with normals and tangents, camera, light and joint matrices in either memory layout, record patterns,
 procedural material maps, cube-map skies and analytic depth and normal buffers. Float colour targets are written
 as `RGBA16F`, `RGBA32F` or `R32F` and compared with the case's relative tolerance.
+
+### CPU-only cases
+
+`cases-cpu/*.case` have the same format but a shader DXC cannot compile (cooperative matrices, `bfloat16_t`), so they run only against a CPU result:
+`CooperativeMatrixGpuTests` on Vulkan (skipped with the device's reported cooperative-matrix properties when it has none: RADV, llvmpipe) and
+`MetalParityTests.ExportCooperative` plus `tools/run-metal-parity.sh run` on a Mac. They are not part of the DXC parity counts.
+
+| Case | Shader | Run | Checked |
+|---|---|---|---|
+| `coop_f16` | `coop/coop_f16.hlsl` | dispatch, one subgroup | buffer vs CPU, float tolerance 1e-4 |
+| `coop_bf16` | `coop/coop_bf16.hlsl` | dispatch, one subgroup | buffer vs CPU, float tolerance 1e-4 |
+| `coop_layouts` | `coop/coop_layouts.hlsl` | dispatch, one subgroup, constant buffer with offset and stride | two buffers vs CPU, float tolerance 1e-4 |
 
 ## Probes
 

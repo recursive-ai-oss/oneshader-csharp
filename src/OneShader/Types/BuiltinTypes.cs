@@ -24,6 +24,7 @@ internal static class BuiltinTypes
         ["int64_t"] = ScalarKind.Int64,
         ["uint64_t"] = ScalarKind.UInt64,
         ["float16_t"] = ScalarKind.Half,
+        ["bfloat16_t"] = ScalarKind.BFloat16,
         ["float32_t"] = ScalarKind.Float,
         ["float64_t"] = ScalarKind.Double,
         ["int32_t"] = ScalarKind.Int,
@@ -156,8 +157,8 @@ internal static class BuiltinTypes
     /// <summary>True for every name the parser must treat as a type without having seen a declaration.</summary>
     public static bool IsTypeName(string name) =>
         ScalarNames.ContainsKey(name) || ResourceNames.ContainsKey(name) || TryGetVectorOrMatrix(name, out _)
-        || name is "void" or "vector" or "matrix" or "SamplerState" or "SamplerComparisonState" or "sampler" or "string";
+        || name is "void" or "vector" or "matrix" or "CooperativeMatrix" or "SamplerState" or "SamplerComparisonState" or "sampler" or "string";
 
     /// <summary>True for built-in names that take template arguments (<c>vector</c>, <c>Texture2D</c>, ...).</summary>
-    public static bool IsTemplateTypeName(string name) => name is "vector" or "matrix" || ResourceNames.ContainsKey(name);
+    public static bool IsTemplateTypeName(string name) => name is "vector" or "matrix" or "CooperativeMatrix" || ResourceNames.ContainsKey(name);
 }

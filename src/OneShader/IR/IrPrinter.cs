@@ -283,7 +283,7 @@ public static class IrPrinter
                 {
                     ScalarKind.Bool => c.Bits != 0 ? "true" : "false",
                     ScalarKind.Float or ScalarKind.LiteralFloat => ((float)c.AsDouble()).ToString("R", CultureInfo.InvariantCulture),
-                    ScalarKind.Double or ScalarKind.Half or ScalarKind.Min16Float or ScalarKind.Min10Float => c.AsDouble().ToString("R", CultureInfo.InvariantCulture),
+                    ScalarKind.Double or ScalarKind.Half or ScalarKind.Min16Float or ScalarKind.Min10Float or ScalarKind.BFloat16 => c.AsDouble().ToString("R", CultureInfo.InvariantCulture),
                     _ => s.IsSignedInteger ? ((long)c.AsDouble()).ToString(CultureInfo.InvariantCulture) : c.Bits.ToString(CultureInfo.InvariantCulture),
                 };
                 return text + ":" + s;

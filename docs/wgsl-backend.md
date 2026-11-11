@@ -67,6 +67,11 @@ read as one half of `unpack2x16float(word)` and written with `pack2x16float`; be
 buffer written with halves is declared `array<atomic<u32>>` and a store clears and sets only its own 16 bits with `atomicAnd`/`atomicOr`. WebGPU does not require half arithmetic
 to round exactly as Vulkan does, so results can differ in the last bit of a half (the parity case allows 0.4%). There are no 16-bit integers.
 
+## Cooperative matrices and bfloat16
+
+WebGPU has neither. A shader that declares a `CooperativeMatrix` is OSH5202 at the first matrix variable, and `bfloat16_t` is OSH5202 at its first use, each only
+when WGSL is a selected target.
+
 ## Debug information
 
 `CompileOptions.DebugInfo` does not change the WGSL. WGSL has no line directive and the browsers' WebGPU implementations do not map shader positions back
@@ -81,7 +86,7 @@ index), unbounded arrays (`Texture2D t[]`) and the SM 6.6 heaps `ResourceDescrip
 descriptor indexing: one error per unbounded array at its declaration and one per heap at its first use, each naming the line and what to do;
 only when WGSL is a selected target);
 `Buffer<T>`/`RWBuffer<T>`; append and consume buffers; atomics on textures; `double`, 64-bit integers and 16-bit integers (each reported at the line of its first use); integer and bool
-matrices; `PrimitiveID`, layer and viewport index; recursion; storage textures without a format or read-written in a format other than
+matrices; cooperative matrices and `bfloat16_t`; `PrimitiveID`, layer and viewport index; recursion; storage textures without a format or read-written in a format other than
 r32float/r32uint/r32sint; bool stage variables; texel offsets on cube textures; control flow that is not structured.
 
 ## Known differences

@@ -167,6 +167,15 @@ internal sealed partial class WgslEmitter
         var use = WideTypeUse.Scan(_m, _ep);
         var fallback = _ep.Function.Span;
         _usesF16 = (use.Features & DeviceFeatures.Float16) != 0;
+        if ((use.Features & DeviceFeatures.CooperativeMatrix) != 0)
+        {
+            Unsupported("Cooperative matrices (CooperativeMatrix) are not available in WGSL: the WebGPU language has no matrix type that is shared by the invocations of a subgroup. Build this shader for SPIR-V or MSL only (OneShaderTargets), and write a portable kernel for WGSL.", use.CooperativeMatrixSite.IsKnown ? use.CooperativeMatrixSite : fallback);
+        }
+        else if ((use.Features & DeviceFeatures.BFloat16) != 0)
+        {
+            Unsupported("WGSL has no bfloat16 type (only f16 and f32). Store the values as f16 or f32, or build this shader for SPIR-V or MSL only.", use.BFloat16Site.IsKnown ? use.BFloat16Site : fallback);
+        }
+
         if ((use.Features & DeviceFeatures.Int16) != 0)
         {
             Unsupported("WGSL has no 16-bit integer types (only f16). Use int or uint, or compile this shader for SPIR-V or MSL only.", use.Int16Site.IsKnown ? use.Int16Site : fallback);

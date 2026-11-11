@@ -90,6 +90,8 @@ func textureType(_ s: String) -> MTLTextureType {
 let mathMode: MTLMathMode = ProcessInfo.processInfo.environment["ONESHADER_METAL_MATH"] == "safe" ? .safe : .fast
 
 var libraries: [String: MTLLibrary] = [:]
+// `language 3.1` in the manifest selects Metal 3.1 (bfloat16); the default is 2.4, the oldest version the generated MSL targets.
+var languageVersion: MTLLanguageVersion = .version2_4
 // spec FUNCTION INDEX TYPE BITS MTLDATATYPE lines of the manifest, by function name.
 var specs: [String: [(index: Int, type: String, bits: UInt32, raw: UInt32)]] = [:]
 func function(file: String, name: String) -> MTLFunction {
@@ -99,7 +101,7 @@ func function(file: String, name: String) -> MTLFunction {
     } else {
         let source = String(decoding: readFile(file), as: UTF8.self)
         let options = MTLCompileOptions()
-        options.languageVersion = .version2_4
+        options.languageVersion = languageVersion
         options.mathMode = mathMode
         // Turns on the static_asserts that compare every buffer struct with the reflected layout.
         options.preprocessorMacros = ["ONESHADER_CHECK_LAYOUT": NSNumber(value: 1)]
@@ -194,6 +196,8 @@ var targetOut = ""
 
 for t in manifest {
     switch t[0] {
+    case "language":
+        languageVersion = t[1] == "3.1" ? .version3_1 : .version2_4
     case "buffer":
         buffers.append((Int(t[1])!, makeBuffer(readFile(t[2])), t[3] == "-" ? "" : t[3]))
     case "argbuffer":

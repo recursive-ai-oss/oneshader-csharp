@@ -6,8 +6,13 @@ Versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 - Packed 8-bit dot products, Shader Model 6.4's `dot4add_i8packed(uint a, uint b, int acc)` and `dot4add_u8packed(uint a, uint b, uint acc)`: four byte lanes (lane 0 least significant) multiplied pairwise and summed into the accumulator, wrapping modulo 2^32. SPIR-V: `OpSDot`/`OpUDot` with `PackedVectorFormat4x8Bit` and `OpIAdd`, capabilities `DotProduct` and `DotProductInput4x8BitPacked`, `SPV_KHR_integer_dot_product`, as DXC emits. MSL: the four-lane expansion (`as_type<char4>`/`uchar4`, widened, multiplied, summed, accumulated with wrapping). WGSL: `dot4I8Packed`/`dot4U8Packed` plus the accumulator, with `requires packed_4x8_integer_dot_product;` (a language feature, not a device feature).
-- Reflection: `DeviceFeatures.IntegerDotProduct` (Vulkan `shaderIntegerDotProduct`; value 4096), also in `EntryLayout`/`PipelineLayout`/`PipelineLayoutInfo.RequiredFeatures` and the generated `RequiredFeatures`.
+- Reflection: `DeviceFeatures.IntegerDotProduct` (Vulkan `shaderIntegerDotProduct`; value 65536), also in `EntryLayout`/`PipelineLayout`/`PipelineLayoutInfo.RequiredFeatures` and the generated `RequiredFeatures`.
 - WGSL: the entry function reads `SV_GroupID` straight from its `@builtin(workgroup_id)` parameter instead of a module-scope copy, so `if (gid.x >= N) return;` followed by a group barrier passes WGSL's uniformity analysis in browsers. Thread ids keep the copy: a barrier after an early return that depends on them is still rejected, as WGSL requires. Other WGSL output changes only where a compute entry point reads `SV_GroupID`.
+- Cooperative matrices and `bfloat16_t`. `CooperativeMatrix<T, Rows, Cols, MatrixUse::A|B|Accumulator>` with `Load`/`Store` (structured buffer or groupshared array, row- or column-major, runtime stride), `CooperativeMatrix<...>::Zero()` and `::MulAdd(a, b, c)`, `Length()` and `m[i]`; `MatrixUse` and `MatrixLayout` need no declaration. SPIR-V: `SPV_KHR_cooperative_matrix` at subgroup scope; an entry point that uses it switches to the Vulkan memory model (other entry points are unchanged), and a pipeline needs full subgroups below SPIR-V 1.6. MSL: `simdgroup_matrix` 8x8 tiles (shapes must be multiples of 8, OSH5102 otherwise). WGSL: error OSH5202 when WGSL is selected. int8 and other integer matrices are refused with OSH0337 for now. `bfloat16_t`: `OpTypeFloat 16 BFloat16KHR` (`SPV_KHR_bfloat16`) and MSL `bfloat` (Metal 3.1; the file header says so); arithmetic is done in float; not allowed in vectors and matrices (OSH0311) or in WGSL (OSH5202). Reflection `DeviceFeatures` gain `CooperativeMatrix`, `VulkanMemoryModel`, `BFloat16` and `BFloat16CooperativeMatrix`. The syntax is ours; it is neither the `vk::khr::CooperativeMatrix` of HLSL proposal 0021 nor the `linalg::Matrix` of proposal 0035. Verified by running 16x16x16 float16 and bfloat16 products (row- and column-major, groupshared and buffer sources, runtime stride) against a CPU result on an NVIDIA RTX 4070 with the validation layers and on an Apple M2; DXC cannot compile this surface. Shaders that use neither feature produce the same output as before.
+
+## [1.4.1]
+
+- Fixed: the Metal (MSL) output could drop a `continue` that sits in an `if` in the middle of a loop body, so the code after the `if` ran for elements that should have been skipped. Every 1.x release up to 1.4.0 is affected: `for`, `while` and `do`/`while` loops (with or without `[unroll]`), with the optimizer on or off, whenever a guarded `continue` is followed by more statements (`if (x >= n) { continue; } out[x] = 1;`). Loops where the `if` is the last statement, `break` and `return` were already correct, and so were the SPIR-V and WGSL outputs. Recompile the shaders that have such a loop and ship the new MSL.
 
 ## [1.4.0]
 
@@ -101,6 +106,7 @@ First preview.
 - MSBuild integration: `*.hlsl` compiled during `dotnet build`, errors on the HLSL line, embedded SPIR-V and generated C# structs, vertex inputs and binding constants.
 - Known limits: SPIR-V only; single resources only (no resource arrays); no templates, member functions, operator overloads or wave intrinsics yet; `dotnet build` only.
 
+[1.4.1]: https://github.com/recursive-ai-oss/oneshader-csharp/releases/tag/v1.4.1
 [1.4.0]: https://github.com/recursive-ai-oss/oneshader-csharp/releases/tag/v1.4.0
 [1.3.0]: https://github.com/recursive-ai-oss/oneshader-csharp/releases/tag/v1.3.0
 [1.2.0]: https://github.com/recursive-ai-oss/oneshader-csharp/releases/tag/v1.2.0

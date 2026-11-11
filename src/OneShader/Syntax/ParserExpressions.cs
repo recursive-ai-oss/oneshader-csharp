@@ -612,6 +612,16 @@ internal sealed partial class ParserImpl
             || (Peek(1).Kind == TokenKind.Less && (BuiltinTypes.IsTemplateTypeName(text) || _templateNames.Contains(text)))))
         {
             var type = ParseType();
+            if (At(TokenKind.ColonColon) && Peek(1).Kind == TokenKind.Identifier && Peek(2).Kind == TokenKind.LParen)
+            {
+                Advance();
+                var member = new Identifier(SpanOf(Cur), Cur.Text);
+                Advance();
+                Advance();
+                var margs = ParseArguments();
+                return new ConstructExpression(SpanFrom(start), type, margs, member);
+            }
+
             if (At(TokenKind.LParen))
             {
                 Advance();

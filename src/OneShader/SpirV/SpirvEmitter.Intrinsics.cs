@@ -213,6 +213,9 @@ internal sealed partial class SpirvEmitter
             case >= Intrinsic.WaveIsFirstLane and <= Intrinsic.QuadReadLaneAt or Intrinsic.WaveActiveAllEqual:
                 EmitWave(i);
                 break;
+            case >= Intrinsic.CoopMatrixLoad and <= Intrinsic.CoopMatrixZero:
+                EmitCooperative(i);
+                break;
             default:
                 Unsupported("The intrinsic '" + i.Intrinsic + "' is not supported by the SPIR-V backend yet.", i.Span);
                 if (!i.IsVoid)

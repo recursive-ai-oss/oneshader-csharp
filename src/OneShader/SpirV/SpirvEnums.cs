@@ -40,7 +40,8 @@ internal static class Op
         GroupNonUniformFMul = 352, GroupNonUniformSMin = 353, GroupNonUniformUMin = 354, GroupNonUniformFMin = 355,
         GroupNonUniformSMax = 356, GroupNonUniformUMax = 357, GroupNonUniformFMax = 358, GroupNonUniformBitwiseAnd = 359,
         GroupNonUniformBitwiseOr = 360, GroupNonUniformBitwiseXor = 361, GroupNonUniformQuadBroadcast = 365,
-        GroupNonUniformQuadSwap = 366;
+        GroupNonUniformQuadSwap = 366, TypeCooperativeMatrix = 4456, CooperativeMatrixLoad = 4457, CooperativeMatrixStore = 4458,
+        CooperativeMatrixMulAdd = 4459, CooperativeMatrixLength = 4460;
 }
 
 /// <summary>GLSL.std.450 extended instructions.</summary>
@@ -63,7 +64,7 @@ internal static class Cap
         SampledBuffer = 46, ImageBuffer = 47, ImageMSArray = 48, StorageImageExtendedFormat = 49, ImageQuery = 50, DerivativeControl = 51,
         StorageImageReadWithoutFormat = 55, StorageImageWriteWithoutFormat = 56, ShaderLayer = 69, ShaderViewportIndex = 70,
         GroupNonUniform = 61, GroupNonUniformVote = 62, GroupNonUniformArithmetic = 63, GroupNonUniformBallot = 64,
-        GroupNonUniformShuffle = 65, GroupNonUniformQuad = 68, StorageBuffer16BitAccess = 4433, UniformAndStorageBuffer16BitAccess = 4434,
+        GroupNonUniformShuffle = 65, GroupNonUniformQuad = 68, BFloat16Type = 5116, BFloat16CooperativeMatrix = 5118, VulkanMemoryModel = 5345, CooperativeMatrix = 6022, StorageBuffer16BitAccess = 4433, UniformAndStorageBuffer16BitAccess = 4434,
         StoragePushConstant16 = 4435, StorageInputOutput16 = 4436, DotProductInput4x8BitPacked = 6018, DotProduct = 6019;
 }
 
