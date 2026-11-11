@@ -5,6 +5,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.6.1]
+
 - Fixed: the WGSL output wrote the largest finite float (`FLT_MAX`, from a folded `-3.4028234663852886e38` or `-asfloat(0x7f7fffff)`) as `3.4028235E+38f`, the shortest text that reads back as that float. As a real number that text is above the largest f32, so browsers refused the shader ("value cannot be represented as 'f32'"). It is now written with its exact decimal expansion. Every other float literal is unchanged, and the new `float_extremes` corpus case checks the edge values on Vulkan, naga and in the browser. SPIR-V and MSL were not affected.
 
 ## [1.6.0]
@@ -118,6 +120,7 @@ First preview.
 - MSBuild integration: `*.hlsl` compiled during `dotnet build`, errors on the HLSL line, embedded SPIR-V and generated C# structs, vertex inputs and binding constants.
 - Known limits: SPIR-V only; single resources only (no resource arrays); no templates, member functions, operator overloads or wave intrinsics yet; `dotnet build` only.
 
+[1.6.1]: https://github.com/recursive-ai-oss/oneshader-csharp/releases/tag/v1.6.1
 [1.6.0]: https://github.com/recursive-ai-oss/oneshader-csharp/releases/tag/v1.6.0
 [1.5.0]: https://github.com/recursive-ai-oss/oneshader-csharp/releases/tag/v1.5.0
 [1.4.1]: https://github.com/recursive-ai-oss/oneshader-csharp/releases/tag/v1.4.1
