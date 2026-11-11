@@ -171,8 +171,8 @@ public sealed class TargetTests : IDisposable
         var (ok2, _, output2) = Run("Sprite", SampleShader, "SpirV", itemTargets: "Wgsl", outDir: "obj/two");
         Assert.True(ok2);
         string wgslOnly = Generate(output2);
-        Assert.Contains("Wgsl =>", wgslOnly, StringComparison.Ordinal);
-        Assert.DoesNotContain("SpirV =>", wgslOnly, StringComparison.Ordinal);
+        Assert.Contains("ReadOnlySpan<byte> Wgsl", wgslOnly, StringComparison.Ordinal);
+        Assert.DoesNotContain("ReadOnlySpan<byte> SpirV", wgslOnly, StringComparison.Ordinal);
         Assert.DoesNotContain("Msl", wgslOnly, StringComparison.Ordinal);
 
         // Metal alone still lists the resources, with the Metal index standing in for the binding.
@@ -180,7 +180,7 @@ public sealed class TargetTests : IDisposable
         Assert.True(ok3);
         string mslOnly = Generate(output3);
         Assert.Contains("MslIndex = 0u", mslOnly, StringComparison.Ordinal);
-        Assert.DoesNotContain("SpirV =>", mslOnly, StringComparison.Ordinal);
+        Assert.DoesNotContain("ReadOnlySpan<byte> SpirV", mslOnly, StringComparison.Ordinal);
     }
 
     // A clip distance is valid in SPIR-V and refused by the WGSL backend (WebGPU core has no clip distances).

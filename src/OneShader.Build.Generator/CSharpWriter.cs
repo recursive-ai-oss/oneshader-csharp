@@ -1262,28 +1262,34 @@ internal sealed partial class CSharpWriter
 
     private void EmitBytes(string property, byte[] data)
     {
-        // A constant byte-array literal returned as a span is stored once in the assembly's
-        // data section and costs no allocation.
-        Line("public static global::System.ReadOnlySpan<byte> " + property + " => new byte[]");
+        // The blob is a base64 UTF-8 string literal ("..."u8), which the C# compiler stores as one constant: an array
+        // initializer costs it a syntax node and a constant per byte, hundreds of bytes of compiler memory per blob byte,
+        // and a project with many variants ran out of memory on it. A u8 literal cannot carry arbitrary bytes and a
+        // string constant is capped at 16 MB per assembly, hence base64. The first read decodes it into an array that
+        // later reads reuse (no allocation per access); a race between threads only decodes twice, to identical bytes.
+        string field = "s_" + property;
+        string length = data.Length.ToString(CultureInfo.InvariantCulture);
+        Line("private static byte[]? " + field + ";");
+        Line("public static global::System.ReadOnlySpan<byte> " + property);
         Line("{");
         _indent++;
-        var line = new StringBuilder();
-        for (int i = 0; i < data.Length; i++)
-        {
-            line.Append("0x").Append(data[i].ToString("x2", CultureInfo.InvariantCulture)).Append(',');
-            if ((i % 24) == 23 || i == data.Length - 1)
-            {
-                Line(line.ToString());
-                line.Clear();
-            }
-            else
-            {
-                line.Append(' ');
-            }
-        }
-
+        Line("get");
+        Line("{");
+        _indent++;
+        Line("if (" + field + " is null)");
+        Line("{");
+        _indent++;
+        Line("var bytes = new byte[" + length + "];");
+        Line("global::System.Buffers.Text.Base64.DecodeFromUtf8(\"" + Convert.ToBase64String(data) + "\"u8, bytes, out _, out _);");
+        Line(field + " = bytes;");
         _indent--;
-        Line("};");
+        Line("}");
+        Line("");
+        Line("return " + field + ";");
+        _indent--;
+        Line("}");
+        _indent--;
+        Line("}");
     }
 
     private static List<VariableNode> VertexAttributes(EntryNode e)

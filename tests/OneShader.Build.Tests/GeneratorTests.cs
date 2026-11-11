@@ -91,6 +91,67 @@ public class GeneratorTests
     }
 
     [Fact]
+    public void BlobsOfAnyByteValueAndLengthComeBackIdentical()
+    {
+        // Every byte value in order and reversed, an odd length, and 3 MB of noise (a blob that large is a heavy shader with
+        // many keywords), so the literal's encoding and the first-read decode are checked against the compiler's bytes.
+        var every = new byte[256];
+        var reversed = new byte[257];
+        for (int i = 0; i < 256; i++)
+        {
+            every[i] = (byte)i;
+            reversed[i] = (byte)(255 - i);
+        }
+
+        reversed[256] = 0;
+        var noise = new byte[3 * 1024 * 1024];
+        new Random(12345).NextBytes(noise);
+        var (reflection, _) = GoldenModels.Build("Sprite");
+        var blobs = new List<ShaderBlob>
+        {
+            new("VSMain", ShaderStage.Vertex, CompileTarget.SpirV, every),
+            new("PSMain", ShaderStage.Pixel, CompileTarget.SpirV, reversed),
+        };
+        string text = OneShader.Build.Tasks.CompileShaders.Render(reflection, blobs, "/unused/Sprite.hlsl", reflection.SourceName, "PrebuiltSample.Shaders", "", "0", new SortedSet<string>(StringComparer.Ordinal), [], "/unused");
+        var (sources, diagnostics) = Harness.Generate(("obj/Sprite.oneshader", text));
+        Assert.Empty(diagnostics);
+        var asm = Harness.Compile(sources.Select(s => s.Text), out var ctx);
+        try
+        {
+            var ps = asm.GetType("PrebuiltSample.Shaders.Sprite+PSMain")!;
+            var vs = asm.GetType("PrebuiltSample.Shaders.Sprite+VSMain")!;
+            // A span cannot be boxed by reflection, so read it through a delegate over the property getter.
+            Assert.Equal(every, Read(vs));
+            Assert.Equal(reversed, Read(ps));
+            Assert.Equal(every, Read(vs));
+        }
+        finally
+        {
+            ctx.Unload();
+        }
+
+        // The same encoding for a blob far past the usual size.
+        var big = new List<ShaderBlob> { new("VSMain", ShaderStage.Vertex, CompileTarget.SpirV, noise), new("PSMain", ShaderStage.Pixel, CompileTarget.SpirV, every) };
+        text = OneShader.Build.Tasks.CompileShaders.Render(reflection, big, "/unused/Sprite.hlsl", reflection.SourceName, "PrebuiltSample.Shaders", "", "0", new SortedSet<string>(StringComparer.Ordinal), [], "/unused");
+        (sources, diagnostics) = Harness.Generate(("obj/Sprite.oneshader", text));
+        Assert.Empty(diagnostics);
+        asm = Harness.Compile(sources.Select(s => s.Text), out ctx);
+        try
+        {
+            Assert.Equal(noise, Read(asm.GetType("PrebuiltSample.Shaders.Sprite+VSMain")!));
+        }
+        finally
+        {
+            ctx.Unload();
+        }
+    }
+
+    private delegate System.ReadOnlySpan<byte> SpanGetter();
+
+    private static byte[] Read(Type entry) =>
+        entry.GetProperty("SpirV")!.GetGetMethod()!.CreateDelegate<SpanGetter>()().ToArray();
+
+    [Fact]
     public void ArraysAndCountersAreExposed()
     {
         var asm = CompileAll(out var ctx);

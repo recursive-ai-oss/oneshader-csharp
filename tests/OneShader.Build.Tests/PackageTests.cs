@@ -218,7 +218,7 @@ public sealed class PackageTests : IClassFixture<PackageFixture>
             TestContext.Current.CancellationToken);
         Assert.True(compiled.Success, string.Join("\n", compiled.Diagnostics));
 
-        // The generated C# holds the compiler's bytes for each target, spelled out as a byte-array literal.
+        // The generated C# holds the compiler's bytes for each target, spelled out as a base64 literal.
         string generated = File.ReadAllText(Find(a, "OneShader.*.g.cs"));
         foreach (string entry in new[] { "VSMain", "PSMain" })
         {
@@ -226,9 +226,9 @@ public sealed class PackageTests : IClassFixture<PackageFixture>
             body = body.Substring(0, body.IndexOf("\n    }\n", StringComparison.Ordinal));
             foreach (var (member, target) in new[] { ("SpirV", CompileTarget.SpirV), ("Msl", CompileTarget.Msl), ("Wgsl", CompileTarget.Wgsl) })
             {
-                var match = Regex.Match(body, @"ReadOnlySpan<byte> " + member + @" => new byte\[\]\s*\{(?<bytes>[^}]*)\}");
+                var match = Regex.Match(body, @"ReadOnlySpan<byte> " + member + @"\s*\{.*?DecodeFromUtf8\(""(?<b64>[A-Za-z0-9+/=]*)""u8", RegexOptions.Singleline);
                 Assert.True(match.Success, entry + "." + member + " is missing");
-                byte[] embedded = Regex.Matches(match.Groups["bytes"].Value, "0x([0-9a-f]{2})").Select(m => Convert.ToByte(m.Groups[1].Value, 16)).ToArray();
+                byte[] embedded = Convert.FromBase64String(match.Groups["b64"].Value);
                 Assert.Equal(compiled.Find(entry, target)!.ToArray(), embedded);
             }
         }
@@ -495,7 +495,7 @@ public sealed class PackageTests : IClassFixture<PackageFixture>
         // Without the property: no debug records, and the generated C# differs from the debug build only in the bytes of the blobs.
         var (blobsPlain, csPlain) = BuildCopy(CopySprite("plain"), Path.Combine(_fx.Root, "art-debug-plain"));
         Assert.All(Blobs(blobsPlain), b => Assert.DoesNotContain("NonSemantic", System.Text.Encoding.Latin1.GetString(b), StringComparison.Ordinal));
-        static string[] Code(string file) => File.ReadAllLines(file).Where(l => !l.TrimStart().StartsWith("0x", StringComparison.Ordinal)).ToArray();
+        static string[] Code(string file) => File.ReadAllLines(file).Where(l => !l.Contains("DecodeFromUtf8(", StringComparison.Ordinal) && !l.Contains("= new byte[", StringComparison.Ordinal)).ToArray();
         Assert.Equal(Code(csPlain), Code(csA));
     }
 
