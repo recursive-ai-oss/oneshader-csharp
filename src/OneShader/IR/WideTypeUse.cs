@@ -267,7 +267,7 @@ internal sealed class WideTypeUse
     {
         if (CooperativeIn(t) is { } coop)
         {
-            Features |= DeviceFeatures.CooperativeMatrix | DeviceFeatures.VulkanMemoryModel;
+            Features |= DeviceFeatures.CooperativeMatrix | DeviceFeatures.VulkanMemoryModel | DeviceFeatures.FullSubgroups;
             if (!CooperativeMatrixSite.IsKnown)
             {
                 CooperativeMatrixSite = span;

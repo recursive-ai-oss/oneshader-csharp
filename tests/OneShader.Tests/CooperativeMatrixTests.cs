@@ -84,7 +84,7 @@ public sealed class CooperativeMatrixTests
         // AcquireRelease | WorkgroupMemory | MakeAvailable | MakeVisible = 0x8 | 0x100 | 0x2000 | 0x4000.
         Assert.Contains("%uint_24840 = OpConstant %uint 24840", text, StringComparison.Ordinal);
         var features = r.Reflection!.EntryPoints[0].RequiredFeatures;
-        Assert.Equal(DeviceFeatures.Float16 | DeviceFeatures.StorageBuffer16 | DeviceFeatures.CooperativeMatrix | DeviceFeatures.VulkanMemoryModel, features);
+        Assert.Equal(DeviceFeatures.Float16 | DeviceFeatures.StorageBuffer16 | DeviceFeatures.CooperativeMatrix | DeviceFeatures.VulkanMemoryModel | DeviceFeatures.FullSubgroups, features);
     }
 
     [Fact]
@@ -104,7 +104,7 @@ public sealed class CooperativeMatrixTests
         }
 
         var features = r.Reflection!.EntryPoints[0].RequiredFeatures;
-        Assert.Equal(DeviceFeatures.BFloat16 | DeviceFeatures.BFloat16CooperativeMatrix | DeviceFeatures.StorageBuffer16 | DeviceFeatures.CooperativeMatrix | DeviceFeatures.VulkanMemoryModel, features);
+        Assert.Equal(DeviceFeatures.BFloat16 | DeviceFeatures.BFloat16CooperativeMatrix | DeviceFeatures.StorageBuffer16 | DeviceFeatures.CooperativeMatrix | DeviceFeatures.VulkanMemoryModel | DeviceFeatures.FullSubgroups, features);
     }
 
     [Fact]

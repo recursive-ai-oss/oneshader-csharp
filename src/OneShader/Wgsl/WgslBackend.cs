@@ -798,7 +798,10 @@ internal sealed partial class WgslEmitter
                 return attrs + "var<uniform> " + name + ": array<vec4<u32>, " + Inv(rows) + ">;\n";
             }
 
-            bool write = info.Written || info.Atomic;
+            // The access mode comes from the HLSL type, not from what this entry point happens to do: entry points of one file share bind group
+            // layouts, and WebGPU rejects a read-write layout entry against a shader that declares the buffer read-only. A vertex stage may not
+            // declare read_write storage at all (WGSL 14.x, storage address space), so an unwritten buffer stays read there.
+            bool write = info.Written || info.Atomic || (rt.IsReadWrite && _ep.Stage != ShaderStage.Vertex);
             string access = write ? "read_write" : "read";
             string element = info.Atomic ? "atomic<u32>" : "u32";
             return attrs + "var<storage, " + access + "> " + name + ": array<" + element + ">;\n";

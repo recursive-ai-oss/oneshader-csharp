@@ -195,6 +195,14 @@ public enum DeviceFeatures
     /// WebGPU needs the <c>packed_4x8_integer_dot_product</c> language feature, which is not a device feature to request; Metal has none).
     /// </summary>
     IntegerDotProduct = 65536,
+
+    /// <summary>
+    /// The pipeline must be created with full subgroups (Vulkan <c>VK_PIPELINE_SHADER_STAGE_CREATE_REQUIRE_FULL_SUBGROUPS_BIT</c>, core in Vulkan 1.3,
+    /// <c>VK_EXT_subgroup_size_control</c> before; the workgroup size must then be a multiple of the subgroup size). Set for every entry point that uses
+    /// cooperative matrices, because the SPIR-V module stays below version 1.6, where they are only valid with full subgroups. This is a pipeline creation
+    /// flag rather than a device feature; it travels here so it follows the same path as the other requirements. Metal and WebGPU need nothing.
+    /// </summary>
+    FullSubgroups = 131072,
 }
 
 /// <summary>
