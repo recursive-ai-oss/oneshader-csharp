@@ -253,7 +253,7 @@ public sealed class CooperativeMatrixTests
         var d = r.Diagnostics.Single(x => x.Severity == DiagnosticSeverity.Error);
         Assert.Equal("OSH5202", d.Code);
         Assert.Equal("t.hlsl", d.Span.Path);
-        Assert.Equal((40, 56), (d.Span.Line, d.Span.Column));
+        Assert.Equal((38, 56), (d.Span.Line, d.Span.Column));
         Assert.Contains("Cooperative matrices", d.Message, StringComparison.Ordinal);
         Assert.Contains("WGSL", d.Message, StringComparison.Ordinal);
 

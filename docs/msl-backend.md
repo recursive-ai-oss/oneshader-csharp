@@ -82,6 +82,19 @@ spec 6.16.4.6, Apple silicon); the backend emits exactly that for unsigned `Inte
 atomic, any use of `double`, and 64-bit integer vectors in buffers (no packed long vectors) are errors (OSH5102) at the line of the first use. Min-precision
 `RelaxedPrecision` has no MSL equivalent: values are computed in 32 bits.
 
+## Cooperative matrices and bfloat16
+
+A cooperative matrix is a struct of `simdgroup_matrix<T, 8, 8>` tiles (named `CoopMatrix_<element>_<rows>x<cols>_<A|B|Acc>`), so rows and columns must be multiples of
+8 (anything else is OSH5102 at the declaration). `Load`/`Store` are one `simdgroup_load`/`simdgroup_store` per tile from a device buffer or a `threadgroup`
+array at the tile's element offset with the runtime stride; column-major swaps the tile origin and passes the transpose flag. `MulAdd` is a
+`simdgroup_multiply_accumulate` per K step, `Zero()` is `make_filled_simdgroup_matrix`, `m[i]` is `thread_elements()` of the tiles in order, and `Length()` is
+2 per tile. The element order of `m[i]` differs from SPIR-V's. One simdgroup owns a 16x16 matrix as 2x2 tiles; every call must be reached by the whole simdgroup
+(a 32-thread group on Apple GPUs).
+
+`bfloat16_t` is `bfloat`; the file header then says Metal 3.1 (macOS 14, iOS 17), and a host compiling it must set the language version to 3.1
+(`MTLLanguageVersion.version3_1`, or `-std=metal3.1` for the command line compiler). The corpus cases `coop_f16`, `coop_bf16` and `coop_layouts` run on an Apple M2
+bit-exact against the CPU result (`tools/run-metal-parity.sh`; the runner takes the language version from the manifest's `language` line).
+
 ## Debug information
 
 With `CompileOptions.DebugInfo` set to `Lines` or `Full` the source has `#line N "file"` directives (file names as in [debugging.md](debugging.md)) before the first

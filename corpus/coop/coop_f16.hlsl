@@ -2,12 +2,10 @@
 // Provenance: a consumer's request for cooperative matrices, lightly adapted. 16x16x16 product of two float16_t tiles staged through groupshared memory.
 // Requested HLSL surface: subgroup-scope cooperative matrices.
 //
-// Compiles once the shader compiler supports it; until then the GEMM kernels that need it are written directly in SPIR-V and Metal
-// Shading Language (tools/kernels, src/RecursiveAI.OneGpu.Kernels/Raw). This file is the kernel those two stand in for, reduced to one
-// 16 x 16 x 16 product per subgroup so the expected output below can be checked by eye.
+// One 16 x 16 x 16 product per subgroup, small enough to check the expected output by eye.
 //
 // Surface:
-//   CooperativeMatrix<T, Rows, Cols, Use>      T = float16_t, bfloat16_t (see bfloat16.hlsl), float, int8_t/uint8_t, int32/uint32
+//   CooperativeMatrix<T, Rows, Cols, Use>      T = float16_t, bfloat16_t (see coop_bf16.hlsl), float (integer elements are not supported yet)
 //                                              Use = MatrixUse::A, MatrixUse::B or MatrixUse::Accumulator
 //   m.Load(buffer, elementIndex, stride, layout)   buffer is a (RW)StructuredBuffer or a groupshared array of T; stride in elements
 //   m.Store(rwBuffer, elementIndex, stride, layout)

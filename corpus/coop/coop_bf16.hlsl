@@ -4,7 +4,7 @@
 //
 //   bfloat16_t               scalar type; converts to and from float (float to bfloat16 rounds to nearest even)
 //   StructuredBuffer<bfloat16_t>, groupshared bfloat16_t[]   2-byte elements
-//   CooperativeMatrix<bfloat16_t, 16, 16, MatrixUse::A>      see cooperative_matrix.hlsl; accumulates in float
+//   CooperativeMatrix<bfloat16_t, 16, 16, MatrixUse::A>      see coop_f16.hlsl; accumulates in float
 //
 // The conversion is the part that matters for the GEMM kernels: they read bfloat16 weights from storage buffers of 32-bit words today
 // and widen with a shift, which needs no type. A real type removes the shift and lets cooperative matrices take bfloat16 operands.
