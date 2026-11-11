@@ -47,6 +47,7 @@ public static class CpuReferences
         "coop_f16" => CoopProduct(model, data, bfloat: false),
         "coop_bf16" => CoopProduct(model, data, bfloat: true),
         "coop_layouts" => CoopLayouts(model, data),
+        "coop_gemm_f32" => CoopGemmF32(model, data),
         "continue_unrolled" => ContinueUnrolled(model, data),
         _ => throw new ArgumentException($"unknown CPU reference '{name}'"),
     };
@@ -107,6 +108,29 @@ public static class CpuReferences
                     sum += x * y;
                 }
                 result[r * 16 + n] = sum;
+            }
+        }
+        return [new Expectation(Key(m, c), Floats(result, d.Buffers[c].Length), ExpectKind.FloatRelative, 1e-4)];
+    }
+
+    // coop_gemm_f32: C (64 x 64) = A (64 x 128) x B (128 x 64), all float and row-major.
+    private static IReadOnlyList<Expectation> CoopGemmF32(CaseModel m, CaseData d)
+    {
+        int a = Find(m, ResourceKind.Storage, 0, 0);
+        int b = Find(m, ResourceKind.Storage, 0, 1);
+        int c = Find(m, ResourceKind.Storage, 0, 2);
+        float[] result = new float[64 * 64];
+        for (int r = 0; r < 64; r++)
+        {
+            for (int n = 0; n < 64; n++)
+            {
+                float sum = 0;
+                for (int k = 0; k < 128; k++)
+                {
+                    sum += BinaryPrimitives.ReadSingleLittleEndian(d.Buffers[a].AsSpan((r * 128 + k) * 4))
+                        * BinaryPrimitives.ReadSingleLittleEndian(d.Buffers[b].AsSpan((k * 64 + n) * 4));
+                }
+                result[r * 64 + n] = sum;
             }
         }
         return [new Expectation(Key(m, c), Floats(result, d.Buffers[c].Length), ExpectKind.FloatRelative, 1e-4)];

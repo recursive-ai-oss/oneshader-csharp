@@ -24,7 +24,7 @@ public class CooperativeMatrixGpuTests
     [Fact]
     public void CpuOnlyCasesParse()
     {
-        Assert.Equal(["coop_bf16", "coop_f16", "coop_layouts"], Corpus.CpuOnlyNames);
+        Assert.Equal(["coop_bf16", "coop_f16", "coop_gemm_f32", "coop_layouts"], Corpus.CpuOnlyNames);
         foreach (string n in Corpus.CpuOnlyNames)
         {
             var model = Corpus.LoadCpuOnly(n);
@@ -46,10 +46,11 @@ public class CooperativeMatrixGpuTests
         string have = ctx.DeviceName + " cooperative matrix properties: " + (shapes.Count == 0 ? "none" : string.Join("; ", shapes));
         Assert.SkipWhen(!ctx.CooperativeMatrixFeature, "no VK_KHR_cooperative_matrix with the Vulkan memory model on " + have);
         bool bf16 = name.Contains("bf16", StringComparison.Ordinal);
-        uint input = bf16 ? CoopShape.BFloat16 : CoopShape.Float16;
+        bool f32 = name.Contains("f32", StringComparison.Ordinal);
+        uint input = bf16 ? CoopShape.BFloat16 : f32 ? CoopShape.Float32 : CoopShape.Float16;
         Assert.SkipWhen(bf16 && !ctx.BFloat16CooperativeMatrixFeature, "no bfloat16 cooperative matrices on " + have);
         Assert.SkipWhen(!shapes.Any(s => s.M == 16 && s.N == 16 && s.K == 16 && s.AType == input && s.BType == input && s.CType == CoopShape.Float32 && s.ResultType == CoopShape.Float32),
-            "no 16x16x16 " + (bf16 ? "bf16" : "f16") + " with f32 accumulator on " + have);
+            "no 16x16x16 " + (bf16 ? "bf16" : f32 ? "f32" : "f16") + " with f32 accumulator on " + have);
         var report = Parity.CheckExpected(ctx, Corpus.LoadCpuOnly(name), ParityCompilers.Candidate);
         Assert.True(report.Failures.Count == 0, have + "\n" + report);
     }

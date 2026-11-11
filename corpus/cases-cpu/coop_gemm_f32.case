@@ -1,0 +1,8 @@
+# 64x128 by 128x64 float GEMM by eight simdgroups; 64x64 float tiles of A and B in groupshared memory (32768 bytes declared).
+case coop_gemm_f32
+shader coop/coop_gemm_f32.hlsl
+dispatch GemmTile 1 1 1
+storage 0 0 : @fpm1(11,8192)
+storage 0 1 : @fpm1(12,8192)
+storage 0 2 out size=16384 float=1e-4
+expect coop_gemm_f32
