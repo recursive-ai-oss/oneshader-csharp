@@ -1,0 +1,9 @@
+# 16x16x16 float16 cooperative-matrix product, operands staged in groupshared memory, row-major, float accumulator.
+case coop_f16
+shader coop/coop_f16.hlsl
+define ONESHADER_16BIT=1
+dispatch CooperativeProduct 1 1 1
+storage 0 0 : @h01(1,256)
+storage 0 1 : @hpm1(2,256)
+storage 0 2 out size=1024 float=1e-4
+expect coop_f16

@@ -126,6 +126,8 @@ internal sealed partial class SpirvEmitter
 
             case EnumType e:
                 return TypeId(e.Underlying);
+            case CooperativeMatrixType cm:
+                return CooperativeMatrixTypeId(cm);
             case PointerType p:
                 return PointerTo(StorageClassOf(p.Space), TypeId(p.Pointee));
             case ResourceType r:
@@ -141,6 +143,26 @@ internal sealed partial class SpirvEmitter
                 Unsupported("The type '" + t + "' cannot be represented in SPIR-V.");
                 return _s.DeclType("void", Op.TypeVoid);
         }
+    }
+
+    /// <summary>SPV_KHR_cooperative_matrix: component type, Subgroup scope (3), rows, columns and use (0 A, 1 B, 2 accumulator).</summary>
+    private uint CooperativeMatrixTypeId(CooperativeMatrixType cm)
+    {
+        uint element = TypeId(cm.Element);
+        uint scope = ConstId(Constant.UInt(3));
+        uint rows = ConstId(Constant.UInt((uint)cm.Rows));
+        uint columns = ConstId(Constant.UInt((uint)cm.Columns));
+        uint use = ConstId(Constant.UInt((uint)cm.Use));
+        _s.Capabilities.Add(Cap.CooperativeMatrix);
+        _s.Extensions.Add("SPV_KHR_cooperative_matrix");
+        if (cm.Element.ScalarKind == ScalarKind.BFloat16)
+        {
+            _s.Capabilities.Add(Cap.BFloat16CooperativeMatrix);
+        }
+
+        uint id = _s.DeclType("cm" + Inv(element) + ":" + Inv(rows) + ":" + Inv(columns) + ":" + Inv(use), Op.TypeCooperativeMatrix, element, scope, rows, columns, use);
+        _s.SetInfo(id, TypeInfoKind.Array, element);
+        return id;
     }
 
     private uint VectorOf(uint element, int count)
@@ -183,6 +205,11 @@ internal sealed partial class SpirvEmitter
                 }
 
                 return _s.DeclType("f32", Op.TypeFloat, 32);
+            case ScalarKind.BFloat16:
+                // SPV_KHR_bfloat16: a 16-bit float with the BFloat16KHR encoding (0).
+                _s.Capabilities.Add(Cap.BFloat16Type);
+                _s.Extensions.Add("SPV_KHR_bfloat16");
+                return _s.DeclType("bf16", Op.TypeFloat, 16, 0);
             case ScalarKind.Float or ScalarKind.LiteralFloat:
                 return _s.DeclType("f32", Op.TypeFloat, 32);
             case ScalarKind.Int16:

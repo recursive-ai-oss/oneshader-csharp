@@ -72,6 +72,11 @@ internal sealed partial class Checker
             return CheckStructMethodCall(c, ma, structTarget, at, info);
         }
 
+        if (tt is CooperativeMatrixType coopTarget)
+        {
+            return CheckCooperativeMethod(c, ma, coopTarget, at, info);
+        }
+
         if (tt is not ResourceType rt)
         {
             Err(SemanticCodes.BadMember, "The type '" + tt + "' has no method '" + name + "'.", ma.Member.Span);

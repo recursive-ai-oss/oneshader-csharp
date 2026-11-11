@@ -77,6 +77,9 @@ with `dxc -spirv -fspv-target-env=vulkan1.2`, and give every resource an explici
 | `2d/spec_const_pixel.hlsl` | Fullscreen triangle whose pixel shader branches on a bool specialization constant and quantizes with an int one | written for this repository | MIT OR Apache-2.0 |
 | `compute/append_consume.hlsl` | Work list drained with `ConsumeStructuredBuffer` into an `AppendStructuredBuffer`, explicit counter bindings | written for this repository | MIT OR Apache-2.0 |
 | `lang/resource_locals.hlsl` | Resource-typed locals and parameters resolved at compile time | written for this repository | MIT OR Apache-2.0 |
+| `coop/coop_f16.hlsl` | 16x16x16 `float16_t` cooperative-matrix product with operands staged through groupshared memory, float accumulator (a consumer's request, lightly adapted) | a consumer's request for the feature, adapted by the authors | MIT OR Apache-2.0 |
+| `coop/coop_bf16.hlsl` | The same product with `bfloat16_t` operands, one converted from float in the shader (a consumer's request, lightly adapted) | a consumer's request for the feature, adapted by the authors | MIT OR Apache-2.0 |
+| `coop/coop_layouts.hlsl` | 16x32 by 32x16 product in two steps: column-major A from a buffer with element offset and runtime stride, row-major B from groupshared memory (stride 20), column-major store (stride 19), and a copy doubled through `Length()` and `m[i]` | written for this repository | MIT OR Apache-2.0 |
 
 ## Cases
 
@@ -141,6 +144,18 @@ The 3D cases build their inputs from generators described in the harness (`MeshG
 and planes with normals and tangents, camera, light and joint matrices in either memory layout, record patterns,
 procedural material maps, cube-map skies and analytic depth and normal buffers. Float colour targets are written
 as `RGBA16F`, `RGBA32F` or `R32F` and compared with the case's relative tolerance.
+
+### CPU-only cases
+
+`cases-cpu/*.case` have the same format but a shader DXC cannot compile (cooperative matrices, `bfloat16_t`), so they run only against a CPU result:
+`CooperativeMatrixGpuTests` on Vulkan (skipped with the device's reported cooperative-matrix properties when it has none: RADV, llvmpipe) and
+`MetalParityTests.ExportCooperative` plus `tools/run-metal-parity.sh run` on a Mac. They are not part of the DXC parity counts.
+
+| Case | Shader | Run | Checked |
+|---|---|---|---|
+| `coop_f16` | `coop/coop_f16.hlsl` | dispatch, one subgroup | buffer vs CPU, float tolerance 1e-4 |
+| `coop_bf16` | `coop/coop_bf16.hlsl` | dispatch, one subgroup | buffer vs CPU, float tolerance 1e-4 |
+| `coop_layouts` | `coop/coop_layouts.hlsl` | dispatch, one subgroup, constant buffer with offset and stride | two buffers vs CPU, float tolerance 1e-4 |
 
 ## Probes
 

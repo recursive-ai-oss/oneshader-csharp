@@ -43,6 +43,9 @@ public static class CpuReferences
         "wave_reduce" => WaveReduce(model, data),
         "wave_ballot" => WaveBallot(model, data),
         "spec_const_compute" => SpecConstCompute(model, data),
+        "coop_f16" => CoopProduct(model, data, bfloat: false),
+        "coop_bf16" => CoopProduct(model, data, bfloat: true),
+        "coop_layouts" => CoopLayouts(model, data),
         "continue_unrolled" => ContinueUnrolled(model, data),
         _ => throw new ArgumentException($"unknown CPU reference '{name}'"),
     };
@@ -68,6 +71,76 @@ public static class CpuReferences
             BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(i * 4), words[i]);
         }
         return b;
+    }
+
+    private static float Half(byte[] bytes, int index) => (float)BitConverter.ToHalf(bytes, index * 2);
+
+    private static float BFloat(byte[] bytes, int index) => DataGen.FromBFloat16Bits(BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(index * 2)));
+
+    private static byte[] Floats(float[] values, int sizeBytes)
+    {
+        byte[] b = new byte[sizeBytes];
+        for (int i = 0; i < values.Length && i * 4 < sizeBytes; i++)
+        {
+            BinaryPrimitives.WriteSingleLittleEndian(b.AsSpan(i * 4), values[i]);
+        }
+        return b;
+    }
+
+    // The 16x16x16 cooperative-matrix kernels: C = A x B with float accumulation, row-major. The bfloat16 kernel doubles B on the way in.
+    private static IReadOnlyList<Expectation> CoopProduct(CaseModel m, CaseData d, bool bfloat)
+    {
+        int a = Find(m, ResourceKind.Storage, 0, 0);
+        int b = Find(m, ResourceKind.Storage, 0, 1);
+        int c = Find(m, ResourceKind.Storage, 0, 2);
+        float[] result = new float[256];
+        for (int r = 0; r < 16; r++)
+        {
+            for (int n = 0; n < 16; n++)
+            {
+                float sum = 0;
+                for (int k = 0; k < 16; k++)
+                {
+                    float x = bfloat ? BFloat(d.Buffers[a], r * 16 + k) : Half(d.Buffers[a], r * 16 + k);
+                    float y = bfloat ? BFloat(d.Buffers[b], k * 16 + n) * 2f : Half(d.Buffers[b], k * 16 + n);
+                    sum += x * y;
+                }
+                result[r * 16 + n] = sum;
+            }
+        }
+        return [new Expectation(Key(m, c), Floats(result, d.Buffers[c].Length), ExpectKind.FloatRelative, 1e-4)];
+    }
+
+    // coop_layouts: A (16 x 32) is column-major at element 8 with stride 24, B (32 x 16) is row-major; C is stored column-major with stride 19, D row-major doubled.
+    private static IReadOnlyList<Expectation> CoopLayouts(CaseModel m, CaseData d)
+    {
+        int a = Find(m, ResourceKind.Storage, 0, 0);
+        int b = Find(m, ResourceKind.Storage, 0, 1);
+        int c = Find(m, ResourceKind.Storage, 0, 2);
+        int dd = Find(m, ResourceKind.Storage, 0, 4);
+        int u = Find(m, ResourceKind.Uniform, 0, 3);
+        uint offset = BinaryPrimitives.ReadUInt32LittleEndian(d.Buffers[u].AsSpan(0));
+        uint stride = BinaryPrimitives.ReadUInt32LittleEndian(d.Buffers[u].AsSpan(4));
+        float[] cOut = new float[19 * 16];
+        float[] dOut = new float[256];
+        for (int r = 0; r < 16; r++)
+        {
+            for (int n = 0; n < 16; n++)
+            {
+                float sum = 0;
+                for (int k = 0; k < 32; k++)
+                {
+                    sum += Half(d.Buffers[a], (int)(offset + k * stride) + r) * Half(d.Buffers[b], k * 16 + n);
+                }
+                cOut[n * 19 + r] = sum;
+                dOut[r * 16 + n] = sum * 2f;
+            }
+        }
+        return
+        [
+            new Expectation(Key(m, c), Floats(cOut, d.Buffers[c].Length), ExpectKind.FloatRelative, 1e-4),
+            new Expectation(Key(m, dd), Floats(dOut, d.Buffers[dd].Length), ExpectKind.FloatRelative, 1e-4),
+        ];
     }
 
     private static string Key(CaseModel m, int index) => m.Resources[index].OutputKey;

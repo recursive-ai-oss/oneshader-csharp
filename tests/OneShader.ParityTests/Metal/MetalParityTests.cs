@@ -39,6 +39,23 @@ public class MetalParityTests
         }
     }
 
+    /// <summary>
+    /// Compiles the cooperative-matrix cases (which DXC cannot build) to MSL; their reference outputs are the CPU results, so this needs
+    /// neither DXC nor a Vulkan device.
+    /// </summary>
+    [Fact]
+    public void ExportCooperative()
+    {
+        string? bundle = Bundle;
+        Assert.SkipWhen(bundle is null, "ONESHADER_METAL_BUNDLE is not set");
+        Directory.CreateDirectory(bundle!);
+        foreach (string name in Corpus.CpuOnlyNames)
+        {
+            string status = MetalBundle.Export(bundle!, Corpus.Load(name), null);
+            File.WriteAllText(Path.Combine(bundle!, name, "status.txt"), status + "\n");
+        }
+    }
+
     /// <summary>Compares the Metal runner's outputs with the reference outputs and writes <c>table.txt</c> into the bundle.</summary>
     [Fact]
     public void Compare()

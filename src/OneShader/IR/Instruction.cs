@@ -352,7 +352,12 @@ public enum Intrinsic
     QuadReadAcrossDiagonal, /// <summary>QuadReadLaneAt.</summary>
     QuadReadLaneAt, /// <summary>NonUniformResourceIndex(i): the index may differ between invocations of a wave; yields its operand.</summary>
     NonUniformIndex, /// <summary>WaveActiveAllEqual(x): true when every active lane holds the same value (per component for vectors).</summary>
-    WaveActiveAllEqual,
+    WaveActiveAllEqual, /// <summary>Loads a cooperative matrix: pointer to the first element, stride in elements; Immediates[0] is 0 for row-major, 1 for column-major.</summary>
+    CoopMatrixLoad, /// <summary>Stores a cooperative matrix: pointer to the first element, matrix, stride in elements; Immediates[0] is the layout as for the load.</summary>
+    CoopMatrixStore, /// <summary>Product-sum of cooperative matrices: A, B, C; the result has C's type.</summary>
+    CoopMatrixMulAdd, /// <summary>Number of elements of a cooperative matrix this invocation holds (uint); the operand only supplies the type.</summary>
+    CoopMatrixLength, /// <summary>A cooperative matrix with every element zero; the result type says which.</summary>
+    CoopMatrixZero,
 }
 
 /// <summary>The role of a block in structured control flow.</summary>
@@ -445,7 +450,8 @@ public sealed class Instruction : IrValue
         Opcode.Store or Opcode.AtomicRmw or Opcode.AtomicCompareExchange or Opcode.Barrier or Opcode.Call
             or Opcode.TextureStore or Opcode.ByteAddressStore => true,
         Opcode.CallIntrinsic => Intrinsic is Intrinsic.Frexp or Intrinsic.Modf or Intrinsic.SinCos
-            or >= Intrinsic.WaveGetLaneCount and <= Intrinsic.QuadReadLaneAt or Intrinsic.WaveActiveAllEqual,
+            or >= Intrinsic.WaveGetLaneCount and <= Intrinsic.QuadReadLaneAt or Intrinsic.WaveActiveAllEqual
+            or Intrinsic.CoopMatrixLoad or Intrinsic.CoopMatrixStore or Intrinsic.CoopMatrixMulAdd,
         _ => IsTerminator,
     };
 }

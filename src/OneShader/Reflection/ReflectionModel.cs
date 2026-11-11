@@ -172,6 +172,23 @@ public enum DeviceFeatures
     /// <c>VK_EXT_mutable_descriptor_type</c>, <c>mutableDescriptorType</c>).
     /// </summary>
     MutableDescriptorType = 2048,
+
+    /// <summary>
+    /// Subgroup-scope cooperative matrices (Vulkan <c>VK_KHR_cooperative_matrix</c>, feature <c>cooperativeMatrix</c>; Metal: <c>simdgroup_matrix</c>,
+    /// Apple GPU family 7 and later or Metal 3 Macs). The supported shapes and element types are a device property the host queries.
+    /// </summary>
+    CooperativeMatrix = 4096,
+
+    /// <summary>The Vulkan memory model (Vulkan <c>vulkanMemoryModel</c>), which SPIR-V needs for cooperative matrices. Metal and WebGPU have no switch.</summary>
+    VulkanMemoryModel = 8192,
+
+    /// <summary>
+    /// The <c>bfloat16_t</c> type (Vulkan <c>VK_KHR_shader_bfloat16</c>, feature <c>shaderBFloat16Type</c>; Metal: <c>bfloat</c> needs Metal 3.1, macOS 14).
+    /// </summary>
+    BFloat16 = 16384,
+
+    /// <summary>Cooperative matrices with <c>bfloat16_t</c> elements (Vulkan <c>shaderBFloat16CooperativeMatrix</c>).</summary>
+    BFloat16CooperativeMatrix = 32768,
 }
 
 /// <summary>
