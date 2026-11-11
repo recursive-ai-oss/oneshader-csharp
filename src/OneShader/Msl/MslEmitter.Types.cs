@@ -59,6 +59,8 @@ internal sealed partial class MslEmitter
                     return "array<" + T(a.Element) + ", " + Inv(a.Length) + ">";
                 case StructType st:
                     return StructName(st);
+                case CooperativeMatrixType cm:
+                    return CooperativeName(cm);
                 case PointerType p:
                     return T(p.Pointee);
                 default:
@@ -101,6 +103,8 @@ internal sealed partial class MslEmitter
                 return _enable16 ? "ushort" : "uint";
             case ScalarKind.Half or ScalarKind.Min16Float or ScalarKind.Min10Float:
                 return _enable16 ? "half" : "float";
+            case ScalarKind.BFloat16:
+                return "bfloat";
             case ScalarKind.Double:
                 Unsupported("MSL has no 64-bit floating-point type; replace double with float.");
                 return "float";
@@ -325,6 +329,8 @@ internal sealed partial class MslEmitter
                 return _enable16 ? "half(" + FloatLiteral(f, false) + ")" : FloatLiteral(f, true);
             }
 
+            case ScalarKind.BFloat16:
+                return "bfloat(" + FloatLiteral(BFloat16Math.ToSingle(bits), false) + ")";
             case ScalarKind.Double:
                 Unsupported("MSL has no 64-bit floating-point type; replace double with float.");
                 return "0.0f";

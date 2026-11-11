@@ -44,7 +44,21 @@ public static class Corpus
         return d;
     }
 
-    public static CaseModel Load(string name) => CaseFile.Load(Path.Combine(CasesDir, name + ".case"));
+    private static string CpuOnlyDir => Path.Combine(Tools.CorpusDir, "cases-cpu");
+
+    /// <summary>
+    /// Cases the reference compiler cannot build (cooperative matrices, bfloat16): they run only against a CPU result, so they live apart
+    /// from <see cref="CaseNames"/> and no DXC comparison covers them.
+    /// </summary>
+    public static IReadOnlyList<string> CpuOnlyNames { get; } = Directory.GetFiles(CpuOnlyDir, "*.case")
+        .Select(p => Path.GetFileNameWithoutExtension(p))
+        .Order(StringComparer.Ordinal)
+        .ToArray();
+
+    public static CaseModel LoadCpuOnly(string name) => CaseFile.Load(Path.Combine(CpuOnlyDir, name + ".case"));
+
+    public static CaseModel Load(string name) =>
+        CaseFile.Load(Path.Combine(File.Exists(Path.Combine(CasesDir, name + ".case")) ? CasesDir : CpuOnlyDir, name + ".case"));
 
     /// <summary>Case names as xunit theory data.</summary>
     public static TheoryData<string> Cases()

@@ -39,8 +39,11 @@ public static class MetalBundle
         }
     }
 
-    /// <summary>Exports <paramref name="model"/>; returns "ok" or a one-line reason when nothing could be exported.</summary>
-    public static string Export(string bundleDir, CaseModel model, VkContext ctx)
+    /// <summary>
+    /// Exports <paramref name="model"/>; returns "ok" or a one-line reason when nothing could be exported. Without a context (the
+    /// cooperative-matrix cases, which DXC cannot build) the reference outputs are the CPU results of the case's <c>expect</c> lines.
+    /// </summary>
+    public static string Export(string bundleDir, CaseModel model, VkContext? ctx)
     {
         string dir = Path.Combine(bundleDir, model.Name);
         if (Directory.Exists(dir))
@@ -96,6 +99,10 @@ public static class MetalBundle
         }
 
         var sb = new StringBuilder();
+        if (files.Keys.Any(f => File.ReadAllText(Path.Combine(dir, files[f])).Contains("Metal Shading Language 3.1", StringComparison.Ordinal)))
+        {
+            sb.Line("language 3.1\n");
+        }
         string Inv(double v) => v.ToString("R", CultureInfo.InvariantCulture);
         // An array of N resources takes N consecutive Metal indices; the case names the element.
         int MslIndex(ResourceDecl r) => (int)reflection!.Resources
@@ -221,6 +228,21 @@ public static class MetalBundle
             sb.Line($"targetout {FileFor("target")}\n");
         }
         File.WriteAllText(Path.Combine(dir, "case.txt"), sb.ToString());
+
+        if (ctx is null)
+        {
+            var cpu = new StringBuilder();
+            foreach (var expect in model.Expects)
+            {
+                foreach (var e in CpuReferences.Compute(expect.Name, model, data))
+                {
+                    File.WriteAllBytes(Path.Combine(dir, "ref", FileFor(e.Key)), e.Bytes);
+                    cpu.Line($"{e.Key} {FileFor(e.Key)} 0 0 r32f 0\n");
+                }
+            }
+            File.WriteAllText(Path.Combine(dir, "ref.txt"), cpu.ToString());
+            return "ok";
+        }
 
         // The reference: DXC's SPIR-V on Vulkan, with the validation layer.
         var run = Parity.Run(ctx, model, data, ParityCompilers.Reference);

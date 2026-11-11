@@ -1,0 +1,12 @@
+# 16x32 by 32x16 float16 product: column-major A with element offset and runtime stride from a buffer, B through groupshared memory with
+# stride 20, column-major store with stride 19, and a doubled copy through Length() and m[i].
+case coop_layouts
+shader coop/coop_layouts.hlsl
+define ONESHADER_16BIT=1
+dispatch LayoutProduct 1 1 1
+storage 0 0 : @hpm1(5,768)
+storage 0 1 : @h01(6,512)
+storage 0 2 out size=1280 float=1e-4
+storage 0 4 out size=1024 float=1e-4
+uniform 0 3 : 8u 24u 0u 0u
+expect coop_layouts

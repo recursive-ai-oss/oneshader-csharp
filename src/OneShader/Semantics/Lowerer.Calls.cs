@@ -256,6 +256,8 @@ internal sealed partial class Lowerer
                 return LowerAppend(c, bi);
             case BuiltinKind.Consume:
                 return LowerConsume(c, bi);
+            case BuiltinKind.CooperativeMatrix:
+                return LowerCooperative(c, bi);
             case BuiltinKind.Barrier:
                 _b.Barrier((BarrierFlags)bi.Extra);
                 return Constant.Zero(ScalarType.Int);

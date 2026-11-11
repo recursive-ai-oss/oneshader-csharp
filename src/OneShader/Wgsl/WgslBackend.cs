@@ -87,6 +87,8 @@ internal sealed partial class WgslEmitter
     private bool _usesDerivatives;
     private bool _usesSubgroups;
     private bool _usesF16;
+    private bool _usesDot4;
+    private readonly HashSet<GlobalVariable> _inputsWritten = [];
     private string? _entryReturnExpr;
 
     public WgslEmitter(IrModule m, WgslOptions o, DiagnosticBag d)
@@ -165,6 +167,15 @@ internal sealed partial class WgslEmitter
         var use = WideTypeUse.Scan(_m, _ep);
         var fallback = _ep.Function.Span;
         _usesF16 = (use.Features & DeviceFeatures.Float16) != 0;
+        if ((use.Features & DeviceFeatures.CooperativeMatrix) != 0)
+        {
+            Unsupported("Cooperative matrices (CooperativeMatrix) are not available in WGSL: the WebGPU language has no matrix type that is shared by the invocations of a subgroup. Build this shader for SPIR-V or MSL only (OneShaderTargets), and write a portable kernel for WGSL.", use.CooperativeMatrixSite.IsKnown ? use.CooperativeMatrixSite : fallback);
+        }
+        else if ((use.Features & DeviceFeatures.BFloat16) != 0)
+        {
+            Unsupported("WGSL has no bfloat16 type (only f16 and f32). Store the values as f16 or f32, or build this shader for SPIR-V or MSL only.", use.BFloat16Site.IsKnown ? use.BFloat16Site : fallback);
+        }
+
         if ((use.Features & DeviceFeatures.Int16) != 0)
         {
             Unsupported("WGSL has no 16-bit integer types (only f16). Use int or uint, or compile this shader for SPIR-V or MSL only.", use.Int16Site.IsKnown ? use.Int16Site : fallback);
@@ -321,6 +332,18 @@ internal sealed partial class WgslEmitter
 
     private void ScanUse(Instruction i)
     {
+        if (i.Op is not (Opcode.Load or Opcode.AccessChain))
+        {
+            // Anything but a read of a stage input may change it; the entry point then keeps reading the private copy.
+            foreach (var o in i.Operands)
+            {
+                if (o.Type is PointerType && RootOf(o) is GlobalVariable { GlobalKind: GlobalKind.Input } written)
+                {
+                    _inputsWritten.Add(written);
+                }
+            }
+        }
+
         switch (i.Op)
         {
             case Opcode.AtomicRmw or Opcode.AtomicCompareExchange:
@@ -381,6 +404,7 @@ internal sealed partial class WgslEmitter
                 _usesDerivatives |= i.Intrinsic is Intrinsic.Ddx or Intrinsic.DdxCoarse or Intrinsic.DdxFine or Intrinsic.Ddy
                     or Intrinsic.DdyCoarse or Intrinsic.DdyFine or Intrinsic.Fwidth;
                 _usesSubgroups |= SubgroupUse.Of(i.Intrinsic) != SubgroupOperations.None;
+                _usesDot4 |= i.Intrinsic is Intrinsic.Dot4AddI8Packed or Intrinsic.Dot4AddU8Packed;
                 break;
             default:
                 break;
@@ -618,6 +642,12 @@ internal sealed partial class WgslEmitter
             // HLSL lets a shader sample and take derivatives under non-uniform control flow; the values are then
             // undefined, as they are in WGSL once the check is off.
             sb.Append("diagnostic(off, derivative_uniformity);\n");
+        }
+
+        if (_usesDot4)
+        {
+            // WGSL 4.1: dot4I8Packed / dot4U8Packed are a language feature, not an extension; every implementation lists it or not.
+            sb.Append("requires packed_4x8_integer_dot_product;\n");
         }
 
         if (tier1)

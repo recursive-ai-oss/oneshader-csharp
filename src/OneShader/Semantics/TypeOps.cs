@@ -43,6 +43,7 @@ internal readonly struct ConstValue
     {
         ScalarKind.Float => (double)(float)v,
         ScalarKind.Half or ScalarKind.Min16Float or ScalarKind.Min10Float => (double)(Half)v,
+        ScalarKind.BFloat16 => BFloat16Math.ToSingle(BFloat16Math.FromSingle((float)v)),
         // An unsuffixed literal keeps double precision until it meets a concrete type (DXC: 0.1 added to a double is the double 0.1).
         _ => v,
     };
@@ -96,6 +97,7 @@ internal readonly struct ConstValue
     {
         ScalarKind.Float or ScalarKind.LiteralFloat => BitConverter.SingleToUInt32Bits((float)Float),
         ScalarKind.Half or ScalarKind.Min16Float or ScalarKind.Min10Float => BitConverter.HalfToUInt16Bits((Half)Float),
+        ScalarKind.BFloat16 => BFloat16Math.FromSingle((float)Float),
         ScalarKind.Double => BitConverter.DoubleToUInt64Bits(Float),
         ScalarKind.Int64 or ScalarKind.UInt64 => unchecked((ulong)Int),
         ScalarKind.Int16 or ScalarKind.Min16Int => (ushort)Int,
@@ -142,7 +144,7 @@ internal static class TypeOps
     {
         ScalarKind.Bool => 1,
         ScalarKind.Int16 or ScalarKind.UInt16 or ScalarKind.Half or ScalarKind.Min16Float or ScalarKind.Min10Float
-            or ScalarKind.Min16Int or ScalarKind.Min16UInt => 16,
+            or ScalarKind.Min16Int or ScalarKind.Min16UInt or ScalarKind.BFloat16 => 16,
         ScalarKind.Int64 or ScalarKind.UInt64 or ScalarKind.Double => 64,
         _ => 32,
     };
@@ -151,7 +153,7 @@ internal static class TypeOps
     {
         ScalarKind.Double => 3,
         ScalarKind.Float or ScalarKind.LiteralFloat => 2,
-        ScalarKind.Half or ScalarKind.Min16Float or ScalarKind.Min10Float => 1,
+        ScalarKind.Half or ScalarKind.Min16Float or ScalarKind.Min10Float or ScalarKind.BFloat16 => 1,
         _ => 0,
     };
 
@@ -164,6 +166,14 @@ internal static class TypeOps
         int fb = FloatRank(b);
         if (fa > 0 || fb > 0)
         {
+            // bfloat16_t has no arithmetic of its own: operations on it are done in float (SPV_KHR_bfloat16 allows only storage, conversion and
+            // cooperative-matrix instructions on the type).
+            if (a.ScalarKind == ScalarKind.BFloat16 || b.ScalarKind == ScalarKind.BFloat16)
+            {
+                var other = a.ScalarKind == ScalarKind.BFloat16 ? b : a;
+                return other.ScalarKind is ScalarKind.BFloat16 or ScalarKind.Half or ScalarKind.Min16Float or ScalarKind.Min10Float ? ScalarType.Float : other;
+            }
+
             if (fa == fb)
             {
                 // A min-precision value mixed with a plain one is plain (DXC: min16float * float is float).
@@ -371,8 +381,20 @@ internal static class TypeOps
         ArrayType a => a.Element,
         VectorType v => v.Element,
         MatrixType m => HlslType.Vector(m.Element, m.Columns),
+        CooperativeMatrixType c => c.Element,
         _ => null,
     };
+
+    /// <summary>True for a cooperative matrix and arrays of them: values that exist only in function-local variables.</summary>
+    public static bool IsCooperativeValue(HlslType t)
+    {
+        for (int depth = 0; depth < 32 && t is ArrayType a; depth++)
+        {
+            t = a.Element;
+        }
+
+        return t is CooperativeMatrixType;
+    }
 
     /// <summary>True when values of the type can be held in a local variable (not a resource or void).</summary>
     public static bool IsValueType(HlslType t) => IsValueType(t, 0);

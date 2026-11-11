@@ -617,7 +617,12 @@ internal sealed partial class Checker
                 Err(SemanticCodes.BadVariable, "A variable cannot have type void.", d.Name.Span);
                 type = HlslType.Error;
             }
-            else if (!type.IsError && !TypeOps.IsValueType(type) && type is not (ResourceType or SamplerType))
+            else if (TypeOps.IsCooperativeValue(type) && ((mods & (Modifiers.Static | Modifiers.Const | Modifiers.GroupShared)) != 0))
+            {
+                Err(SemanticCodes.BadCooperativeMatrix, "A CooperativeMatrix lives in a plain local variable; it cannot be static, const or groupshared.", d.Name.Span);
+                type = HlslType.Error;
+            }
+            else if (!type.IsError && !TypeOps.IsValueType(type) && type is not (ResourceType or SamplerType) && !TypeOps.IsCooperativeValue(type))
             {
                 Err(SemanticCodes.Unsupported, "A local variable of type '" + type + "' is not supported; resource arrays must be declared at global scope.", d.Name.Span);
                 type = HlslType.Error;

@@ -28,6 +28,9 @@ options always give the same bytes. Code is in `src/OneShader/SpirV/`.
   adds the matching `*ArrayDynamicIndexing` capability, and `NonUniformResourceIndex` adds `ShaderNonUniform`, the
   `*ArrayNonUniformIndexing` capability and `NonUniform` on the index, access chain, loaded handle and sampled image.
   An append or consume buffer's counter is a second storage buffer variable (`counter.var.<name>`) in the buffer's set.
+- **Packed dot products.** `dot4add_i8packed` / `dot4add_u8packed` are `OpSDot` / `OpUDot` with `PackedVectorFormat4x8Bit` followed by `OpIAdd`
+  (the intrinsic wraps), declaring `DotProduct`, `DotProductInput4x8BitPacked` and `SPV_KHR_integer_dot_product`; DXC's output is the same.
+  Vulkan needs `shaderIntegerDotProduct` (reflected as `DeviceFeatures.IntegerDotProduct`).
 - **Interface.** Every global variable the entry point references is listed on `OpEntryPoint`, as SPIR-V 1.4+
   requires, inputs first, then outputs, then the rest in module order. Integer and double fragment inputs (and the
   vertex outputs that feed them) are `Flat`. Pixel shaders get `OriginUpperLeft`, plus `DepthReplacing` when they
@@ -77,6 +80,29 @@ unsuffixed float literals stay double until they meet a concrete type. One DXC b
 `SConvert` in DXC and truncates; we convert directly. `EntryPointInfo.RequiredFeatures` lists the device features the capabilities need.
 Note: on the RTX 4070 (driver 595) a 16-bit signed remainder with a negative dividend returns a different value from RADV, llvmpipe and Metal;
 the corpus case `types_int16` agrees between DXC and this compiler on every device because both emit `OpSRem`.
+
+## Cooperative matrices and bfloat16
+
+`CooperativeMatrix<T, Rows, Cols, MatrixUse::A|B|Accumulator>` becomes `OpTypeCooperativeMatrixKHR` with subgroup scope (capability `CooperativeMatrixKHR`,
+extension `SPV_KHR_cooperative_matrix`); `Load`/`Store` are `OpCooperativeMatrixLoadKHR`/`StoreKHR` with the layout (`RowMajorKHR`/`ColumnMajorKHR`) and the
+stride as given, from a (RW)StructuredBuffer or a `groupshared` array; `MulAdd` is `OpCooperativeMatrixMulAddKHR`; `Zero()` is a composite construct of a zero;
+`Length()` and `m[i]` are `OpCooperativeMatrixLengthKHR` and an access chain into the matrix. The element order of `m[i]` is the driver's, so only element-wise
+work that does not depend on the position is portable. Every call must be reached by the whole subgroup.
+
+An entry point that uses a cooperative matrix switches to the Vulkan memory model (`OpMemoryModel Logical Vulkan`, capability `VulkanMemoryModel`): loads and
+stores of Workgroup, StorageBuffer and Uniform pointers carry `NonPrivatePointer`, and barriers add `MakeAvailable|MakeVisible`. Other entry points keep the
+GLSL450 model, so their output is unchanged. The host needs `VK_KHR_cooperative_matrix` with the `cooperativeMatrix` feature and the `vulkanMemoryModel` feature.
+The module stays at SPIR-V 1.5; SPIR-V below 1.6 may use cooperative matrices only in a pipeline created with
+`VK_PIPELINE_SHADER_STAGE_CREATE_REQUIRE_FULL_SUBGROUPS_BIT` (`VK_EXT_subgroup_size_control`, workgroup size a multiple of the subgroup size; on Vulkan 1.3 the
+flag is core). Which shapes a device offers comes from `vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR`; the compiler accepts any shape and element
+combination the language allows and leaves that check to the host (on the RTX 4070: 16x16x16 f16 and bf16 with a float accumulator). Integer matrices (int8 operands
+with an int32 accumulator) are refused with OSH0337 for now.
+
+`bfloat16_t` is `OpTypeFloat 16 BFloat16KHR` (capability `BFloat16TypeKHR`, `SPV_KHR_bfloat16`; with cooperative matrices also
+`BFloat16CooperativeMatrixKHR`). Arithmetic is done in float: operands convert to float, results convert back, rounding to nearest even; conversions to and from
+anything but float go through float, because `OpFConvert` between bfloat16 and other widths is not allowed. Vectors and matrices of bfloat16 are error OSH0311.
+Reflection `DeviceFeatures`: `CooperativeMatrix`, `VulkanMemoryModel`, `BFloat16`, `BFloat16CooperativeMatrix` (bfloat16 buffers also set `StorageBuffer16`).
+The corpus cases `coop_f16`, `coop_bf16` and `coop_layouts` run on a Vulkan device against a CPU result (DXC cannot compile this surface).
 
 ## Debug information
 

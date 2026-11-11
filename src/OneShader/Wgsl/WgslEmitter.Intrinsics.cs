@@ -143,6 +143,12 @@ internal sealed partial class WgslEmitter
             case Intrinsic.SmoothStep:
                 Define(i, "smoothstep(" + Fit(i, 0) + ", " + Fit(i, 1) + ", " + Fit(i, 2) + ")");
                 break;
+            case Intrinsic.Dot4AddI8Packed:
+                Define(i, "dot4I8Packed(" + Arg(i, 0) + ", " + Arg(i, 1) + ") + " + Arg(i, 2));
+                break;
+            case Intrinsic.Dot4AddU8Packed:
+                Define(i, "dot4U8Packed(" + Arg(i, 0) + ", " + Arg(i, 1) + ") + " + Arg(i, 2));
+                break;
             case Intrinsic.NonUniformIndex:
                 // Only a hint for backends with descriptor indexing; the value itself is the index.
                 Define(i, Arg(i, 0));

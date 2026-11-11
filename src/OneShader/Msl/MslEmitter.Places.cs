@@ -700,6 +700,12 @@ internal sealed partial class MslEmitter
                 return new Place { Kind = PlaceKind.Reg, Expr = p.Expr + "." + FieldName(st, fi), Type = st.Fields[fi].Type, Space = p.Space };
             case ArrayType a:
                 return new Place { Kind = PlaceKind.Reg, Expr = p.Expr + "[" + IndexText(index) + "]", Type = a.Element, Space = p.Space };
+            case CooperativeMatrixType cm:
+            {
+                // Element i of a lane's share is half of tile i / 2: simdgroup_matrix::thread_elements() holds two per lane.
+                string at = IndexText(index);
+                return new Place { Kind = PlaceKind.Reg, Expr = p.Expr + ".t[(" + at + ") / 2].thread_elements()[(" + at + ") % 2]", Type = cm.Element, Space = p.Space };
+            }
             case VectorType v:
                 if (v.Count == 1)
                 {

@@ -26,6 +26,15 @@ internal sealed class WideTypeUse
     /// <summary>The first use of a 64-bit integer.</summary>
     public SourceSpan Int64Site { get; private set; }
 
+    /// <summary>The first use of <c>bfloat16_t</c>.</summary>
+    public SourceSpan BFloat16Site { get; private set; }
+
+    /// <summary>The first use of a cooperative matrix.</summary>
+    public SourceSpan CooperativeMatrixSite { get; private set; }
+
+    /// <summary>Each distinct cooperative matrix type the entry point uses, with its first use.</summary>
+    public List<(CooperativeMatrixType Type, SourceSpan Span)> CooperativeTypes { get; } = [];
+
     /// <summary>The first 64-bit atomic operation.</summary>
     public SourceSpan Int64AtomicSite { get; private set; }
 
@@ -89,6 +98,11 @@ internal sealed class WideTypeUse
                         {
                             use.Type(o.Type, e16, i.Span);
                         }
+                    }
+
+                    if (i.Op == Opcode.CallIntrinsic && i.Intrinsic is Intrinsic.Dot4AddI8Packed or Intrinsic.Dot4AddU8Packed)
+                    {
+                        use.Features |= DeviceFeatures.IntegerDotProduct;
                     }
 
                     if (i.Op is Opcode.AtomicRmw or Opcode.AtomicCompareExchange && i.Operands.Count > 1
@@ -226,8 +240,56 @@ internal sealed class WideTypeUse
         }
     }
 
+    private static CooperativeMatrixType? CooperativeIn(HlslType t)
+    {
+        // Cooperative matrices live in locals, so a pointer or array of them is the deepest nesting that occurs.
+        for (int depth = 0; depth < 64; depth++)
+        {
+            switch (t)
+            {
+                case CooperativeMatrixType c:
+                    return c;
+                case PointerType p:
+                    t = p.Pointee;
+                    break;
+                case ArrayType a:
+                    t = a.Element;
+                    break;
+                default:
+                    return null;
+            }
+        }
+
+        return null;
+    }
+
     private void Type(HlslType t, bool e16, SourceSpan span)
     {
+        if (CooperativeIn(t) is { } coop)
+        {
+            Features |= DeviceFeatures.CooperativeMatrix | DeviceFeatures.VulkanMemoryModel;
+            if (!CooperativeMatrixSite.IsKnown)
+            {
+                CooperativeMatrixSite = span;
+            }
+
+            bool listed = false;
+            foreach (var (known, _) in CooperativeTypes)
+            {
+                listed |= known.Equals(coop);
+            }
+
+            if (!listed)
+            {
+                CooperativeTypes.Add((coop, span));
+            }
+
+            if (coop.Element.ScalarKind == ScalarKind.BFloat16)
+            {
+                Features |= DeviceFeatures.BFloat16CooperativeMatrix;
+            }
+        }
+
         var w = TypeFeatures.Of(t, e16);
         if (w == WideTypes.None)
         {
@@ -240,6 +302,15 @@ internal sealed class WideTypeUse
             if (!Float16Site.IsKnown)
             {
                 Float16Site = span;
+            }
+        }
+
+        if ((w & WideTypes.BFloat16) != 0)
+        {
+            Features |= DeviceFeatures.BFloat16;
+            if (!BFloat16Site.IsKnown)
+            {
+                BFloat16Site = span;
             }
         }
 

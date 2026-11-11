@@ -32,6 +32,15 @@ public sealed unsafe partial class VkContext : IDisposable
     /// <summary>True when the device has VK_EXT_mutable_descriptor_type (enabled on the device).</summary>
     internal bool MutableDescriptors { get; private set; }
 
+    /// <summary>True when the device exposes VK_KHR_cooperative_matrix with the Vulkan memory model, and both were enabled.</summary>
+    internal bool CooperativeMatrixFeature { get; private set; }
+
+    /// <summary>True when compute pipelines can require full subgroups (needed for cooperative matrices in SPIR-V older than 1.6).</summary>
+    internal bool FullSubgroups { get; private set; }
+
+    /// <summary>True when VK_KHR_shader_bfloat16 with bfloat16 cooperative matrices was enabled too.</summary>
+    internal bool BFloat16CooperativeMatrixFeature { get; private set; }
+
     internal PhysicalDevice Physical { get; private set; }
 
     internal Device Device { get; private set; }
@@ -273,7 +282,44 @@ public sealed unsafe partial class VkContext : IDisposable
 
         // DXC may use DrawParameters for SV_InstanceID/SV_VertexID; enable it when the device has it.
         // NonUniformResourceIndex needs the 1.2 non-uniform indexing features.
-        var v12Query = new PhysicalDeviceVulkan12Features { SType = StructureType.PhysicalDeviceVulkan12Features };
+        uint extCount = 0;
+        Api.EnumerateDeviceExtensionProperties(Physical, (byte*)null, ref extCount, null);
+        var exts = new ExtensionProperties[extCount];
+        fixed (ExtensionProperties* pe = exts)
+        {
+            Api.EnumerateDeviceExtensionProperties(Physical, (byte*)null, ref extCount, pe);
+        }
+        var deviceExtensions = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var e in exts)
+        {
+            deviceExtensions.Add(SilkMarshal.PtrToString((nint)e.ExtensionName) ?? "");
+        }
+
+        // Cooperative matrices and bfloat16 (the cooperative-matrix parity cases): features are chained in only when the device has the extension.
+        var coopQuery = new CoopFeatures { SType = CoopFeatures.StructType };
+        var bf16Query = new Bf16Features { SType = Bf16Features.StructType };
+        bool hasCoopExt = deviceExtensions.Contains("VK_KHR_cooperative_matrix");
+        bool hasBf16Ext = deviceExtensions.Contains("VK_KHR_shader_bfloat16");
+        var subgroupQuery = new SubgroupControlFeatures { SType = SubgroupControlFeatures.StructType };
+        bool hasSubgroupExt = deviceExtensions.Contains("VK_EXT_subgroup_size_control");
+        void* queryTail = null;
+        if (hasSubgroupExt)
+        {
+            subgroupQuery.PNext = queryTail;
+            queryTail = &subgroupQuery;
+        }
+        if (hasBf16Ext)
+        {
+            bf16Query.PNext = queryTail;
+            queryTail = &bf16Query;
+        }
+        if (hasCoopExt)
+        {
+            coopQuery.PNext = queryTail;
+            queryTail = &coopQuery;
+        }
+
+        var v12Query = new PhysicalDeviceVulkan12Features { SType = StructureType.PhysicalDeviceVulkan12Features, PNext = queryTail };
         var v11Query = new PhysicalDeviceVulkan11Features { SType = StructureType.PhysicalDeviceVulkan11Features, PNext = &v12Query };
         var query = new PhysicalDeviceFeatures2 { SType = StructureType.PhysicalDeviceFeatures2, PNext = &v11Query };
         Api.GetPhysicalDeviceFeatures2(Physical, &query);
@@ -297,29 +343,53 @@ public sealed unsafe partial class VkContext : IDisposable
             ShaderFloat16 = v12Query.ShaderFloat16,
             ShaderBufferInt64Atomics = v12Query.ShaderBufferInt64Atomics,
             ShaderSharedInt64Atomics = v12Query.ShaderSharedInt64Atomics,
+            // Cooperative matrices need the Vulkan memory model.
+            VulkanMemoryModel = v12Query.VulkanMemoryModel,
+            VulkanMemoryModelDeviceScope = v12Query.VulkanMemoryModelDeviceScope,
         };
-        // Descriptor heaps read as several kinds of resource share one binding: that needs VK_EXT_mutable_descriptor_type.
-        uint extCount = 0;
-        Api.EnumerateDeviceExtensionProperties(Physical, (byte*)null, ref extCount, null);
-        var exts = new ExtensionProperties[extCount];
-        fixed (ExtensionProperties* pe = exts)
-        {
-            Api.EnumerateDeviceExtensionProperties(Physical, (byte*)null, ref extCount, pe);
-        }
-
-        foreach (var e in exts)
-        {
-            if (SilkMarshal.PtrToString((nint)e.ExtensionName) == "VK_EXT_mutable_descriptor_type")
-            {
-                MutableDescriptors = true;
-            }
-        }
+        MutableDescriptors = deviceExtensions.Contains("VK_EXT_mutable_descriptor_type");
 
         var mutableFeatures = new PhysicalDeviceMutableDescriptorTypeFeaturesEXT { SType = StructureType.PhysicalDeviceMutableDescriptorTypeFeaturesExt, MutableDescriptorType = true };
+        void* featureTail = null;
         if (MutableDescriptors)
         {
-            v12.PNext = &mutableFeatures;
+            featureTail = &mutableFeatures;
         }
+        // dot4add_i8packed / dot4add_u8packed compile to OpSDot / OpUDot (SPV_KHR_integer_dot_product).
+        var dotFeatures = new PhysicalDeviceShaderIntegerDotProductFeatures { SType = StructureType.PhysicalDeviceShaderIntegerDotProductFeatures, ShaderIntegerDotProduct = true };
+        bool dotProduct = deviceExtensions.Contains("VK_KHR_shader_integer_dot_product");
+        if (dotProduct)
+        {
+            dotFeatures.PNext = featureTail;
+            featureTail = &dotFeatures;
+        }
+        var coopEnable = new CoopFeatures { SType = CoopFeatures.StructType, CooperativeMatrix = coopQuery.CooperativeMatrix, PNext = featureTail };
+        var bf16Enable = new Bf16Features
+        {
+            SType = Bf16Features.StructType,
+            ShaderBFloat16Type = bf16Query.ShaderBFloat16Type,
+            ShaderBFloat16CooperativeMatrix = bf16Query.ShaderBFloat16CooperativeMatrix,
+        };
+        CooperativeMatrixFeature = hasCoopExt && coopQuery.CooperativeMatrix != 0 && v12Query.VulkanMemoryModel;
+        BFloat16CooperativeMatrixFeature = CooperativeMatrixFeature && hasBf16Ext && bf16Query.ShaderBFloat16Type != 0 && bf16Query.ShaderBFloat16CooperativeMatrix != 0;
+        var subgroupEnable = new SubgroupControlFeatures { SType = SubgroupControlFeatures.StructType, SubgroupSizeControl = subgroupQuery.SubgroupSizeControl, ComputeFullSubgroups = subgroupQuery.ComputeFullSubgroups };
+        FullSubgroups = CooperativeMatrixFeature && hasSubgroupExt && subgroupQuery.ComputeFullSubgroups != 0;
+        if (FullSubgroups)
+        {
+            subgroupEnable.PNext = featureTail;
+            featureTail = &subgroupEnable;
+        }
+        if (CooperativeMatrixFeature)
+        {
+            coopEnable.PNext = featureTail;
+            featureTail = &coopEnable;
+        }
+        if (BFloat16CooperativeMatrixFeature)
+        {
+            bf16Enable.PNext = featureTail;
+            featureTail = &bf16Enable;
+        }
+        v12.PNext = featureTail;
 
         var v11 = new PhysicalDeviceVulkan11Features
         {
@@ -345,20 +415,49 @@ public sealed unsafe partial class VkContext : IDisposable
             ShaderInt64 = query.Features.ShaderInt64,
             ShaderFloat64 = query.Features.ShaderFloat64,
         };
-        nint mutableName = SilkMarshal.StringToPtr("VK_EXT_mutable_descriptor_type");
-        byte** deviceExts = stackalloc byte*[] { (byte*)mutableName };
+        var enabledNames = new List<string>();
+        if (MutableDescriptors)
+        {
+            enabledNames.Add("VK_EXT_mutable_descriptor_type");
+        }
+        if (dotProduct)
+        {
+            enabledNames.Add("VK_KHR_shader_integer_dot_product");
+        }
+        if (CooperativeMatrixFeature)
+        {
+            enabledNames.Add("VK_KHR_cooperative_matrix");
+        }
+        if (FullSubgroups)
+        {
+            enabledNames.Add("VK_EXT_subgroup_size_control");
+        }
+        if (BFloat16CooperativeMatrixFeature)
+        {
+            enabledNames.Add("VK_KHR_shader_bfloat16");
+        }
+        byte** deviceExts = stackalloc byte*[Math.Max(1, enabledNames.Count)];
+        var namePtrs = new nint[enabledNames.Count];
+        for (int i = 0; i < namePtrs.Length; i++)
+        {
+            namePtrs[i] = SilkMarshal.StringToPtr(enabledNames[i]);
+            deviceExts[i] = (byte*)namePtrs[i];
+        }
         var dci = new DeviceCreateInfo
         {
             SType = StructureType.DeviceCreateInfo,
             PNext = &v11,
-            EnabledExtensionCount = MutableDescriptors ? 1u : 0u,
-            PpEnabledExtensionNames = MutableDescriptors ? deviceExts : null,
+            EnabledExtensionCount = (uint)enabledNames.Count,
+            PpEnabledExtensionNames = enabledNames.Count > 0 ? deviceExts : null,
             PEnabledFeatures = &features,
             QueueCreateInfoCount = 1,
             PQueueCreateInfos = &qci,
         };
         var result = Api.CreateDevice(Physical, &dci, null, out Device device);
-        SilkMarshal.Free(mutableName);
+        foreach (nint ptr in namePtrs)
+        {
+            SilkMarshal.Free(ptr);
+        }
         if (result != Result.Success)
         {
             return "vkCreateDevice failed: " + result;

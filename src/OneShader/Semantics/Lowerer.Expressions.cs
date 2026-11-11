@@ -538,6 +538,8 @@ internal sealed partial class Lowerer
                 return Rv(c.Right);
             case CallExpression call:
                 return RvCall(call);
+            case ConstructExpression { StaticMember: not null } staticCall:
+                return LowerCooperativeStatic(staticCall.Arguments, staticCall.Info!.Builtin!);
             case ConstructExpression ce:
                 return RvConstruct(ce.Info!.TargetType!, ce.Arguments);
             case CastExpression ca:
@@ -864,6 +866,8 @@ internal sealed partial class Lowerer
                 return IsPure(c.Condition) && IsPure(c.WhenTrue) && IsPure(c.WhenFalse);
             case CastExpression ca:
                 return IsPure(ca.Operand);
+            case ConstructExpression { StaticMember: not null }:
+                return false;
             case ConstructExpression ce:
                 foreach (var a in ce.Arguments)
                 {
@@ -881,7 +885,7 @@ internal sealed partial class Lowerer
             case CallExpression c:
             {
                 var bi = c.Info?.Builtin;
-                if (bi is null || bi.Kind is BuiltinKind.Texture or BuiltinKind.GetDimensions or BuiltinKind.Clip or BuiltinKind.BufferLoad or BuiltinKind.Append or BuiltinKind.Consume)
+                if (bi is null || bi.Kind is BuiltinKind.Texture or BuiltinKind.GetDimensions or BuiltinKind.Clip or BuiltinKind.BufferLoad or BuiltinKind.Append or BuiltinKind.Consume or BuiltinKind.CooperativeMatrix)
                 {
                     return false;
                 }

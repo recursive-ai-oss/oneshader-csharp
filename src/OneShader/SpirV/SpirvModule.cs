@@ -37,6 +37,9 @@ internal sealed class SpirvModule
     /// <summary>Extension names for <c>OpExtension</c>, sorted so the output is deterministic.</summary>
     public SortedSet<string> Extensions { get; } = new(StringComparer.Ordinal);
 
+    /// <summary>Declares the Vulkan memory model instead of GLSL450 (cooperative matrices need it); everything else keeps GLSL450.</summary>
+    public bool VulkanMemoryModel { get; set; }
+
     public List<uint> ExtImports { get; } = [];
 
     /// <summary><c>OpString</c>, <c>OpSource</c> and <c>OpSourceContinued</c>: they precede the names in the debug section.</summary>
@@ -169,8 +172,8 @@ internal sealed class SpirvModule
 
         words.AddRange(ExtImports);
 
-        // OpMemoryModel Logical GLSL450
-        Put(words, Op.MemoryModel, 0, 1);
+        // OpMemoryModel Logical GLSL450 (1), or Vulkan (3)
+        Put(words, Op.MemoryModel, 0, VulkanMemoryModel ? 3u : 1u);
         words.AddRange(EntryPoints);
         words.AddRange(ExecutionModes);
         words.AddRange(DebugStrings);

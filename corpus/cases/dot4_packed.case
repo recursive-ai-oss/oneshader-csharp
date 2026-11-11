@@ -1,0 +1,11 @@
+# Packed 8-bit dot products with edge values first (-128 x -128 lanes, 127 x 127, mixed signs, byte order, accumulators at the wrap
+# point), then random words: 8 groups of 64.
+case dot4_packed
+shader compute/dot4_packed.hlsl
+dispatch Dot4 8 1 1
+storage 0 0 : 0x80808080u 0x7F7F7F7Fu 0x80808080u 0xFFFFFFFFu 0x04030201u 0x04030201u 0x01020304u 0x000000FFu 0x80000000u 0x7F7F7F7Fu 0xFF00FF00u 0x00000000u 0x80808080u 0x807F807Fu 0x12345678u 0x80808080u @u32(21,496)
+storage 0 1 : 0x80808080u 0x7F7F7F7Fu 0x7F7F7F7Fu 0xFFFFFFFFu 0x00000001u 0x01000000u 0x00000001u 0x000000FFu 0x80000000u 0x80808080u 0x00FF00FFu 0xFFFFFFFFu 0x80808080u 0x7F807F80u 0x9ABCDEF0u 0x80808080u @u32(22,496)
+storage 0 2 out size=2048 : 0i 0i 0i 0i 0i 0i 0i 0i 2147483647i -2147483648i 5i -1i 2147483647i -2147483648i 1000i -2147483648i @u32(23,496)
+storage 0 3 out size=2048 : 0u 0u 0u 0u 0u 0u 0u 0u 4294967295u 4294967295u 5u 4294967295u 4294967295u 0u 1000u 4294967295u @u32(24,496)
+storage 0 4 out size=2048
+expect dot4_packed

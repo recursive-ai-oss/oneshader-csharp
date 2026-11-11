@@ -41,8 +41,12 @@ public static class CpuReferences
         "depth_bounds" => DepthBounds(model, data),
         "wave_scan_compact" => WaveScanCompact(model, data),
         "wave_reduce" => WaveReduce(model, data),
+        "dot4_packed" => Dot4Packed(model, data),
         "wave_ballot" => WaveBallot(model, data),
         "spec_const_compute" => SpecConstCompute(model, data),
+        "coop_f16" => CoopProduct(model, data, bfloat: false),
+        "coop_bf16" => CoopProduct(model, data, bfloat: true),
+        "coop_layouts" => CoopLayouts(model, data),
         "continue_unrolled" => ContinueUnrolled(model, data),
         _ => throw new ArgumentException($"unknown CPU reference '{name}'"),
     };
@@ -68,6 +72,76 @@ public static class CpuReferences
             BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(i * 4), words[i]);
         }
         return b;
+    }
+
+    private static float Half(byte[] bytes, int index) => (float)BitConverter.ToHalf(bytes, index * 2);
+
+    private static float BFloat(byte[] bytes, int index) => DataGen.FromBFloat16Bits(BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(index * 2)));
+
+    private static byte[] Floats(float[] values, int sizeBytes)
+    {
+        byte[] b = new byte[sizeBytes];
+        for (int i = 0; i < values.Length && i * 4 < sizeBytes; i++)
+        {
+            BinaryPrimitives.WriteSingleLittleEndian(b.AsSpan(i * 4), values[i]);
+        }
+        return b;
+    }
+
+    // The 16x16x16 cooperative-matrix kernels: C = A x B with float accumulation, row-major. The bfloat16 kernel doubles B on the way in.
+    private static IReadOnlyList<Expectation> CoopProduct(CaseModel m, CaseData d, bool bfloat)
+    {
+        int a = Find(m, ResourceKind.Storage, 0, 0);
+        int b = Find(m, ResourceKind.Storage, 0, 1);
+        int c = Find(m, ResourceKind.Storage, 0, 2);
+        float[] result = new float[256];
+        for (int r = 0; r < 16; r++)
+        {
+            for (int n = 0; n < 16; n++)
+            {
+                float sum = 0;
+                for (int k = 0; k < 16; k++)
+                {
+                    float x = bfloat ? BFloat(d.Buffers[a], r * 16 + k) : Half(d.Buffers[a], r * 16 + k);
+                    float y = bfloat ? BFloat(d.Buffers[b], k * 16 + n) * 2f : Half(d.Buffers[b], k * 16 + n);
+                    sum += x * y;
+                }
+                result[r * 16 + n] = sum;
+            }
+        }
+        return [new Expectation(Key(m, c), Floats(result, d.Buffers[c].Length), ExpectKind.FloatRelative, 1e-4)];
+    }
+
+    // coop_layouts: A (16 x 32) is column-major at element 8 with stride 24, B (32 x 16) is row-major; C is stored column-major with stride 19, D row-major doubled.
+    private static IReadOnlyList<Expectation> CoopLayouts(CaseModel m, CaseData d)
+    {
+        int a = Find(m, ResourceKind.Storage, 0, 0);
+        int b = Find(m, ResourceKind.Storage, 0, 1);
+        int c = Find(m, ResourceKind.Storage, 0, 2);
+        int dd = Find(m, ResourceKind.Storage, 0, 4);
+        int u = Find(m, ResourceKind.Uniform, 0, 3);
+        uint offset = BinaryPrimitives.ReadUInt32LittleEndian(d.Buffers[u].AsSpan(0));
+        uint stride = BinaryPrimitives.ReadUInt32LittleEndian(d.Buffers[u].AsSpan(4));
+        float[] cOut = new float[19 * 16];
+        float[] dOut = new float[256];
+        for (int r = 0; r < 16; r++)
+        {
+            for (int n = 0; n < 16; n++)
+            {
+                float sum = 0;
+                for (int k = 0; k < 32; k++)
+                {
+                    sum += Half(d.Buffers[a], (int)(offset + k * stride) + r) * Half(d.Buffers[b], k * 16 + n);
+                }
+                cOut[n * 19 + r] = sum;
+                dOut[r * 16 + n] = sum * 2f;
+            }
+        }
+        return
+        [
+            new Expectation(Key(m, c), Floats(cOut, d.Buffers[c].Length), ExpectKind.FloatRelative, 1e-4),
+            new Expectation(Key(m, dd), Floats(dOut, d.Buffers[dd].Length), ExpectKind.FloatRelative, 1e-4),
+        ];
     }
 
     private static string Key(CaseModel m, int index) => m.Resources[index].OutputKey;
@@ -577,6 +651,44 @@ public static class CpuReferences
             Array.Copy(row, 0, r, g * 16, 16);
         }
         return [new Expectation(Key(m, resultIndex), Bytes(r, d.Buffers[resultIndex].Length), ExpectKind.Exact, 0)];
+    }
+
+    // Packed 8-bit dot products, lane 0 the least significant byte, added to the accumulator with wrapping.
+    private static IReadOnlyList<Expectation> Dot4Packed(CaseModel m, CaseData d)
+    {
+        uint[] a = Words(d.Buffers[Find(m, ResourceKind.Storage, 0, 0)]);
+        uint[] b = Words(d.Buffers[Find(m, ResourceKind.Storage, 0, 1)]);
+        int si = Find(m, ResourceKind.Storage, 0, 2), ui = Find(m, ResourceKind.Storage, 0, 3), ni = Find(m, ResourceKind.Storage, 0, 4);
+        uint[] s = Words(d.Buffers[si]);
+        uint[] u = Words(d.Buffers[ui]);
+        uint[] sums = new uint[s.Length];
+        for (int i = 0; i < a.Length; i++)
+        {
+            int sd = 0;
+            uint ud = 0, byteSumA = 0, byteSumB = 0;
+            for (int lane = 0; lane < 4; lane++)
+            {
+                int shift = 8 * lane;
+                sd += (sbyte)(a[i] >> shift) * (sbyte)(b[i] >> shift);
+                ud += ((a[i] >> shift) & 255u) * ((b[i] >> shift) & 255u);
+                byteSumA = unchecked((uint)((int)byteSumA + (sbyte)(a[i] >> shift)));
+                byteSumB += (b[i] >> shift) & 255u;
+            }
+
+            unchecked
+            {
+                s[i] = (uint)sd + s[i];
+                u[i] = ud + u[i];
+                sums[i] = byteSumA + byteSumB;
+            }
+        }
+
+        return
+        [
+            new Expectation(Key(m, si), Bytes(s, d.Buffers[si].Length), ExpectKind.Exact, 0),
+            new Expectation(Key(m, ui), Bytes(u, d.Buffers[ui].Length), ExpectKind.Exact, 0),
+            new Expectation(Key(m, ni), Bytes(sums, d.Buffers[ni].Length), ExpectKind.Exact, 0),
+        ];
     }
 
     // Eight totals per group that hold for any subgroup size of at most 128 lanes (see the shader).

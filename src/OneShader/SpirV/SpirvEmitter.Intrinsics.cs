@@ -134,6 +134,17 @@ internal sealed partial class SpirvEmitter
                 Direct(i, CopyObject, rt, Arg(i, 0));
                 MarkNonUniform(i);
                 break;
+            case Intrinsic.Dot4AddI8Packed or Intrinsic.Dot4AddU8Packed:
+            {
+                // SPV_KHR_integer_dot_product: PackedVectorFormat4x8Bit (literal 0); the HLSL intrinsic wraps, so the accumulator is a plain OpIAdd.
+                _s.Capabilities.Add(Cap.DotProduct);
+                _s.Capabilities.Add(Cap.DotProductInput4x8BitPacked);
+                _s.Extensions.Add("SPV_KHR_integer_dot_product");
+                uint dot = Emit(i.Intrinsic == Intrinsic.Dot4AddI8Packed ? Op.SDot : Op.UDot, rt, Arg(i, 0), Arg(i, 1), 0u);
+                Direct(i, Op.IAdd, rt, dot, Arg(i, 2));
+                break;
+            }
+
             case Intrinsic.CountBits: Direct(i, Op.BitCount, rt, Arg(i, 0)); break;
             case Intrinsic.ReverseBits: Direct(i, Op.BitReverse, rt, Arg(i, 0)); break;
             case Intrinsic.FirstBitHigh: ExtDirect(i, k == NK.SInt ? Glsl.FindSMsb : Glsl.FindUMsb, Arg(i, 0)); break;
@@ -201,6 +212,9 @@ internal sealed partial class SpirvEmitter
                 break;
             case >= Intrinsic.WaveIsFirstLane and <= Intrinsic.QuadReadLaneAt or Intrinsic.WaveActiveAllEqual:
                 EmitWave(i);
+                break;
+            case >= Intrinsic.CoopMatrixLoad and <= Intrinsic.CoopMatrixZero:
+                EmitCooperative(i);
                 break;
             default:
                 Unsupported("The intrinsic '" + i.Intrinsic + "' is not supported by the SPIR-V backend yet.", i.Span);

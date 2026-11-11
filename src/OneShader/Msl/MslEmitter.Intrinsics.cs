@@ -110,6 +110,22 @@ internal sealed partial class MslEmitter
             case Intrinsic.SmoothStep:
                 Define(i, "smoothstep(" + FitArg(i, 0) + ", " + FitArg(i, 1) + ", " + FitArg(i, 2) + ")");
                 break;
+            case Intrinsic.Dot4AddI8Packed or Intrinsic.Dot4AddU8Packed:
+            {
+                // MSL has no packed dot instruction and its dot() is for floating point: widen the four byte lanes (lane 0 is the
+                // least significant byte on little-endian Metal), multiply, sum, and add the accumulator in uint so it wraps.
+                bool signed = i.Intrinsic == Intrinsic.Dot4AddI8Packed;
+                string v4 = signed ? "int4" : "uint4";
+                string b4 = signed ? "char4" : "uchar4";
+                string p = Tmp("p");
+                W(v4 + " " + p + " = " + v4 + "(as_type<" + b4 + ">(" + Arg(i, 0) + ")) * " + v4 + "(as_type<" + b4 + ">(" + Arg(i, 1) + "));");
+                string sum = p + ".x + " + p + ".y + " + p + ".z + " + p + ".w";
+                Define(i, signed
+                    ? "as_type<int>(as_type<uint>(" + sum + ") + as_type<uint>(" + Arg(i, 2) + "))"
+                    : "(" + sum + ") + " + Arg(i, 2));
+                break;
+            }
+
             case Intrinsic.NonUniformIndex:
                 // Metal indexes resource arrays freely; the hint only matters to backends with descriptor indexing.
                 Define(i, Arg(i, 0));
@@ -200,6 +216,9 @@ internal sealed partial class MslEmitter
 
             case >= Intrinsic.WaveIsFirstLane and <= Intrinsic.QuadReadLaneAt or Intrinsic.WaveActiveAllEqual:
                 EmitWave(i);
+                break;
+            case >= Intrinsic.CoopMatrixLoad and <= Intrinsic.CoopMatrixZero:
+                EmitCooperative(i);
                 break;
             default:
                 Unsupported("The intrinsic '" + i.Intrinsic + "' is not supported by the MSL backend.", i.Span);

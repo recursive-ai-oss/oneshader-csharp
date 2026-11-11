@@ -21,8 +21,11 @@ internal enum WideTypes
     /// <summary>64-bit integers.</summary>
     Int64 = 8,
 
-    /// <summary>Either 16-bit kind.</summary>
-    Bits16 = Float16 | Int16,
+    /// <summary>bfloat16.</summary>
+    BFloat16 = 16,
+
+    /// <summary>Any 16-bit kind (they share the 16-bit storage capabilities).</summary>
+    Bits16 = Float16 | Int16 | BFloat16,
 }
 
 /// <summary>Finds which non-32-bit scalar widths a type contains.</summary>
@@ -56,6 +59,8 @@ internal static class TypeFeatures
                 return Of(p.Pointee, enable16, depth + 1);
             case EnumType e:
                 return OfScalar(e.Underlying, enable16);
+            case CooperativeMatrixType c:
+                return OfScalar(c.Element, enable16);
             case StructType st:
             {
                 var all = WideTypes.None;
@@ -78,6 +83,7 @@ internal static class TypeFeatures
         ScalarKind.Int16 or ScalarKind.UInt16 => WideTypes.Int16,
         ScalarKind.Int64 or ScalarKind.UInt64 => WideTypes.Int64,
         ScalarKind.Double => WideTypes.Float64,
+        ScalarKind.BFloat16 => WideTypes.BFloat16,
         ScalarKind.Half or ScalarKind.Min16Float or ScalarKind.Min10Float => enable16BitTypes ? WideTypes.Float16 : WideTypes.None,
         ScalarKind.Min16Int or ScalarKind.Min16UInt => enable16BitTypes ? WideTypes.Int16 : WideTypes.None,
         _ => WideTypes.None,

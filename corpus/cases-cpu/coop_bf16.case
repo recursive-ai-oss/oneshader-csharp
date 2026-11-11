@@ -1,0 +1,8 @@
+# 16x16x16 bfloat16 cooperative-matrix product (B converted through float and doubled in the shader).
+case coop_bf16
+shader coop/coop_bf16.hlsl
+dispatch Bf16Product 1 1 1
+storage 0 0 : @b01(3,256)
+storage 0 1 : @bpm1(4,256)
+storage 0 2 out size=1024 float=1e-4
+expect coop_bf16
