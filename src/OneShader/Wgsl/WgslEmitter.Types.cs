@@ -254,9 +254,9 @@ internal sealed partial class WgslEmitter
     private string HalfLiteral(ushort bits)
     {
         var h = BitConverter.UInt16BitsToHalf(bits);
-        if (Half.IsNaN(h) || Half.IsInfinity(h))
+        if (Half.IsNaN(h) || Half.IsInfinity(h) || bits == 0x8000)
         {
-            // As for f32: a constant expression cannot hold a NaN or infinity.
+            // As for f32: a constant expression cannot hold a NaN or infinity, and a negative zero constant is not kept by browsers.
             uint key = 0x80000000u | bits;
             if (!_bitConstants.TryGetValue(key, out var name))
             {
@@ -268,6 +268,12 @@ internal sealed partial class WgslEmitter
             return "bitcast<vec2<f16>>(" + name + ").x";
         }
 
+        return F16Text(h);
+    }
+
+    /// <summary>Writes a finite half as a WGSL <c>h</c> literal. Every half is exactly representable, so the shortest float form is in range (65504 at most).</summary>
+    internal static string F16Text(Half h)
+    {
         string s = ((float)h).ToString("R", CultureInfo.InvariantCulture);
         if (s.IndexOf('.', StringComparison.Ordinal) < 0 && s.IndexOf('E', StringComparison.Ordinal) < 0)
         {
@@ -281,9 +287,10 @@ internal sealed partial class WgslEmitter
     private string FloatLiteral(uint bits)
     {
         float f = BitConverter.UInt32BitsToSingle(bits);
-        if (float.IsNaN(f) || float.IsInfinity(f))
+        if (float.IsNaN(f) || float.IsInfinity(f) || bits == 0x80000000u)
         {
-            // A WGSL constant expression cannot hold a NaN or infinity, so the bits come from a private variable the compiler cannot fold.
+            // A WGSL constant expression cannot hold a NaN or infinity, and browsers fold the literal -0.0 to +0.0 (observed in Chrome: a stored
+            // -0.0f read back as +0), so the bits come from a private variable the compiler cannot fold.
             if (!_bitConstants.TryGetValue(bits, out var name))
             {
                 name = WgslNames.Unique(_moduleNames, "const_bits_" + bits.ToString("x8", CultureInfo.InvariantCulture));
@@ -294,7 +301,20 @@ internal sealed partial class WgslEmitter
             return "bitcast<f32>(" + name + ")";
         }
 
-        string s = f.ToString("R", CultureInfo.InvariantCulture);
+        return F32Text(f);
+    }
+
+    /// <summary>
+    /// Writes a finite float as a WGSL <c>f</c> literal that reads back as the same bits. The WGSL specification (floating point literals) takes the literal's real value,
+    /// rounds it to f32 and rejects it when that real value lies above the largest finite f32. The shortest round-trip text of the largest f32 is
+    /// 3.4028235E+38, which is above it as a real number, so browsers refuse it; the exact decimal expansion is used for that value. Every other
+    /// shortest form rounds to its own float and stays in range.
+    /// </summary>
+    internal static string F32Text(float f)
+    {
+        string s = MathF.Abs(f) == float.MaxValue
+            ? (f < 0 ? "-" : "") + "3.4028234663852885981170418348451692544e38"
+            : f.ToString("R", CultureInfo.InvariantCulture);
         if (s.IndexOf('.', StringComparison.Ordinal) < 0 && s.IndexOf('E', StringComparison.Ordinal) < 0)
         {
             s += ".0";

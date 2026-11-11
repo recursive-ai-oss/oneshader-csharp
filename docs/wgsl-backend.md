@@ -77,6 +77,15 @@ read as one half of `unpack2x16float(word)` and written with `pack2x16float`; be
 buffer written with halves is declared `array<atomic<u32>>` and a store clears and sets only its own 16 bits with `atomicAnd`/`atomicOr`. WebGPU does not require half arithmetic
 to round exactly as Vulkan does, so results can differ in the last bit of a half (the parity case allows 0.4%). There are no 16-bit integers.
 
+## Float literals
+
+A finite `f32` constant is written as a decimal literal that reads back as the same bits and whose exact value is not above the largest finite `f32`
+(WGSL rejects such a literal). The shortest round-trip text is used, except for `±FLT_MAX`, whose shortest text (`3.4028235E+38`) is above the maximum as a
+real number: it is written with its exact expansion. A NaN or an infinity cannot be a WGSL constant and is bitcast from a private `u32`; so is negative zero, because Chrome folds a
+written `-0.0f` to `+0.0` (seen on a stored value). Subnormal literals (below 1.17549435e-38) are written exactly like any other value, so they are valid, but WGSL lets an implementation flush
+subnormals to zero, and a GPU may: a host must not rely on subnormal results from WebGPU (Vulkan and Metal results can differ from it there). `f16`
+constants are always written exactly (at most 65504, subnormals included) with the `h` suffix, under the same flushing caveat.
+
 ## Cooperative matrices and bfloat16
 
 WebGPU has neither. A shader that declares a `CooperativeMatrix` is OSH5202 at the first matrix variable, and `bfloat16_t` is OSH5202 at its first use, each only
