@@ -5,6 +5,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- The build package's generated C# embeds each shader blob (`SpirV`, `Msl`, `Wgsl`) as a base64 UTF-8 string literal that is decoded into a byte array on first read, instead of a per-byte array initializer. The C# compiler keeps a syntax node and a constant for every element of an initializer, so a project with many variants needed gigabytes to compile (64 variants of one pixel shader, three targets: 3.4 GB peak, now 0.5 GB; 256 variants ran out of memory, now 1.2 GB). The public members are unchanged (`ReadOnlySpan<byte>`, same bytes, no allocation per access); the first read of a blob allocates an array of its size, which later reads reuse. The generated source of every shader changes.
+
 ## [1.4.1]
 
 - Fixed: the Metal (MSL) output could drop a `continue` that sits in an `if` in the middle of a loop body, so the code after the `if` ran for elements that should have been skipped. Every 1.x release up to 1.4.0 is affected: `for`, `while` and `do`/`while` loops (with or without `[unroll]`), with the optimizer on or off, whenever a guarded `continue` is followed by more statements (`if (x >= n) { continue; } out[x] = 1;`). Loops where the `if` is the last statement, `break` and `return` were already correct, and so were the SPIR-V and WGSL outputs. Recompile the shaders that have such a loop and ship the new MSL.

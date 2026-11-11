@@ -51,14 +51,19 @@ deterministic.
   `Count` and `const ResourceKind Kind`, plus `All`, a span of `ResourceBinding` that also says
   which stages use each resource. See Resource arrays and Append and consume buffers below.
 - **Entry points**: one nested class per entry point, named after the function, with
-  `Stage`, `EntryPoint`, and `SpirV` (a `ReadOnlySpan<byte>` over data embedded in the assembly).
+  `Stage`, `EntryPoint`, and `SpirV` (a `ReadOnlySpan<byte>`; with the Metal and WebGPU targets also `Msl` and `Wgsl`).
+  - Each blob is embedded as a base64 UTF-8 string literal (`"..."u8`) and decoded into a byte array the first
+    time the property is read; later reads return the same array, so there is no allocation per access. The first
+    read allocates as many bytes as the blob has (and a blob that is never read costs nothing). The compiler of the
+    consuming project keeps one constant per blob instead of one syntax node per byte, so a project with hundreds
+    of variants builds in a fraction of the memory.
   - Vertex entry points add a blittable `Vertex` struct, `uint Stride`, and `Inputs`, a span of
     `VertexAttribute` (location, `VertexFormat`, offset).
   - Compute entry points add `ThreadGroupSizeX`, `ThreadGroupSizeY` and `ThreadGroupSizeZ`.
   - Metal and WebGPU outputs will be added as sibling members (`Msl`, `Wgsl`).
 - **Reflection**: the file's class has `static ShaderReflection Reflection`, the reflection the rest of the class
   was generated from (resources with slots and layouts, entry points, vertex inputs, thread-group sizes). It is stored
-  as text in the assembly (`ReadOnlySpan<byte> ReflectionData`, about 1 to 4 KB per shader) and parsed on the first
+  as text in the assembly (`ReadOnlySpan<byte> ReflectionData`, embedded like the blobs, about 1 to 4 KB per shader) and parsed on the first
   read, so a program that never reads it carries no parser after trimming. Hot reload compares it with a fresh
   compile; see "Hot reload" in the `RecursiveAI.OneShader` package README.
 - All counts, sizes, strides, offsets, locations and thread-group sizes are `uint`, matching
