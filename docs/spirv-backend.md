@@ -48,6 +48,13 @@ options always give the same bytes. Code is in `src/OneShader/SpirV/`.
 - **Discard** is `OpKill`, valid in SPIR-V 1.5; `OpTerminateInvocation` needs a newer environment.
 - **Shifts** mask the count to the operand width, as HLSL does. `Ne` on floats is unordered (true for NaN).
   `precise` becomes `NoContraction`.
+- **`mad` and `fma` are not guaranteed to be fused.** A floating-point `mad(a, b, c)` or `fma(a, b, c)` becomes
+  GLSL.std.450 `Fma` in SPIR-V, `fma` in WGSL and `fma` in MSL. Only Metal defines `fma` as a single rounding.
+  Vulkan's precision rules let `Fma` be a multiply and an add, each rounded, and WGSL's accuracy for `fma` is
+  inherited from `x * y + z`, so on Vulkan and WebGPU a driver may or may not fuse. No shader construct forces
+  fusion there; `precise` only forbids it. Code that needs bit-identical results across devices (quantization,
+  hashing, exact rounding) should compute that step in integer arithmetic, or make the result independent of the
+  rounding of `a * b`.
 
 ## Wave and quad intrinsics
 
