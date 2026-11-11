@@ -60,7 +60,6 @@ deterministic.
   - Vertex entry points add a blittable `Vertex` struct, `uint Stride`, and `Inputs`, a span of
     `VertexAttribute` (location, `VertexFormat`, offset).
   - Compute entry points add `ThreadGroupSizeX`, `ThreadGroupSizeY` and `ThreadGroupSizeZ`.
-  - Metal and WebGPU outputs will be added as sibling members (`Msl`, `Wgsl`).
 - **Reflection**: the file's class has `static ShaderReflection Reflection`, the reflection the rest of the class
   was generated from (resources with slots and layouts, entry points, vertex inputs, thread-group sizes). It is stored
   as text in the assembly (`ReadOnlySpan<byte> ReflectionData`, embedded like the blobs, about 1 to 4 KB per shader) and parsed on the first

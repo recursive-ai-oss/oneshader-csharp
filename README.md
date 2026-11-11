@@ -133,14 +133,14 @@ byte[] spirv = result.Find("PSMain", CompileTarget.SpirV)!.ToArray();
 
 ## Status
 
-**Version 1.4.** Vertex, pixel and compute shaders compile to
+**Version 1.6.** Vertex, pixel and compute shaders compile to
 optimized SPIR-V, Metal Shading Language and WGSL with reflection; the build
 package embeds each selected target next to generated C# bindings (the
 `OneShaderTargets` switch) and compiles shader variants, and the runtime API
 supports hot reload with a layout-compatibility check. Wave intrinsics,
 16-bit and 64-bit types, specialization constants, source-level debug
-information and bindless resources are supported. Not supported: geometry, tessellation, mesh and
-ray-tracing stages, bindless resources on WebGPU (it has no binding arrays) and the SM 6.5 partitioned wave operations (`WaveMatch`, `WaveMultiPrefix*`), and some
+information, bindless resources, cooperative matrices with `bfloat16_t` (SPIR-V and Metal) and packed 8-bit dot products are supported. Not supported: geometry, tessellation, mesh and
+ray-tracing stages, bindless resources and cooperative matrices on WebGPU, and the SM 6.5 partitioned wave operations (`WaveMatch`, `WaveMultiPrefix*`), and some
 features on some targets (the backend pages list them). The public API and the
 generated code follow [Semantic Versioning](https://semver.org/); the
 [changelog](CHANGELOG.md) lists what each release changes.
@@ -148,7 +148,7 @@ generated code follow [Semantic Versioning](https://semver.org/); the
 ## Where to go
 
 - **Using it:** the package guides ([build](src/OneShader.Build/README.md),
-  [compiler](src/OneShader/README.md)), the
+  [compiler](src/OneShader/README.md), [command line](src/OneShader.Tool/README.md)), the
   [generated bindings](docs/generated-bindings.md), and the
   [reflection format](docs/reflection-format.md); [debugging shaders](docs/debugging.md) in RenderDoc, Nsight and Xcode.
 - **Backends:** [SPIR-V](docs/spirv-backend.md), [MSL](docs/msl-backend.md),

@@ -209,6 +209,8 @@ PipelineLayout? pipeline = v.Pipeline;
   browser on WebGPU against the DXC reference.
 - Push constants (`[[vk::push_constant]]`) on every target: a Vulkan push-constant block, a Metal `constant T&` buffer
   argument, a WebGPU uniform buffer; one set of bytes for all three.
+- Wave and quad intrinsics, 16-bit and 64-bit types, specialization constants, bindless resources, packed 8-bit dot products and
+  cooperative matrices with `bfloat16_t` (SPIR-V and Metal); each entry class's `RequiredFeatures` says what the device must support.
 - Hot reload: generated classes carry the reflection they were built from, and
   `InterfaceCompatibility.Compare` tells whether a shader recompiled at run time still matches
   them (see the `RecursiveAI.OneShader` package).
@@ -231,7 +233,7 @@ the same apart from the blob bytes. See docs/debugging.md in the repository for 
 ## Known limits
 
 - Clip-space Y points up in Metal and WebGPU and down in Vulkan; the shader is not adjusted, so flip with the viewport.
-- `WaveMatch`/`WaveMultiPrefix*` are not supported; unbounded resource arrays and descriptor heaps are errors on WGSL only (WebGPU has no binding arrays). Wave and quad intrinsics work; a shader that uses them needs subgroup support on the device (`SubgroupOperations` on the generated entry class and `Layout`).
+- `WaveMatch`/`WaveMultiPrefix*` are not supported; unbounded resource arrays, descriptor heaps, cooperative matrices and `bfloat16_t` are errors on WGSL only. A shader that uses wave and quad intrinsics needs subgroup support on the device (`SubgroupOperations` on the generated entry class and `Layout`).
 - `dotnet build` only (not Visual Studio's .NET Framework MSBuild).
 
 ## License

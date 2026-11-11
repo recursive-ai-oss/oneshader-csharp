@@ -13,7 +13,7 @@ Code is in `src/OneShader/Wgsl/`; naga validates every corpus entry point (`test
   The host binds a uniform buffer of at least the block size rounded up to 16 bytes.
 - **Buffers are raw words, so layouts equal the SPIR-V target's.** A constant buffer is `array<vec4<u32>, N>` (WGSL 13.4.1:
   uniform arrays have a 16-byte stride, one vec4 per row); structured and byte-address buffers are `array<u32>`
-  (`array<atomic<u32>>` when the entry point uses atomics on them; a buffer the entry point never writes is `read`).
+  (`array<atomic<u32>>` when the entry point uses atomics on them; the access mode follows the HLSL type, see below).
   Every access computes its byte offset from the reflected layout and bitcasts; vectors inside one row are read as a
   swizzle. Signed atomic min/max on a buffer and compare-exchange use small helper functions.
   `WgslLayoutTests` checks the word indices of every scalar, vector and matrix in every corpus buffer against the reflected offsets.
@@ -44,6 +44,11 @@ Code is in `src/OneShader/Wgsl/`; naga validates every corpus entry point (`test
   `read`, `write` or `read_write` from how the entry point uses them.
 - **Derivatives:** pixel shaders that sample or take derivatives start with `diagnostic(off, derivative_uniformity);`, since HLSL allows
   them under non-uniform control flow.
+
+## Packed dot products
+
+`dot4add_i8packed` / `dot4add_u8packed` are `dot4I8Packed` / `dot4U8Packed` plus the accumulator, with `requires packed_4x8_integer_dot_product;`
+(a WGSL language feature, not a device feature).
 
 ## Wave and quad intrinsics
 

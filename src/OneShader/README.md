@@ -231,12 +231,15 @@ Creating layouts allocates; do it when a shader loads, not per frame.
   `HeapKinds` describe them; `DeviceFeatures.RuntimeDescriptorArray`, `NonUniformIndexing` and `MutableDescriptorType` say what the device needs. The layout helpers
   give Vulkan a variable-count, partially bound binding (`VulkanLayoutOptions.UnboundedMaxCount`, `PartiallyBound`, `VariableDescriptorCount`, `UpdateAfterBind`),
   Metal a `MetalArgument` with `IsArgumentBuffer` and `DescriptorStride`, and refuse WebGPU.
+- Wave and quad intrinsics, 16-bit and 64-bit types, specialization constants, source-level debug information, packed 8-bit dot
+  products (`dot4add_i8packed`/`dot4add_u8packed`) and cooperative matrices with `bfloat16_t` (SPIR-V and Metal). What a device must
+  support is in `EntryPointInfo.RequiredFeatures` (for example `CooperativeMatrix`, `FullSubgroups`, `IntegerDotProduct`).
 
 ## Known limits
 
 - SPIR-V, Metal (MSL) and WebGPU (WGSL) output. Limits are listed in `docs/msl-backend.md` and
   `docs/wgsl-backend.md`.
-- `WaveMatch`/`WaveMultiPrefix*` are not supported; unbounded resource arrays and descriptor heaps are errors on WGSL only (WebGPU has no binding arrays). Wave and quad intrinsics work; a shader that uses them needs subgroup support on the device (`EntryPointInfo.SubgroupOperations`).
+- `WaveMatch`/`WaveMultiPrefix*` are not supported; unbounded resource arrays, descriptor heaps, cooperative matrices and `bfloat16_t` are errors on WGSL only. A shader that uses wave and quad intrinsics needs subgroup support on the device (`EntryPointInfo.SubgroupOperations`).
 
 ## License
 
