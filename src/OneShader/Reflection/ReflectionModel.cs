@@ -189,6 +189,12 @@ public enum DeviceFeatures
 
     /// <summary>Cooperative matrices with <c>bfloat16_t</c> elements (Vulkan <c>shaderBFloat16CooperativeMatrix</c>).</summary>
     BFloat16CooperativeMatrix = 32768,
+
+    /// <summary>
+    /// Packed 8-bit integer dot products, <c>dot4add_i8packed</c> and <c>dot4add_u8packed</c> (Vulkan <c>shaderIntegerDotProduct</c>;
+    /// WebGPU needs the <c>packed_4x8_integer_dot_product</c> language feature, which is not a device feature to request; Metal has none).
+    /// </summary>
+    IntegerDotProduct = 65536,
 }
 
 /// <summary>

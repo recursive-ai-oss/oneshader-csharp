@@ -198,6 +198,14 @@ internal sealed partial class WgslEmitter
 
                 string pname = NewLocal("in_" + leaf.Name);
                 ps.Add(attr + " " + pname + ": " + TypeName(wireType));
+                if (g.BuiltIn == BuiltIn.WorkgroupId && leaf.Path.Length == 0 && wireType == leaf.Type && !_inputsWritten.Contains(g))
+                {
+                    // WGSL 14.2.1 (uniformity analysis): workgroup_id is uniform across the workgroup, but a load from a module-scope
+                    // variable is not. The entry point reads the parameter itself so that a barrier after an early return that depends
+                    // only on the workgroup id is accepted; other functions still see the private copy.
+                    _uniformParams[g] = pname;
+                }
+
                 Put(global + leaf.Path + " = " + ConvertExpr(pname, wireType, leaf.Type) + ";");
             }
         }

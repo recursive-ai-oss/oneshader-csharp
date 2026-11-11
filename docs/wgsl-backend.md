@@ -22,6 +22,11 @@ Code is in `src/OneShader/Wgsl/`; naga validates every corpus entry point (`test
 - **Bindings:** `@group(set) @binding(binding)`, equal to the Vulkan set and binding.
 - **Stage I/O:** inputs and outputs are module-level private variables copied from the entry parameters and into the return
   struct. Arrays and matrices are split one location per element or row. Integer fragment inputs and vertex outputs are `flat`.
+  `SV_GroupID` (`workgroup_id`) is the exception for the entry function: WGSL's uniformity analysis (section 14.2) treats a load from a
+  module-scope variable as non-uniform, so a barrier after `if (gid.x >= N) return;` is rejected by browsers if the code reads the
+  private copy. The entry function reads the parameter itself; other functions (only un-inlined bodies) read the copy. Thread ids
+  (`local_invocation_id`, `global_invocation_id`, `local_invocation_index`) really are non-uniform and stay copied, so a barrier after an
+  early return that depends on them is still rejected, as WGSL requires. (The `naga` command line does not check this.)
 - **Control flow** is rebuilt from the IR's structure markers: `if`, `switch`, `loop` with `continuing` (a do-while test becomes
   `break if`). A `break` out of a loop from inside a `switch` goes through a flag variable. Phis are variables assigned on each edge.
   WGSL has no fall-through, so a `switch` case that runs into the next one gets that case's statements again after its own (a chain of

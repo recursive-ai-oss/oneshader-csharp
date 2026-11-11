@@ -28,6 +28,9 @@ options always give the same bytes. Code is in `src/OneShader/SpirV/`.
   adds the matching `*ArrayDynamicIndexing` capability, and `NonUniformResourceIndex` adds `ShaderNonUniform`, the
   `*ArrayNonUniformIndexing` capability and `NonUniform` on the index, access chain, loaded handle and sampled image.
   An append or consume buffer's counter is a second storage buffer variable (`counter.var.<name>`) in the buffer's set.
+- **Packed dot products.** `dot4add_i8packed` / `dot4add_u8packed` are `OpSDot` / `OpUDot` with `PackedVectorFormat4x8Bit` followed by `OpIAdd`
+  (the intrinsic wraps), declaring `DotProduct`, `DotProductInput4x8BitPacked` and `SPV_KHR_integer_dot_product`; DXC's output is the same.
+  Vulkan needs `shaderIntegerDotProduct` (reflected as `DeviceFeatures.IntegerDotProduct`).
 - **Interface.** Every global variable the entry point references is listed on `OpEntryPoint`, as SPIR-V 1.4+
   requires, inputs first, then outputs, then the rest in module order. Integer and double fragment inputs (and the
   vertex outputs that feed them) are `Flat`. Pixel shaders get `OriginUpperLeft`, plus `DepthReplacing` when they

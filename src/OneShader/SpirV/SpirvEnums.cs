@@ -35,7 +35,7 @@ internal static class Op
         AtomicOr = 241, AtomicXor = 242, Phi = 245, LoopMerge = 246, SelectionMerge = 247, Label = 248, Branch = 249,
         BranchConditional = 250, Switch = 251, Kill = 252, Return = 253, ReturnValue = 254, Unreachable = 255,
         GroupNonUniformElect = 333, GroupNonUniformAll = 334, GroupNonUniformAny = 335, GroupNonUniformAllEqual = 336,
-        GroupNonUniformBroadcastFirst = 338, GroupNonUniformBallot = 339, GroupNonUniformBallotBitCount = 342,
+        GroupNonUniformBroadcastFirst = 338, GroupNonUniformBallot = 339, GroupNonUniformBallotBitCount = 342, SDot = 4450, UDot = 4451,
         GroupNonUniformShuffle = 345, GroupNonUniformIAdd = 349, GroupNonUniformFAdd = 350, GroupNonUniformIMul = 351,
         GroupNonUniformFMul = 352, GroupNonUniformSMin = 353, GroupNonUniformUMin = 354, GroupNonUniformFMin = 355,
         GroupNonUniformSMax = 356, GroupNonUniformUMax = 357, GroupNonUniformFMax = 358, GroupNonUniformBitwiseAnd = 359,
@@ -65,7 +65,7 @@ internal static class Cap
         StorageImageReadWithoutFormat = 55, StorageImageWriteWithoutFormat = 56, ShaderLayer = 69, ShaderViewportIndex = 70,
         GroupNonUniform = 61, GroupNonUniformVote = 62, GroupNonUniformArithmetic = 63, GroupNonUniformBallot = 64,
         GroupNonUniformShuffle = 65, GroupNonUniformQuad = 68, BFloat16Type = 5116, BFloat16CooperativeMatrix = 5118, VulkanMemoryModel = 5345, CooperativeMatrix = 6022, StorageBuffer16BitAccess = 4433, UniformAndStorageBuffer16BitAccess = 4434,
-        StoragePushConstant16 = 4435, StorageInputOutput16 = 4436;
+        StoragePushConstant16 = 4435, StorageInputOutput16 = 4436, DotProductInput4x8BitPacked = 6018, DotProduct = 6019;
 }
 
 /// <summary>Decorations.</summary>

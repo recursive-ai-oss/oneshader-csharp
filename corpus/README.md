@@ -43,6 +43,8 @@ with `dxc -spirv -fspv-target-env=vulkan1.2`, and give every resource an explici
 | `compute/light_cull.hlsl` | Assigns point lights to clusters (sphere against box) into fixed-size per-cluster lists | written for this repository | MIT OR Apache-2.0 |
 | `compute/depth_bounds.hlsl` | Per-tile minimum and maximum depth with group-shared integer atomics on the float bits and `Texture2D.Load` | written for this repository | MIT OR Apache-2.0 |
 | `compute/wave_scan_compact.hlsl` | Group-wide exclusive scan and stream compaction from `WavePrefixSum`, `WavePrefixCountBits`, `WaveActiveSum`, `WaveActiveCountBits` and `WaveReadLaneFirst`; wave totals combine through group-shared memory, so the result is the same for any subgroup size | written for this repository | MIT OR Apache-2.0 |
+| `compute/dot4_packed.hlsl` | Packed 8-bit dot products `dot4add_i8packed` / `dot4add_u8packed` on edge values (-128 x -128, 127 x 127, byte order, accumulators at the wrap point) and random words | written for this repository | MIT OR Apache-2.0 |
+| `compute/group_return_barrier.hlsl` | An early return on `SV_GroupID` against a constant-buffer limit, then a group barrier and group-shared exchange in the groups that stay (WGSL uniformity of the workgroup id) | written for this repository | MIT OR Apache-2.0 |
 | `compute/wave_reduce.hlsl` | Sixteen group reductions from `WaveActiveSum`/`Product`/`Min`/`Max`/`BitAnd`/`BitOr`/`BitXor` on uint, int, float and vector values | written for this repository | MIT OR Apache-2.0 |
 | `compute/wave_ballot.hlsl` | `WaveActiveBallot`, `AnyTrue`, `AllTrue`, `AllEqual`, `CountBits`, lane index and count, `WaveIsFirstLane`, `WaveReadLaneAt`: size-independent totals plus a per-lane record compared with DXC | written for this repository | MIT OR Apache-2.0 |
 | `2d/quad_ops.hlsl` | `QuadReadAcrossX`/`Y`/`Diagonal` and `QuadReadLaneAt` in a pixel shader, checked against `ddx_fine`/`ddy_fine` | written for this repository | MIT OR Apache-2.0 |
@@ -128,6 +130,8 @@ written for this repository and licensed `MIT OR Apache-2.0`.
 | `spec_const_compute`, `spec_const_compute_set` | `compute/spec_const_compute.hlsl` | dispatch, 2 groups of 16; the second sets every constant with `spec NAME : VALUE` lines | buffers exact vs DXC and vs the CPU result |
 | `spec_const_pixel`, `spec_const_pixel_set` | `2d/spec_const_pixel.hlsl` | draw; the second overrides all three constants | image, tolerance 1 |
 | `wave_scan_compact` | `compute/wave_scan_compact.hlsl` | dispatch, 4 groups of 256 | buffers exact, CPU result (any subgroup size) |
+| `dot4_packed` | `compute/dot4_packed.hlsl` | dispatch, 8 groups of 64 | buffers exact vs DXC and the CPU result (SPIR-V `OpSDot`/`OpUDot`, MSL four-lane expansion, WGSL `dot4I8Packed`/`dot4U8Packed`) |
+| `group_return_barrier` | `compute/group_return_barrier.hlsl` | dispatch, 6 groups of 64, 4 stay | buffer exact vs DXC; the WGSL passes Chromium's uniformity analysis |
 | `wave_reduce` | `compute/wave_reduce.hlsl` | dispatch, 4 groups of 256 | buffer exact, CPU result (any subgroup size) |
 | `wave_ballot` | `compute/wave_ballot.hlsl` | dispatch, 4 groups of 256 | totals buffer exact vs CPU (any subgroup size up to 128 lanes); per-lane buffer exact vs DXC on the same device |
 | `quad_ops` | `2d/quad_ops.hlsl` | fullscreen triangle, 64x64 | image, tolerance 2 |

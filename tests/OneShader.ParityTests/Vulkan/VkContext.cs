@@ -355,6 +355,14 @@ public sealed unsafe partial class VkContext : IDisposable
         {
             featureTail = &mutableFeatures;
         }
+        // dot4add_i8packed / dot4add_u8packed compile to OpSDot / OpUDot (SPV_KHR_integer_dot_product).
+        var dotFeatures = new PhysicalDeviceShaderIntegerDotProductFeatures { SType = StructureType.PhysicalDeviceShaderIntegerDotProductFeatures, ShaderIntegerDotProduct = true };
+        bool dotProduct = deviceExtensions.Contains("VK_KHR_shader_integer_dot_product");
+        if (dotProduct)
+        {
+            dotFeatures.PNext = featureTail;
+            featureTail = &dotFeatures;
+        }
         var coopEnable = new CoopFeatures { SType = CoopFeatures.StructType, CooperativeMatrix = coopQuery.CooperativeMatrix, PNext = featureTail };
         var bf16Enable = new Bf16Features
         {
@@ -411,6 +419,10 @@ public sealed unsafe partial class VkContext : IDisposable
         if (MutableDescriptors)
         {
             enabledNames.Add("VK_EXT_mutable_descriptor_type");
+        }
+        if (dotProduct)
+        {
+            enabledNames.Add("VK_KHR_shader_integer_dot_product");
         }
         if (CooperativeMatrixFeature)
         {

@@ -41,6 +41,7 @@ public static class CpuReferences
         "depth_bounds" => DepthBounds(model, data),
         "wave_scan_compact" => WaveScanCompact(model, data),
         "wave_reduce" => WaveReduce(model, data),
+        "dot4_packed" => Dot4Packed(model, data),
         "wave_ballot" => WaveBallot(model, data),
         "spec_const_compute" => SpecConstCompute(model, data),
         "coop_f16" => CoopProduct(model, data, bfloat: false),
@@ -650,6 +651,44 @@ public static class CpuReferences
             Array.Copy(row, 0, r, g * 16, 16);
         }
         return [new Expectation(Key(m, resultIndex), Bytes(r, d.Buffers[resultIndex].Length), ExpectKind.Exact, 0)];
+    }
+
+    // Packed 8-bit dot products, lane 0 the least significant byte, added to the accumulator with wrapping.
+    private static IReadOnlyList<Expectation> Dot4Packed(CaseModel m, CaseData d)
+    {
+        uint[] a = Words(d.Buffers[Find(m, ResourceKind.Storage, 0, 0)]);
+        uint[] b = Words(d.Buffers[Find(m, ResourceKind.Storage, 0, 1)]);
+        int si = Find(m, ResourceKind.Storage, 0, 2), ui = Find(m, ResourceKind.Storage, 0, 3), ni = Find(m, ResourceKind.Storage, 0, 4);
+        uint[] s = Words(d.Buffers[si]);
+        uint[] u = Words(d.Buffers[ui]);
+        uint[] sums = new uint[s.Length];
+        for (int i = 0; i < a.Length; i++)
+        {
+            int sd = 0;
+            uint ud = 0, byteSumA = 0, byteSumB = 0;
+            for (int lane = 0; lane < 4; lane++)
+            {
+                int shift = 8 * lane;
+                sd += (sbyte)(a[i] >> shift) * (sbyte)(b[i] >> shift);
+                ud += ((a[i] >> shift) & 255u) * ((b[i] >> shift) & 255u);
+                byteSumA = unchecked((uint)((int)byteSumA + (sbyte)(a[i] >> shift)));
+                byteSumB += (b[i] >> shift) & 255u;
+            }
+
+            unchecked
+            {
+                s[i] = (uint)sd + s[i];
+                u[i] = ud + u[i];
+                sums[i] = byteSumA + byteSumB;
+            }
+        }
+
+        return
+        [
+            new Expectation(Key(m, si), Bytes(s, d.Buffers[si].Length), ExpectKind.Exact, 0),
+            new Expectation(Key(m, ui), Bytes(u, d.Buffers[ui].Length), ExpectKind.Exact, 0),
+            new Expectation(Key(m, ni), Bytes(sums, d.Buffers[ni].Length), ExpectKind.Exact, 0),
+        ];
     }
 
     // Eight totals per group that hold for any subgroup size of at most 128 lanes (see the shader).

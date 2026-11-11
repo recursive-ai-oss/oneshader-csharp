@@ -61,6 +61,10 @@ The same module and options always give the same text. Unsupported constructs ar
   `Append` adds one with an atomic and stores at the old value, `Consume` subtracts one and loads. `GetDimensions` on
   them is the same error as on any structured buffer.
 
+## Packed dot products
+
+Metal has no packed 8-bit dot instruction and `dot` is for floating point, so `dot4add_i8packed` / `dot4add_u8packed` widen the lanes (`int4(as_type<char4>(a))`, `uint4(as_type<uchar4>(a))`), multiply, sum the four products and add the accumulator in `uint` so it wraps.
+
 ## Wave and quad intrinsics
 
 SIMD-group and quad-group functions (Metal 2.1 and later): `simd_sum`, `simd_product`, `simd_min`/`max`, `simd_and`/`or`/`xor`, `simd_prefix_exclusive_sum`/`product`, `simd_any`/`all`, `simd_ballot` (the 64-bit vote is split into the `uint4` HLSL returns), `simd_is_first`, `simd_shuffle` (`WaveReadLaneAt`), `simd_broadcast_first`, `quad_shuffle_xor` (`QuadReadAcross*`) and `quad_shuffle` (`QuadReadLaneAt`). `WaveGetLaneIndex` and `WaveGetLaneCount` read the `[[thread_index_in_simdgroup]]` and `[[threads_per_simdgroup]]` entry arguments once; helper functions get them as lifted parameters. `WaveActiveAllEqual` compares with `simd_broadcast_first`; the count-bits functions sum or scan `uint(condition)`.
