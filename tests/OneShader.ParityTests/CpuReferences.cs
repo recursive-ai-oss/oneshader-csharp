@@ -43,6 +43,7 @@ public static class CpuReferences
         "wave_scan_compact" => WaveScanCompact(model, data),
         "wave_reduce" => WaveReduce(model, data),
         "dot4_packed" => Dot4Packed(model, data),
+        "float_extremes" => FloatExtremes(model, data),
         "wave_ballot" => WaveBallot(model, data),
         "spec_const_compute" => SpecConstCompute(model, data),
         "coop_f16" => CoopProduct(model, data, bfloat: false),
@@ -689,6 +690,24 @@ public static class CpuReferences
             Array.Copy(row, 0, r, g * 16, 16);
         }
         return [new Expectation(Key(m, resultIndex), Bytes(r, d.Buffers[resultIndex].Length), ExpectKind.Exact, 0)];
+    }
+
+    // Bit patterns of the constants float_extremes.hlsl writes; the first is the running maximum of the four seed values (-2, -1, -2^127 and -100: -1).
+    private static IReadOnlyList<Expectation> FloatExtremes(CaseModel m, CaseData d)
+    {
+        int bi = Find(m, ResourceKind.Storage, 0, 1);
+        uint[] bits =
+        [
+            BitConverter.SingleToUInt32Bits(-1f), 0xff7fffffu, 0x7f7fffffu, 0x7f7fffffu, 0xff7fffffu, 0x7f7ffffeu, 0x00800000u, 0x80800000u,
+            0x80000000u, BitConverter.SingleToUInt32Bits(16777216f), BitConverter.SingleToUInt32Bits(0.1f), 0x4b7fffffu,
+        ];
+        int vi = Find(m, ResourceKind.Storage, 0, 2);
+        uint[] values = [0xff7fffffu, 0x7f7fffffu, 0xff7fffffu, 0x00800000u, 0x80000000u, BitConverter.SingleToUInt32Bits(16777216f)];
+        return
+        [
+            new Expectation(Key(m, bi), Bytes(bits, d.Buffers[bi].Length), ExpectKind.Exact, 0),
+            new Expectation(Key(m, vi), Bytes(values, d.Buffers[vi].Length), ExpectKind.Exact, 0),
+        ];
     }
 
     // Packed 8-bit dot products, lane 0 the least significant byte, added to the accumulator with wrapping.

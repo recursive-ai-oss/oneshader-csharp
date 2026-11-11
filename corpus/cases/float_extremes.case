@@ -1,0 +1,8 @@
+# Float constants at the ends of the f32 range, written back as bits (the maximum finite float must be a valid WGSL literal).
+case float_extremes
+shader compute/float_extremes.hlsl
+dispatch CSMain 1 1 1
+storage 0 0 : 0xc0000000u 0xbf800000u 0xff000000u 0xc2c80000u
+storage 0 1 out size=48
+storage 0 2 out size=24
+expect float_extremes

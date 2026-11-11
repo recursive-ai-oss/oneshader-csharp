@@ -5,6 +5,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Fixed: the WGSL output wrote the largest finite float (`FLT_MAX`, from a folded `-3.4028234663852886e38` or `-asfloat(0x7f7fffff)`) as `3.4028235E+38f`, the shortest text that reads back as that float. As a real number that text is above the largest f32, so browsers refused the shader ("value cannot be represented as 'f32'"). It is now written with its exact decimal expansion. Every other float literal is unchanged, and the new `float_extremes` corpus case checks the edge values on Vulkan, naga and in the browser. SPIR-V and MSL were not affected.
+
 ## [1.6.0]
 
 - Fixed: the WGSL output declared a read-write buffer (`RWStructuredBuffer`, `RWByteAddressBuffer`) as `var<storage, read>` in an entry point that never writes it. Entry points of one file share bind group layouts, and WebGPU rejects a read-write layout entry against a shader that declares the buffer read-only, so such a file needed a dead write. The access mode now follows the HLSL type in every entry point (`read_write` for RW types, `read` for `StructuredBuffer`/`ByteAddressBuffer`), which is what `PipelineLayout.TryToWebGpu` and the generated bindings already said. A vertex entry point keeps `read` for an unwritten read-write buffer, because WGSL forbids `read_write` storage in the vertex stage. WGSL output changes only for read-write buffers an entry point does not write.
