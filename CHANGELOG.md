@@ -5,8 +5,9 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-- The build package's generated C# embeds each shader blob (`SpirV`, `Msl`, `Wgsl`) as a base64 UTF-8 string literal that is decoded into a byte array on first read, instead of a per-byte array initializer. The C# compiler keeps a syntax node and a constant for every element of an initializer, so a project with many variants needed gigabytes to compile (64 variants of one pixel shader, three targets: 3.4 GB peak, now 0.5 GB; 256 variants ran out of memory, now 1.2 GB). The public members are unchanged (`ReadOnlySpan<byte>`, same bytes, no allocation per access); the first read of a blob allocates an array of its size, which later reads reuse. The generated source of every shader changes.
+## [1.5.0]
 
+- The build package's generated C# embeds each shader blob (`SpirV`, `Msl`, `Wgsl`) as a base64 UTF-8 string literal that is decoded into a byte array on first read, instead of a per-byte array initializer. The C# compiler keeps a syntax node and a constant for every element of an initializer, so a project with many variants needed gigabytes to compile (64 variants of one pixel shader, three targets: 3.4 GB peak, now 0.5 GB; 256 variants ran out of memory, now 1.2 GB). The public members are unchanged (`ReadOnlySpan<byte>`, same bytes, no allocation per access); the first read of a blob allocates an array of its size, which later reads reuse. The generated source of every shader changes.
 - Packed 8-bit dot products, Shader Model 6.4's `dot4add_i8packed(uint a, uint b, int acc)` and `dot4add_u8packed(uint a, uint b, uint acc)`: four byte lanes (lane 0 least significant) multiplied pairwise and summed into the accumulator, wrapping modulo 2^32. SPIR-V: `OpSDot`/`OpUDot` with `PackedVectorFormat4x8Bit` and `OpIAdd`, capabilities `DotProduct` and `DotProductInput4x8BitPacked`, `SPV_KHR_integer_dot_product`, as DXC emits. MSL: the four-lane expansion (`as_type<char4>`/`uchar4`, widened, multiplied, summed, accumulated with wrapping). WGSL: `dot4I8Packed`/`dot4U8Packed` plus the accumulator, with `requires packed_4x8_integer_dot_product;` (a language feature, not a device feature).
 - Reflection: `DeviceFeatures.IntegerDotProduct` (Vulkan `shaderIntegerDotProduct`; value 65536), also in `EntryLayout`/`PipelineLayout`/`PipelineLayoutInfo.RequiredFeatures` and the generated `RequiredFeatures`.
 - WGSL: the entry function reads `SV_GroupID` straight from its `@builtin(workgroup_id)` parameter instead of a module-scope copy, so `if (gid.x >= N) return;` followed by a group barrier passes WGSL's uniformity analysis in browsers. Thread ids keep the copy: a barrier after an early return that depends on them is still rejected, as WGSL requires. Other WGSL output changes only where a compute entry point reads `SV_GroupID`.
@@ -108,6 +109,7 @@ First preview.
 - MSBuild integration: `*.hlsl` compiled during `dotnet build`, errors on the HLSL line, embedded SPIR-V and generated C# structs, vertex inputs and binding constants.
 - Known limits: SPIR-V only; single resources only (no resource arrays); no templates, member functions, operator overloads or wave intrinsics yet; `dotnet build` only.
 
+[1.5.0]: https://github.com/recursive-ai-oss/oneshader-csharp/releases/tag/v1.5.0
 [1.4.1]: https://github.com/recursive-ai-oss/oneshader-csharp/releases/tag/v1.4.1
 [1.4.0]: https://github.com/recursive-ai-oss/oneshader-csharp/releases/tag/v1.4.0
 [1.3.0]: https://github.com/recursive-ai-oss/oneshader-csharp/releases/tag/v1.3.0
