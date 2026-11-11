@@ -172,6 +172,12 @@ public enum DeviceFeatures
     /// <c>VK_EXT_mutable_descriptor_type</c>, <c>mutableDescriptorType</c>).
     /// </summary>
     MutableDescriptorType = 2048,
+
+    /// <summary>
+    /// Packed 8-bit integer dot products, <c>dot4add_i8packed</c> and <c>dot4add_u8packed</c> (Vulkan <c>shaderIntegerDotProduct</c>;
+    /// WebGPU needs the <c>packed_4x8_integer_dot_product</c> language feature, which is not a device feature to request; Metal has none).
+    /// </summary>
+    IntegerDotProduct = 4096,
 }
 
 /// <summary>

@@ -117,6 +117,11 @@ internal sealed partial class WgslEmitter
 
     private Mem? GlobalMem(GlobalVariable g)
     {
+        if (_isEntryFunction && _uniformParams.TryGetValue(g, out var param))
+        {
+            return new PlainMem(g.ValueType, param, null);
+        }
+
         if (_globalMems.TryGetValue(g, out var cached))
         {
             return cached;

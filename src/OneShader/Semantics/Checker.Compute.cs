@@ -97,6 +97,37 @@ internal sealed partial class Checker
                 return true;
             }
 
+            case "dot4add_i8packed" or "dot4add_u8packed":
+            {
+                // Shader Model 6.4: four packed 8-bit lanes (lane 0 least significant) multiplied pairwise, summed, added to acc, wrapping.
+                if (!ArityOk(c, name, 3) || AnyError(at))
+                {
+                    return true;
+                }
+
+                bool signed = name == "dot4add_i8packed";
+                var accType = signed ? ScalarType.Int : ScalarType.UInt;
+                for (int n = 0; n < 3; n++)
+                {
+                    if (at[n] is not ScalarType { IsInteger: true } st || TypeOps.BitWidth(st) != 32)
+                    {
+                        Err(SemanticCodes.TypeMismatch, "'" + name + "' takes 32-bit scalar integers (packed bytes a and b as uint, the accumulator as " + (signed ? "int" : "uint") + "), not '" + at[n] + "'. Convert the argument with asuint(), asint() or a cast.", c.Arguments[n].Span);
+                        return true;
+                    }
+                }
+
+                info.Builtin = new BuiltinCall
+                {
+                    Kind = BuiltinKind.Intrinsic,
+                    Ir = signed ? Intrinsic.Dot4AddI8Packed : Intrinsic.Dot4AddU8Packed,
+                    Name = name,
+                    ParamTypes = [ScalarType.UInt, ScalarType.UInt, accType],
+                    Result = accType,
+                };
+                result = accType;
+                return true;
+            }
+
             case "countbits" or "firstbithigh" or "firstbitlow" or "reversebits":
             {
                 if (!ArityOk(c, name, 1) || AnyError(at))

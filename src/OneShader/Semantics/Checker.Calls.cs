@@ -140,7 +140,7 @@ internal sealed partial class Checker
     [
         "dot", "length", "distance", "normalize", "cross", "reflect", "refract", "faceforward", "all", "any", "determinant",
         "mul", "transpose", "mad", "sign", "fmod", "asfloat", "asint", "asuint", "asdouble", "asfloat16", "asint16", "asuint16", "clip", "select", "sincos", "modf", "frexp",
-        "NonUniformResourceIndex", "countbits", "reversebits", "firstbithigh", "firstbitlow", "f16tof32", "f32tof16",
+        "NonUniformResourceIndex", "countbits", "reversebits", "firstbithigh", "firstbitlow", "f16tof32", "f32tof16", "dot4add_i8packed", "dot4add_u8packed",
     ];
 
     private static IEnumerable<string> BuiltinNames()

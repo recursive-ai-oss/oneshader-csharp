@@ -89,6 +89,7 @@ internal sealed partial class WgslEmitter
     // ---- per-function state ----------------------------------------------------------------------
 
     private IrFunction _fn = null!;
+    private readonly Dictionary<GlobalVariable, string> _uniformParams = [];
     private bool _isEntryFunction;
     private List<Line> _lines = [];
     private List<string> _prologue = [];

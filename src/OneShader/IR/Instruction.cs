@@ -352,7 +352,9 @@ public enum Intrinsic
     QuadReadAcrossDiagonal, /// <summary>QuadReadLaneAt.</summary>
     QuadReadLaneAt, /// <summary>NonUniformResourceIndex(i): the index may differ between invocations of a wave; yields its operand.</summary>
     NonUniformIndex, /// <summary>WaveActiveAllEqual(x): true when every active lane holds the same value (per component for vectors).</summary>
-    WaveActiveAllEqual,
+    WaveActiveAllEqual, /// <summary>dot4add_i8packed(a, b, acc): signed bytes of the packed words multiplied pairwise and summed, plus acc (wrapping).</summary>
+    Dot4AddI8Packed, /// <summary>dot4add_u8packed(a, b, acc): the unsigned form.</summary>
+    Dot4AddU8Packed,
 }
 
 /// <summary>The role of a block in structured control flow.</summary>

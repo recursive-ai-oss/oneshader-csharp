@@ -307,17 +307,31 @@ public sealed unsafe partial class VkContext : IDisposable
             Api.EnumerateDeviceExtensionProperties(Physical, (byte*)null, ref extCount, pe);
         }
 
+        bool dotProduct = false;
         foreach (var e in exts)
         {
-            if (SilkMarshal.PtrToString((nint)e.ExtensionName) == "VK_EXT_mutable_descriptor_type")
+            string extName = SilkMarshal.PtrToString((nint)e.ExtensionName) ?? "";
+            if (extName == "VK_EXT_mutable_descriptor_type")
             {
                 MutableDescriptors = true;
+            }
+            else if (extName == "VK_KHR_shader_integer_dot_product")
+            {
+                dotProduct = true;
             }
         }
 
         var mutableFeatures = new PhysicalDeviceMutableDescriptorTypeFeaturesEXT { SType = StructureType.PhysicalDeviceMutableDescriptorTypeFeaturesExt, MutableDescriptorType = true };
+        // dot4add_i8packed / dot4add_u8packed compile to OpSDot / OpUDot (SPV_KHR_integer_dot_product).
+        var dotFeatures = new PhysicalDeviceShaderIntegerDotProductFeatures { SType = StructureType.PhysicalDeviceShaderIntegerDotProductFeatures, ShaderIntegerDotProduct = true };
+        if (dotProduct)
+        {
+            v12.PNext = &dotFeatures;
+        }
+
         if (MutableDescriptors)
         {
+            mutableFeatures.PNext = dotProduct ? &dotFeatures : null;
             v12.PNext = &mutableFeatures;
         }
 
@@ -346,19 +360,32 @@ public sealed unsafe partial class VkContext : IDisposable
             ShaderFloat64 = query.Features.ShaderFloat64,
         };
         nint mutableName = SilkMarshal.StringToPtr("VK_EXT_mutable_descriptor_type");
-        byte** deviceExts = stackalloc byte*[] { (byte*)mutableName };
+        nint dotName = SilkMarshal.StringToPtr("VK_KHR_shader_integer_dot_product");
+        byte** deviceExts = stackalloc byte*[2];
+        uint deviceExtCount = 0;
+        if (MutableDescriptors)
+        {
+            deviceExts[deviceExtCount++] = (byte*)mutableName;
+        }
+
+        if (dotProduct)
+        {
+            deviceExts[deviceExtCount++] = (byte*)dotName;
+        }
+
         var dci = new DeviceCreateInfo
         {
             SType = StructureType.DeviceCreateInfo,
             PNext = &v11,
-            EnabledExtensionCount = MutableDescriptors ? 1u : 0u,
-            PpEnabledExtensionNames = MutableDescriptors ? deviceExts : null,
+            EnabledExtensionCount = deviceExtCount,
+            PpEnabledExtensionNames = deviceExtCount > 0 ? deviceExts : null,
             PEnabledFeatures = &features,
             QueueCreateInfoCount = 1,
             PQueueCreateInfos = &qci,
         };
         var result = Api.CreateDevice(Physical, &dci, null, out Device device);
         SilkMarshal.Free(mutableName);
+        SilkMarshal.Free(dotName);
         if (result != Result.Success)
         {
             return "vkCreateDevice failed: " + result;

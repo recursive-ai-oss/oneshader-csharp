@@ -91,6 +91,11 @@ internal sealed class WideTypeUse
                         }
                     }
 
+                    if (i.Op == Opcode.CallIntrinsic && i.Intrinsic is Intrinsic.Dot4AddI8Packed or Intrinsic.Dot4AddU8Packed)
+                    {
+                        use.Features |= DeviceFeatures.IntegerDotProduct;
+                    }
+
                     if (i.Op is Opcode.AtomicRmw or Opcode.AtomicCompareExchange && i.Operands.Count > 1
                         && TypeFeatures.Of(i.Operands[^1].Type, e16).HasFlag(WideTypes.Int64))
                     {
