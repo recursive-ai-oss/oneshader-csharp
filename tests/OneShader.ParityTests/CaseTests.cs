@@ -117,7 +117,7 @@ public class CaseTests
     [Fact]
     public void EveryShaderIsUsedByACase()
     {
-        var used = Corpus.CaseNames.Select(n => Corpus.Load(n).Shader).ToHashSet();
+        var used = Corpus.CaseNames.Select(n => Corpus.Load(n).Shader).Concat(Corpus.CpuOnlyNames.Select(n => Corpus.LoadCpuOnly(n).Shader)).ToHashSet();
         Assert.Equal(Corpus.ShaderPaths.OrderBy(p => p, StringComparer.Ordinal), used.OrderBy(p => p, StringComparer.Ordinal));
     }
 }

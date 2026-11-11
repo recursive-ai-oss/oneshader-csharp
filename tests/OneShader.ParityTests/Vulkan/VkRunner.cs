@@ -886,6 +886,28 @@ public static unsafe class VkRunner
             }
         }
 
+        /// <summary>True when the module declares OpCapability CooperativeMatrixKHR (6022).</summary>
+        private static bool UsesCooperativeMatrix(byte[] code)
+        {
+            // Capabilities, extensions and extended-instruction imports precede everything else in a module.
+            for (int i = 20; i + 8 <= code.Length;)
+            {
+                uint word = BitConverter.ToUInt32(code, i);
+                uint op = word & 0xFFFF;
+                int count = (int)(word >> 16);
+                if (op != 17 && op != 10 && op != 11 || count == 0)
+                {
+                    break;
+                }
+                if (op == 17 && BitConverter.ToUInt32(code, i + 4) == 6022)
+                {
+                    return true;
+                }
+                i += count * 4;
+            }
+            return false;
+        }
+
         private Pipeline CreateComputePipeline(string entry, PipelineLayout layout)
         {
             byte[] code = spirv(entry, ShaderStage.Compute);
@@ -900,6 +922,9 @@ public static unsafe class VkRunner
                     Stage = new PipelineShaderStageCreateInfo
                     {
                         SType = StructureType.PipelineShaderStageCreateInfo,
+                        // SPIR-V before 1.6 may use cooperative matrices only in pipelines that require full subgroups
+                        // (Vulkan spec, VUID-RuntimeSpirv-OpTypeCooperativeMatrixKHR-10770); the workgroup size is a multiple of the subgroup size.
+                        Flags = UsesCooperativeMatrix(code) && ctx.FullSubgroups ? (PipelineShaderStageCreateFlags)2 : 0,
                         Stage = ShaderStageFlags.ComputeBit,
                         Module = module,
                         PName = (byte*)name,

@@ -64,6 +64,16 @@ public static class DataGen
         return bytes;
     }
 
+    /// <summary>The bfloat16 bit pattern of a finite float, rounded to nearest even.</summary>
+    public static ushort ToBFloat16Bits(float f)
+    {
+        uint bits = BitConverter.SingleToUInt32Bits(f);
+        return (ushort)((bits + 0x7FFFu + ((bits >> 16) & 1u)) >> 16);
+    }
+
+    /// <summary>The float a bfloat16 bit pattern stands for.</summary>
+    public static float FromBFloat16Bits(ushort b) => BitConverter.UInt32BitsToSingle((uint)b << 16);
+
     private static uint ParseLiteral(string t)
     {
         var c = CultureInfo.InvariantCulture;
@@ -122,6 +132,24 @@ public static class DataGen
                         {
                             float f = rng.NextFloat01();
                             pair |= (uint)BitConverter.HalfToUInt16Bits((Half)(name == "h01" ? f : f * 2f - 1f)) << (16 * k);
+                        }
+                        words.Add(pair);
+                    }
+                    break;
+                }
+            case "b01":
+            case "bpm1":
+                {
+                    // bfloat16 values (the upper half of a float, rounded to nearest even), two per word (the count is even).
+                    var rng = new Rng(uint.Parse(a[0], c));
+                    int n = int.Parse(a[1], c);
+                    for (int i = 0; i < n; i += 2)
+                    {
+                        uint pair = 0;
+                        for (int k = 0; k < 2; k++)
+                        {
+                            float f = rng.NextFloat01();
+                            pair |= (uint)ToBFloat16Bits(name == "b01" ? f : f * 2f - 1f) << (16 * k);
                         }
                         words.Add(pair);
                     }
