@@ -218,6 +218,17 @@ public sealed partial class ToolTests : IDisposable
     }
 
     [Fact]
+    public void ReflectionJsonNamesFullSubgroupsForCooperativeMatrixEntryPoints()
+    {
+        string json = Path.Combine(_dir, "coop.json");
+        string spv = Path.Combine(_dir, "coop.spv");
+        var (code, _, err) = InProc("-T", "cs_6_6", "-E", "Bf16Product", "--reflect", json, "-Fo", spv, C("coop/coop_bf16.hlsl"));
+        Assert.True(code == 0, err);
+        using var doc = JsonDocument.Parse(File.ReadAllText(json));
+        Assert.Contains("FullSubgroups", doc.RootElement.GetProperty("entryPoints")[0].GetProperty("requiredFeatures").GetString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void HeapBindingFlagsMoveTheHeapsAndReflectionMarksThemUnbounded()
     {
         string json = Path.Combine(_dir, "heap.json");

@@ -32,6 +32,7 @@ public static class CpuReferences
     {
         "prefix_sum" => PrefixSum(model, data),
         "histogram" => Histogram(model, data),
+        "wgsl_shared_rw" => SharedRw(model, data),
         "image_filter" => ImageFilter(model, data),
         "particles" => Particles(model, data),
         "push_kernel" => PushKernel(model, data),
@@ -208,6 +209,19 @@ public static class CpuReferences
     }
 
     // Exclusive scan per 256-element block, and the sum of each block.
+    private static IReadOnlyList<Expectation> SharedRw(CaseModel m, CaseData d)
+    {
+        int input = Find(m, ResourceKind.Storage, 0, 0);
+        int output = Find(m, ResourceKind.Storage, 0, 1);
+        uint[] values = Words(d.Buffers[input]);
+        uint[] sums = new uint[values.Length];
+        for (int i = 0; i < sums.Length; i++)
+        {
+            sums[i] = values[i] + 1;
+        }
+        return [new Expectation(Key(m, output), Bytes(sums, d.Buffers[output].Length), ExpectKind.Exact, 0)];
+    }
+
     private static IReadOnlyList<Expectation> PrefixSum(CaseModel m, CaseData d)
     {
         int input = Find(m, ResourceKind.Storage, 0, 0);

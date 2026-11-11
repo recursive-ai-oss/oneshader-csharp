@@ -48,6 +48,7 @@ with `dxc -spirv -fspv-target-env=vulkan1.2`, and give every resource an explici
 | `compute/wave_reduce.hlsl` | Sixteen group reductions from `WaveActiveSum`/`Product`/`Min`/`Max`/`BitAnd`/`BitOr`/`BitXor` on uint, int, float and vector values | written for this repository | MIT OR Apache-2.0 |
 | `compute/wave_ballot.hlsl` | `WaveActiveBallot`, `AnyTrue`, `AllTrue`, `AllEqual`, `CountBits`, lane index and count, `WaveIsFirstLane`, `WaveReadLaneAt`: size-independent totals plus a per-lane record compared with DXC | written for this repository | MIT OR Apache-2.0 |
 | `2d/quad_ops.hlsl` | `QuadReadAcrossX`/`Y`/`Diagonal` and `QuadReadLaneAt` in a pixel shader, checked against `ddx_fine`/`ddy_fine` | written for this repository | MIT OR Apache-2.0 |
+| `compute/shared_rw_entries.hlsl` | Two entry points share a read-write structured buffer and a read-write byte-address buffer; one only reads them (every target must declare them alike in both) | written for this repository | MIT OR Apache-2.0 |
 | `compute/prefix_sum.hlsl` | Block-wise exclusive scan in group-shared memory with barriers | written for this repository | MIT OR Apache-2.0 |
 | `compute/stage_layouts.hlsl` | Constant-buffer `bool` members, `StructuredBuffer<float3>` elements, `f32tof16`/`f16tof32`, `faceforward` and `log10` in one kernel (run with the flags on and off) | written for this repository | MIT OR Apache-2.0 |
 | `compute/histogram.hlsl` | Luminance histogram with group-shared atomics into a read-write buffer | written for this repository | MIT OR Apache-2.0 |
@@ -126,6 +127,7 @@ written for this repository and licensed `MIT OR Apache-2.0`.
 | `light_cull` | `compute/light_cull.hlsl` | dispatch, 512 clusters, 40 lights | buffers exact, CPU result |
 | `depth_bounds` | `compute/depth_bounds.hlsl` | dispatch, 64 tiles | buffer exact, CPU result |
 | `prefix_sum` | `compute/prefix_sum.hlsl` | dispatch | buffers exact, CPU result |
+| `wgsl_shared_rw` | `compute/shared_rw_entries.hlsl` | dispatch of the read-only entry | buffer exact, CPU result |
 | `types_half_math`, `types_int16`, `types_double_math`, `types_int64`, `types_int64_atomic`, `types_min_precision` | `types/*.hlsl` | dispatch; the first two define `ONESHADER_16BIT=1` (16-bit types on for DXC and for this compiler; the shader sees the define too) | buffers exact vs DXC; WGSL (half) and Metal (half, int16, int64_atomic) compare within the stated tolerances; `types_min_precision` is marked `relaxed` and compared on SPIR-V only |
 | `spec_const_compute`, `spec_const_compute_set` | `compute/spec_const_compute.hlsl` | dispatch, 2 groups of 16; the second sets every constant with `spec NAME : VALUE` lines | buffers exact vs DXC and vs the CPU result |
 | `spec_const_pixel`, `spec_const_pixel_set` | `2d/spec_const_pixel.hlsl` | draw; the second overrides all three constants | image, tolerance 1 |

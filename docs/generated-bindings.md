@@ -275,7 +275,7 @@ A buffer member of a sized type is generated at its DXC offset with the matching
 `int64_t` `long`, `uint64_t` `ulong`, `double` `double` (min-precision types without 16-bit types are `float`/`int`/`uint`). Vectors of these have no
 `System.Numerics` form, so they are one field per component: `half3 b` becomes `b_X`, `b_Y`, `b_Z` (each at its own offset). A matrix of a 16-bit or 64-bit element is an
 error that says to split it (only float matrices up to 4x4 are generated). Each entry class gets `RequiredFeatures` (a `DeviceFeatures` constant) beside `SubgroupOperations`,
-and its `Layout` carries it; enable the Vulkan features it names (or request `shader-f16` on WebGPU) when creating the device. Turn the types on with
+and its `Layout` carries it; enable the Vulkan features it names (or request `shader-f16` on WebGPU) when creating the device. `DeviceFeatures.FullSubgroups` is the exception: it is not a device feature but means "create this entry point's Vulkan pipeline with `VK_PIPELINE_SHADER_STAGE_CREATE_REQUIRE_FULL_SUBGROUPS_BIT`" (set for cooperative-matrix entry points). Turn the types on with
 `<OneShaderEnable16BitTypes>true</OneShaderEnable16BitTypes>` or `Enable16BitTypes="true"` on a `OneShader` item.
 
 ## Layout rules

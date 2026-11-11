@@ -101,7 +101,7 @@ with an int32 accumulator) are refused with OSH0337 for now.
 `bfloat16_t` is `OpTypeFloat 16 BFloat16KHR` (capability `BFloat16TypeKHR`, `SPV_KHR_bfloat16`; with cooperative matrices also
 `BFloat16CooperativeMatrixKHR`). Arithmetic is done in float: operands convert to float, results convert back, rounding to nearest even; conversions to and from
 anything but float go through float, because `OpFConvert` between bfloat16 and other widths is not allowed. Vectors and matrices of bfloat16 are error OSH0311.
-Reflection `DeviceFeatures`: `CooperativeMatrix`, `VulkanMemoryModel`, `BFloat16`, `BFloat16CooperativeMatrix` (bfloat16 buffers also set `StorageBuffer16`).
+Reflection `DeviceFeatures`: `CooperativeMatrix`, `VulkanMemoryModel`, `FullSubgroups` (set exactly on the entry points that use cooperative matrices: create their pipeline with `REQUIRE_FULL_SUBGROUPS`; it travels with the device features but is a pipeline creation flag), `BFloat16`, `BFloat16CooperativeMatrix` (bfloat16 buffers also set `StorageBuffer16`).
 The corpus cases `coop_f16`, `coop_bf16` and `coop_layouts` run on a Vulkan device against a CPU result (DXC cannot compile this surface).
 
 ## Debug information

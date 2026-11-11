@@ -35,6 +35,11 @@ Code is in `src/OneShader/Wgsl/`; naga validates every corpus entry point (`test
 - **Entry names:** the HLSL name, with anything that is not a letter, digit or underscore turned into an underscore and a trailing
   underscore added to names WGSL reserves or predeclares (`loop` becomes `loop_`): `WgslBackend.EntryFunctionName`, which reflection and the
   generated `WgslEntryPoint` use.
+- **Buffer access:** a storage buffer's access mode comes from its HLSL type, not from what an entry point does with it: `RWStructuredBuffer` and
+  `RWByteAddressBuffer` are `var<storage, read_write>` in every entry point of the file, `StructuredBuffer` and `ByteAddressBuffer` are
+  `var<storage, read>`. Entry points of one file share bind group layouts, and WebGPU rejects a `storage` layout entry against a shader that
+  declares the buffer `read`; `TryToWebGpu` gives `storage` for the first kind and `read-only-storage` for the second. The one exception is a vertex
+  entry point, where WGSL forbids `read_write` storage: an unwritten read-write buffer is declared `read` there.
 - **Textures:** a texture used with a comparison sampler is a depth texture; storage textures need `[[vk::image_format]]` and take
   `read`, `write` or `read_write` from how the entry point uses them.
 - **Derivatives:** pixel shaders that sample or take derivatives start with `diagnostic(off, derivative_uniformity);`, since HLSL allows
