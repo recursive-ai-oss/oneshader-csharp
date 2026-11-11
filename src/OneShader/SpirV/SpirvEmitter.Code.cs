@@ -627,6 +627,23 @@ internal sealed partial class SpirvEmitter
     {
         uint p = Ptr(i.Operands[0], out uint pointee);
         uint want = TypeId(i.Type);
+        var access = SharedMemoryAccess(i.Operands[0]);
+        if (access.Length > 0)
+        {
+            // Vulkan memory model: the loaded value may be read by or from other invocations, which the memory operand says.
+            uint shared = Emit(Op.Load, pointee, [p, .. access]);
+            if (pointee == want)
+            {
+                Finish(i, shared);
+            }
+            else
+            {
+                Finish(i, LayoutToPlain(shared, pointee, i.Type));
+            }
+
+            return;
+        }
+
         if (pointee == want)
         {
             Direct(i, Op.Load, want, p);
@@ -655,6 +672,13 @@ internal sealed partial class SpirvEmitter
         if (TypeId(value.Type) != pointee)
         {
             v = PlainToLayout(v, value.Type, pointee);
+        }
+
+        var access = SharedMemoryAccess(i.Operands[0]);
+        if (access.Length > 0)
+        {
+            SpirvModule.Put(_s.Code, Op.Store, [p, v, .. access]);
+            return;
         }
 
         SpirvModule.Put(_s.Code, Op.Store, p, v);
@@ -816,6 +840,9 @@ internal sealed partial class SpirvEmitter
                 return true;
             case ArrayType a:
                 cur = a.Element;
+                return true;
+            case CooperativeMatrixType cm:
+                cur = cm.Element;
                 return true;
             case VectorType v:
                 cur = v.Element;
@@ -1418,6 +1445,17 @@ internal sealed partial class SpirvEmitter
             return v;
         }
 
+        // SPV_KHR_bfloat16 converts only to and from binary32: any other source or target goes through float.
+        if (fs.ScalarKind == ScalarKind.BFloat16 && ts.ScalarKind != ScalarKind.Float)
+        {
+            return CastScalars(CastScalars(v, fs, ScalarType.Float, n), ScalarType.Float, ts, n);
+        }
+
+        if (ts.ScalarKind == ScalarKind.BFloat16 && fs.ScalarKind != ScalarKind.Float)
+        {
+            return CastScalars(CastScalars(v, fs, ScalarType.Float, n), ScalarType.Float, ts, n);
+        }
+
         NK fk = KindOf(fs);
         NK tk = KindOf(ts);
         if (fk == NK.Bool)
@@ -1528,6 +1566,12 @@ internal sealed partial class SpirvEmitter
         if (flags.HasFlag(BarrierFlags.DeviceMemory))
         {
             semantics |= 0x8 | 0x40 | 0x800; // AcquireRelease | UniformMemory (buffers) | ImageMemory
+        }
+
+        if (_vulkanMemoryModel && semantics != 0)
+        {
+            // Vulkan memory model: acquire-release alone orders nothing for non-private accesses until writes are made available and visible.
+            semantics |= SemanticsMakeAvailable | SemanticsMakeVisible;
         }
 
         bool device = flags.HasFlag(BarrierFlags.DeviceMemory);

@@ -76,6 +76,11 @@ internal sealed partial class Checker
             if (i == 0)
             {
                 sym = scope.Lookup(part);
+                if (sym is null && name.Parts.Count == 2 && CooperativeNames.ByName(part) is { } builtinEnum)
+                {
+                    // MatrixUse and MatrixLayout exist without a declaration, unless the shader declares its own.
+                    sym = new TypeSymbol(part, name.Span, builtinEnum);
+                }
             }
             else if (sym is NamespaceSymbol ns)
             {
@@ -261,7 +266,18 @@ internal sealed partial class Checker
                 }
             }
 
+            if (elem.ScalarKind == ScalarKind.BFloat16)
+            {
+                Err(SemanticCodes.BadType, "bfloat16_t has no vector or matrix types. Use an array of bfloat16_t, or float vectors.", n.Span);
+                return HlslType.Error;
+            }
+
             return name == "vector" ? HlslType.Vector(elem, a) : HlslType.Matrix(elem, a, b);
+        }
+
+        if (name == "CooperativeMatrix")
+        {
+            return ResolveCooperativeMatrix(n);
         }
 
         if (BuiltinTypes.TryGetResource(name, out var rk))
@@ -282,6 +298,12 @@ internal sealed partial class Checker
             if (n.Arguments.Count > 0)
             {
                 Err(SemanticCodes.BadType, "The type '" + name + "' takes no template arguments.", n.Span);
+            }
+
+            if (bt is VectorType or MatrixType && bt.ScalarElement!.ScalarKind == ScalarKind.BFloat16)
+            {
+                Err(SemanticCodes.BadType, "bfloat16_t has no vector or matrix types. Use an array of bfloat16_t, or float vectors.", n.Name.Span);
+                return HlslType.Error;
             }
 
             return CanonType(bt);

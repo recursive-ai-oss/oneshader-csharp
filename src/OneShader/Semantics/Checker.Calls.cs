@@ -57,6 +57,9 @@ internal enum BuiltinKind
     /// <summary><c>ConsumeStructuredBuffer.Consume</c>.</summary>
     Consume,
 
+    /// <summary>A cooperative-matrix member: Load, Store, Length, Zero or MulAdd (<see cref="BuiltinCall.Name"/>).</summary>
+    CooperativeMatrix,
+
     /// <summary>A barrier; <see cref="BuiltinCall.Extra"/> holds the <see cref="BarrierFlags"/>.</summary>
     Barrier,
 
@@ -221,6 +224,11 @@ internal sealed partial class Checker
             return CallOverloaded(c.Span, name, mg, c.Arguments, memberArgs, info, c.TemplateArguments, recv);
         }
 
+        if (ne.Name.Parts.Count == 2 && !ne.Name.IsGlobal && _scope.Lookup(ne.Name.Parts[0].Text) is TypeSymbol { Type: CooperativeMatrixType staticOwner })
+        {
+            return CheckCooperativeStaticByName(c, ne, staticOwner, info);
+        }
+
         var sym = LookupQualified(ne.Name, out _);
         var at = CheckArgs(c);
         if (c.TemplateArguments.Count > 0 && sym is not FunctionGroup)
@@ -287,6 +295,11 @@ internal sealed partial class Checker
         for (int i = 0; i < at.Length; i++)
         {
             at[i] = ce.Arguments[i] is InitializerListExpression ? HlslType.Error : CheckExpr(ce.Arguments[i]);
+        }
+
+        if (ce.StaticMember is not null)
+        {
+            return CheckCooperativeStatic(ce, target, at, InfoOf(ce));
         }
 
         return CheckConstructCore(ce.Span, target, ce.Arguments, at, InfoOf(ce));

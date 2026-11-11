@@ -86,6 +86,9 @@ public static class SemanticCodes
     /// <summary><c>ResourceDescriptorHeap</c> or <c>SamplerDescriptorHeap</c> is used in a way that cannot work.</summary>
     public const string BadDescriptorHeap = "OSH0336";
 
+    /// <summary>A cooperative matrix type or member is used in a way that cannot work.</summary>
+    public const string BadCooperativeMatrix = "OSH0337";
+
     /// <summary>An attribute is unknown or misused.</summary>
     public const string BadAttribute = "OSH0340";
 

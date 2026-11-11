@@ -374,6 +374,13 @@ internal sealed partial class MslEmitter
             return T(to) + "()";
         }
 
+        // bfloat converts to and from float; every other type goes through float.
+        if (from is ScalarType && to is ScalarType && (fs.ScalarKind == ScalarKind.BFloat16) != (ts.ScalarKind == ScalarKind.BFloat16)
+            && (fs.ScalarKind == ScalarKind.BFloat16 ? ts : fs).ScalarKind != ScalarKind.Float)
+        {
+            return ConvertExpr(ConvertExpr(e, from, ScalarType.Float), ScalarType.Float, to);
+        }
+
         if (from is MatrixType fm && to is MatrixType tm && IsFullMatrix(fm) && IsFullMatrix(tm) && fm.Rows == tm.Rows && fm.Columns == tm.Columns)
         {
             string a = Atom(e, from);

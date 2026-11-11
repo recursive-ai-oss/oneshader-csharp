@@ -154,6 +154,7 @@ public sealed class Constant : IrValue
             ScalarKind.Double => BitConverter.UInt64BitsToDouble(Bits),
             ScalarKind.Float or ScalarKind.LiteralFloat => BitConverter.UInt32BitsToSingle((uint)Bits),
             ScalarKind.Half or ScalarKind.Min16Float or ScalarKind.Min10Float => (double)BitConverter.UInt16BitsToHalf((ushort)Bits),
+            ScalarKind.BFloat16 => BFloat16Math.ToSingle(Bits),
             ScalarKind.Int or ScalarKind.Int16 or ScalarKind.Min16Int => (int)Bits,
             ScalarKind.Int64 => (long)Bits,
             _ => Bits,

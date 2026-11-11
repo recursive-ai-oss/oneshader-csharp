@@ -46,6 +46,9 @@ public enum TypeKind
 
     /// <summary>The built-in <c>ResourceDescriptorHeap</c> / <c>SamplerDescriptorHeap</c> objects, or one element of them before it is given a resource type.</summary>
     DescriptorHeap,
+
+    /// <summary>A subgroup-scope cooperative matrix (<c>CooperativeMatrix&lt;T, Rows, Columns, Use&gt;</c>).</summary>
+    CooperativeMatrix,
 }
 
 /// <summary>The scalar types of HLSL, including the untyped literal types used during type checking.</summary>
@@ -98,6 +101,9 @@ public enum ScalarKind
 
     /// <summary>A floating-point literal that has not been given a concrete type yet.</summary>
     LiteralFloat,
+
+    /// <summary><c>bfloat16_t</c>: 1 sign, 8 exponent and 7 mantissa bits. A storage and conversion type: arithmetic converts to float first.</summary>
+    BFloat16,
 }
 
 /// <summary>Row- or column-major storage of a matrix in a buffer.</summary>
@@ -290,7 +296,7 @@ public sealed class ScalarType : HlslType
 
     /// <summary>True for the floating-point scalars and the float literal type.</summary>
     public bool IsFloatingPoint => ScalarKind is ScalarKind.Half or ScalarKind.Float or ScalarKind.Double
-        or ScalarKind.Min16Float or ScalarKind.Min10Float or ScalarKind.LiteralFloat;
+        or ScalarKind.Min16Float or ScalarKind.Min10Float or ScalarKind.LiteralFloat or ScalarKind.BFloat16;
 
     /// <summary>True for the integer scalars (not <c>bool</c>) and the integer literal type.</summary>
     public bool IsInteger => !IsFloatingPoint && ScalarKind != ScalarKind.Bool;
@@ -312,7 +318,7 @@ public sealed class ScalarType : HlslType
     /// </summary>
     public int StorageBytes(bool enable16BitTypes) => ScalarKind switch
     {
-        ScalarKind.Int16 or ScalarKind.UInt16 => 2,
+        ScalarKind.Int16 or ScalarKind.UInt16 or ScalarKind.BFloat16 => 2,
         ScalarKind.Int64 or ScalarKind.UInt64 or ScalarKind.Double => 8,
         ScalarKind.Half or ScalarKind.Min16Float or ScalarKind.Min10Float or ScalarKind.Min16Int
             or ScalarKind.Min16UInt => enable16BitTypes ? 2 : 4,
@@ -336,6 +342,7 @@ public sealed class ScalarType : HlslType
         ScalarKind.Min10Float => "min10float",
         ScalarKind.Min16Int => "min16int",
         ScalarKind.Min16UInt => "min16uint",
+        ScalarKind.BFloat16 => "bfloat16_t",
         ScalarKind.LiteralInt => "<int literal>",
         _ => "<float literal>",
     };
@@ -421,6 +428,62 @@ public sealed class MatrixType : HlslType
     /// <inheritdoc/>
     public override string ToString() =>
         Element + Rows.ToString(CultureInfo.InvariantCulture) + "x" + Columns.ToString(CultureInfo.InvariantCulture);
+}
+
+/// <summary>The role of a cooperative matrix in a product: left operand, right operand or accumulator/result.</summary>
+public enum CooperativeMatrixUse
+{
+    /// <summary><c>MatrixUse::A</c>: the left operand (Rows x K).</summary>
+    A = 0,
+
+    /// <summary><c>MatrixUse::B</c>: the right operand (K x Columns).</summary>
+    B = 1,
+
+    /// <summary><c>MatrixUse::Accumulator</c>: the addend and the result.</summary>
+    Accumulator = 2,
+}
+
+/// <summary>
+/// A subgroup-scope cooperative matrix: <c>CooperativeMatrix&lt;T, Rows, Columns, Use&gt;</c>. Its elements are spread across the invocations of
+/// a subgroup (SPIR-V <c>OpTypeCooperativeMatrixKHR</c>; Metal an arrangement of 8x8 <c>simdgroup_matrix</c> tiles). It exists as a value and in
+/// function-local variables only.
+/// </summary>
+public sealed class CooperativeMatrixType : HlslType
+{
+    internal CooperativeMatrixType(ScalarType element, int rows, int columns, CooperativeMatrixUse use)
+    {
+        ArgumentNullException.ThrowIfNull(element);
+        Element = element;
+        Rows = rows;
+        Columns = columns;
+        Use = use;
+    }
+
+    /// <summary>The element type.</summary>
+    public ScalarType Element { get; }
+
+    /// <summary>Number of rows.</summary>
+    public int Rows { get; }
+
+    /// <summary>Number of columns.</summary>
+    public int Columns { get; }
+
+    /// <summary>The role of the matrix.</summary>
+    public CooperativeMatrixUse Use { get; }
+
+    /// <inheritdoc/>
+    public override TypeKind Kind => TypeKind.CooperativeMatrix;
+
+    /// <inheritdoc/>
+    public override bool Equals(HlslType? other) =>
+        other is CooperativeMatrixType m && m.Element == Element && m.Rows == Rows && m.Columns == Columns && m.Use == Use;
+
+    /// <inheritdoc/>
+    public override int GetHashCode() => HashCode.Combine(11, (int)Element.ScalarKind, Rows, Columns, (int)Use);
+
+    /// <inheritdoc/>
+    public override string ToString() => "CooperativeMatrix<" + Element + ", " + Rows.ToString(CultureInfo.InvariantCulture) + ", "
+        + Columns.ToString(CultureInfo.InvariantCulture) + ", MatrixUse::" + Use + ">";
 }
 
 /// <summary>An array. <see cref="Length"/> 0 means unsized (runtime-sized in a buffer).</summary>
