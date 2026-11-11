@@ -5,6 +5,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.4.1]
+
 - Fixed: the Metal (MSL) output could drop a `continue` that sits in an `if` in the middle of a loop body, so the code after the `if` ran for elements that should have been skipped. Every 1.x release up to 1.4.0 is affected: `for`, `while` and `do`/`while` loops (with or without `[unroll]`), with the optimizer on or off, whenever a guarded `continue` is followed by more statements (`if (x >= n) { continue; } out[x] = 1;`). Loops where the `if` is the last statement, `break` and `return` were already correct, and so were the SPIR-V and WGSL outputs. Recompile the shaders that have such a loop and ship the new MSL.
 
 ## [1.4.0]
@@ -99,6 +101,7 @@ First preview.
 - MSBuild integration: `*.hlsl` compiled during `dotnet build`, errors on the HLSL line, embedded SPIR-V and generated C# structs, vertex inputs and binding constants.
 - Known limits: SPIR-V only; single resources only (no resource arrays); no templates, member functions, operator overloads or wave intrinsics yet; `dotnet build` only.
 
+[1.4.1]: https://github.com/recursive-ai-oss/oneshader-csharp/releases/tag/v1.4.1
 [1.4.0]: https://github.com/recursive-ai-oss/oneshader-csharp/releases/tag/v1.4.0
 [1.3.0]: https://github.com/recursive-ai-oss/oneshader-csharp/releases/tag/v1.3.0
 [1.2.0]: https://github.com/recursive-ai-oss/oneshader-csharp/releases/tag/v1.2.0
