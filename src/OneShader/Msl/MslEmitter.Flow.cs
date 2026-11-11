@@ -436,8 +436,19 @@ internal sealed partial class MslEmitter
     private Next EmitSelection(BasicBlock b, Instruction t, BasicBlock? merge, List<BasicBlock> stops)
     {
         string cond = V(t.Operands[0]);
-        var armStops = new List<BasicBlock>(stops);
-        if (merge is not null)
+        var armStops = new List<BasicBlock>(stops.Count + 1);
+        var enclosingContinue = InnermostLoop()?.Continue;
+        foreach (var s in stops)
+        {
+            // An arm that reaches the loop's continue block while this if has a different join is a `continue` in the middle of the
+            // body: falling "to the stop" would resume after the if, so it has to be written out (see Jump).
+            if (s != enclosingContinue || s == merge)
+            {
+                armStops.Add(s);
+            }
+        }
+
+        if (merge is not null && !armStops.Contains(merge))
         {
             armStops.Add(merge);
         }
