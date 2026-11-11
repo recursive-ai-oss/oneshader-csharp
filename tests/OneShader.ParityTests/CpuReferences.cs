@@ -43,6 +43,7 @@ public static class CpuReferences
         "wave_reduce" => WaveReduce(model, data),
         "wave_ballot" => WaveBallot(model, data),
         "spec_const_compute" => SpecConstCompute(model, data),
+        "continue_unrolled" => ContinueUnrolled(model, data),
         _ => throw new ArgumentException($"unknown CPU reference '{name}'"),
     };
 
@@ -70,6 +71,28 @@ public static class CpuReferences
     }
 
     private static string Key(CaseModel m, int index) => m.Resources[index].OutputKey;
+
+    // Only the Count.x by Count.y block of the 4 x 4 output is written; the 7s the case starts with must survive everywhere else.
+    private static IReadOnlyList<Expectation> ContinueUnrolled(CaseModel m, CaseData d)
+    {
+        int counts = Find(m, ResourceKind.Uniform, 0, 0);
+        int output = Find(m, ResourceKind.Storage, 0, 1);
+        uint[] count = Words(d.Buffers[counts]);
+        uint[] result = new uint[16];
+        Array.Fill(result, 7u);
+        for (uint row = 0; row < 4; row++)
+        {
+            for (uint col = 0; col < 4; col++)
+            {
+                if (row < count[0] && col < count[1])
+                {
+                    result[row * 4 + col] = 1;
+                }
+            }
+        }
+
+        return [new Expectation(Key(m, output), Bytes(result, d.Buffers[output].Length), ExpectKind.Exact, 0)];
+    }
 
     // The specialization-constant kernel: the case's 'spec' lines override the defaults the shader declares.
     private static IReadOnlyList<Expectation> SpecConstCompute(CaseModel m, CaseData d)

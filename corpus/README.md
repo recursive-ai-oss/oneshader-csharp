@@ -59,6 +59,8 @@ with `dxc -spirv -fspv-target-env=vulkan1.2`, and give every resource an explici
 | `lang/templates.hlsl` | Function and struct templates: deduced and explicit arguments, value parameters, defaults | written for this repository | MIT OR Apache-2.0 |
 | `lang/members.hlsl` | Member functions, this, static members, calls on buffer elements | written for this repository | MIT OR Apache-2.0 |
 | `lang/switch_flow.hlsl` | `switch` with fall-through between cases, stacked labels, a `default` in the middle, negative labels, `return` from a case and a switch inside a loop with `continue` | written for this repository | MIT OR Apache-2.0 |
+| `lang/loop_exits.hlsl` | guarded `continue`, `break` and `return` in `[unroll]`, `[loop]`, `while` and `do`/`while` loops, nested ifs and else arms, a switch in a loop, nested loops, helpers and an early `return` from the entry point | written for this repository | MIT OR Apache-2.0 |
+| `lang/continue_unrolled.hlsl` | guarded `continue` in nested `[unroll]` loops with a runtime bound | written for this repository, reduced from a user report | MIT OR Apache-2.0 |
 | `lang/precise_math.hlsl` | `precise` variables and functions: a multiply-add that differs when fused, `(x + y) - x`, Kahan summation | written for this repository | MIT OR Apache-2.0 |
 | `lang/inheritance.hlsl` | Struct inheritance: inherited members, hiding, base-typed parameters, buffers of derived structs | written for this repository | MIT OR Apache-2.0 |
 | `lang/operators.hlsl` | Member operator overloads: arithmetic, bitwise, comparison, subscript, call | written for this repository | MIT OR Apache-2.0 |
@@ -108,6 +110,8 @@ written for this repository and licensed `MIT OR Apache-2.0`.
 | `bindless_heap` | `lang/bindless_heap.hlsl` | dispatch; a mixed resource heap (mutable descriptor binding) and a sampler heap | buffers, float tolerance 5e-4 on Metal (WGSL targets skip it: OSH5202) |
 | `lang_statics_and_literals` | `lang/statics_and_literals.hlsl` | dispatch | buffer exact vs DXC |
 | `lang_switch_flow` | `lang/switch_flow.hlsl` | dispatch, 64 threads | buffers exact vs DXC |
+| `lang_loop_exits` | `lang/loop_exits.hlsl` | dispatch, 64 threads; the output starts as 7s so skipped writes show | buffer exact vs DXC |
+| `lang_continue_unrolled` | `lang/continue_unrolled.hlsl` | dispatch, one thread, Count = (3, 2); the output starts as 7s | buffer exact vs DXC and vs the CPU result |
 | `lang_precise_math` | `lang/precise_math.hlsl` | dispatch, one thread | buffer exact vs DXC (the WGSL targets skip it: OSH5205) |
 | `append_consume` | `compute/append_consume.hlsl` | dispatch, 56 items, 48 consumed and appended when even | buffers exact vs DXC (result list as a sorted set), counters |
 | `cull_instances` | `compute/cull_instances.hlsl` | dispatch, 1000 instances | buffers exact (index list as a sorted set), CPU result |

@@ -1,0 +1,7 @@
+# Guarded continue, break and return in unrolled, plain and nested loops, helpers and the entry point; the output starts as 7s
+# so slots an early return must not write are visible. 64 threads.
+case lang_loop_exits
+shader lang/loop_exits.hlsl
+dispatch CSMain 4 1 1
+storage 0 0 : @u32(13,64,100)
+storage 0 1 out : @fill(7,1536)

@@ -1,0 +1,7 @@
+# Guarded continue in nested [unroll] loops; Count = (3, 2), so the output keeps its 7s outside a 3 x 2 block.
+case lang_continue_unrolled
+shader lang/continue_unrolled.hlsl
+dispatch Main 1 1 1
+uniform 0 0 : 3u 2u
+storage 0 1 out : @fill(7,16)
+expect continue_unrolled

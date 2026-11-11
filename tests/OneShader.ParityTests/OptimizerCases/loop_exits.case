@@ -1,0 +1,6 @@
+# Loop exits (guarded continue, break, return): optimizer on, optimizer off and the reference compiler must agree.
+case opt_loop_exits
+shader lang/loop_exits.hlsl
+dispatch CSMain 4 1 1
+storage 0 0 : @u32(13,64,100)
+storage 0 1 out : @fill(7,1536)
