@@ -12,6 +12,7 @@
       DebugInfo           true|full|lines|false   - source-level debug information in the embedded blobs (overrides $(OneShaderDebugInfo))
       Optimize            true|false - false compiles without the optimizer (overrides $(OneShaderOptimize))
       Namespace           overrides $(OneShaderNamespace) for this file
+      Accessibility       public|internal - overrides $(OneShaderAccessibility) for this file
       ClassName           overrides the class name taken from the file name
       Axes                NAME;NAME=A|B|C        - keyword axes; every combination is compiled as a variant (see below)
       MaxVariants         largest number of variants for this file (default $(OneShaderMaxVariants), then 64)
@@ -19,6 +20,8 @@
     Project properties:
       EnableDefaultOneShaderItems  false stops **/*.hlsl from being added as OneShader items
       OneShaderNamespace           default namespace of generated code (default: $(RootNamespace).Shaders)
+      OneShaderAccessibility       public (default) or internal: accessibility of the generated top-level class of every shader.
+                                   internal keeps all generated code out of the assembly's public API; any other value is error OSH0901.
       OneShaderTargets             targets to compile and embed, ';'-separated: SpirV, Msl, Wgsl (default: SpirV)
       OneShaderEnable16BitTypes    true: half/min16*/int16_t family are native 16-bit types, as DXC's -enable-16bit-types (default: false)
       OneShaderDebugInfo           true|full: NonSemantic.Shader.DebugInfo.100 in SPIR-V and #line in MSL (RenderDoc, Nsight, Xcode);
@@ -53,6 +56,7 @@
                     OutputDirectory="$(OneShaderOutputDirectory)"
                     ProjectDirectory="$(MSBuildProjectDirectory)"
                     DefaultNamespace="$(OneShaderNamespace)"
+                    DefaultAccessibility="$(OneShaderAccessibility)"
                     DefaultTargets="$(OneShaderTargets)"
                     DefaultEnable16BitTypes="$(OneShaderEnable16BitTypes)"
                     DefaultDebugInfo="$(OneShaderDebugInfo)"

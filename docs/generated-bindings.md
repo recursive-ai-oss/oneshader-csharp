@@ -25,9 +25,9 @@ Entry points are found from `[shader("vertex")]`, `[shader("pixel")]` and `[shad
 attributes. Item metadata can list them explicitly instead.
 
 Item metadata, all optional: `EntryPoints="VSMain:Vertex;PSMain:Pixel"`, `Defines="A;B=2"`,
-`IncludeDirectories="dir;dir"` (searched after the including file's folder), `Namespace`, `ClassName`,
+`IncludeDirectories="dir;dir"` (searched after the including file's folder), `Namespace`, `ClassName`, `Accessibility` (`public` or `internal`),
 `Targets`, and for variants `Axes` and `MaxVariants` (see Variants below).
-Project properties: `OneShaderNamespace` (default `$(RootNamespace).Shaders`), `OneShaderDefines`,
+Project properties: `OneShaderNamespace` (default `$(RootNamespace).Shaders`), `OneShaderAccessibility`, `OneShaderDefines`,
 `OneShaderIncludeDirectories`, `OneShaderMaxVariants`. Listing a file as a `OneShader` item (to give it metadata) is
 fine: the default glob skips files that are already listed. A shader is compiled again only when it, a file it includes, the
 options or the compiler changed.
@@ -41,7 +41,10 @@ Shaders/Sprite.hlsl(12,17): error OSH0204: 'Atlass' is not declared. Did you mea
 ## What is generated
 
 One `static partial class` per HLSL file, named after the file (see Names below), in the namespace
-`<RootNamespace>.Shaders` (overridable). Nothing uses reflection or file I/O; output is
+`<RootNamespace>.Shaders` (overridable). The class is `public` by default; `OneShaderAccessibility=internal`
+(or `Accessibility="internal"` on an item, which wins over the property) makes it `internal`, so a library can use
+shaders without adding them to its public API. The nested members are unchanged: they sit inside the internal class and
+are not visible outside the assembly. Values are case-insensitive; any other value is error OSH0901. Nothing uses reflection or file I/O; output is
 deterministic.
 
 - **Constant buffers**: one blittable struct per `cbuffer` / `ConstantBuffer<T>`, named after it,

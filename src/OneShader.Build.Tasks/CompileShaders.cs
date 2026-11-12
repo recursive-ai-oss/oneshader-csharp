@@ -46,6 +46,9 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
     /// <summary>Namespace for shaders whose item has no <c>Namespace</c> metadata.</summary>
     public string DefaultNamespace { get; set; } = "";
 
+    /// <summary>Accessibility of the generated top-level types for items without <c>Accessibility</c> metadata: <c>public</c> (default when empty) or <c>internal</c>. Anything else is error OSH0901.</summary>
+    public string DefaultAccessibility { get; set; } = "";
+
     /// <summary>Semicolon-separated targets to compile for (<c>SpirV</c>, <c>Msl</c>, <c>Wgsl</c>); empty means SPIR-V only.</summary>
     public string DefaultTargets { get; set; } = "";
 
@@ -222,6 +225,7 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
         public string OutputPath = "";
         public string Namespace = "";
         public string ClassName = "";
+        public bool Internal;
         public List<KeyValuePair<string, string?>> Defines = [];
         public List<string> IncludeDirs = [];
         public List<EntryPointRequest> Entries = [];
@@ -265,6 +269,11 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
             return;
         }
 
+        if (!TryAccessibility(item, full, out bool isInternal))
+        {
+            return;
+        }
+
         if (!TryEnable16(item, full, out bool enable16))
         {
             return;
@@ -286,7 +295,7 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
         {
             group.Jobs.Add(new Job
             {
-                Full = full, Relative = relative, OutputPath = outputPath, Namespace = ns, ClassName = className,
+                Full = full, Relative = relative, OutputPath = outputPath, Namespace = ns, ClassName = className, Internal = isInternal,
                 Defines = defines, IncludeDirs = includeDirs, Entries = entries, Targets = targets, Enable16BitTypes = enable16,
                 DebugInfo = debugInfo, Optimize = optimize,
             });
@@ -299,7 +308,7 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
         string variantDir = outputPath[..^".oneshader".Length] + ".variants";
         var manifest = new StringBuilder("oneshader-reflection 1\n");
         manifest.Append("source name=").Append(Quote(relative)).Append('\n');
-        manifest.Append("generate namespace=").Append(Quote(ns)).Append(" class=").Append(Quote(className)).Append('\n');
+        manifest.Append("generate namespace=").Append(Quote(ns)).Append(" class=").Append(Quote(className)).Append(isInternal ? " access=\"internal\"" : "").Append('\n');
         manifest.Append("variantset mode=").Append(plan.Named ? "names" : "axes").Append(" count=").Append(plan.Variants.Count.ToString(CultureInfo.InvariantCulture)).Append('\n');
         foreach (var axis in plan.Axes)
         {
@@ -319,7 +328,7 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
             jobDefines.AddRange(v.Defines);
             group.Jobs.Add(new Job
             {
-                Full = full, Relative = relative, Namespace = ns, ClassName = className,
+                Full = full, Relative = relative, Namespace = ns, ClassName = className, Internal = isInternal,
                 OutputPath = Path.Combine(variantDir, v.Key + ".oneshader"),
                 Defines = jobDefines, IncludeDirs = includeDirs, Entries = entries, Targets = targets, Enable16BitTypes = enable16,
                 DebugInfo = debugInfo, Optimize = optimize,
@@ -438,7 +447,7 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
         string full = job.Full;
         string relative = job.Relative;
         string outputPath = job.OutputPath;
-        string optionsHash = HashOptions(relative, job.Namespace, job.ClassName, job.Defines, job.IncludeDirs, job.Entries, job.Targets, job.Enable16BitTypes, job.DebugInfo, job.Optimize);
+        string optionsHash = HashOptions(relative, job.Namespace, job.ClassName, job.Defines, job.IncludeDirs, job.Entries, job.Targets, job.Enable16BitTypes, job.DebugInfo, job.Optimize, job.Internal);
         if (TryReuse(outputPath, optionsHash, job))
         {
             Interlocked.Increment(ref _upToDate);
@@ -516,7 +525,7 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
             return null;
         }
 
-        string content = Render(result.Reflection, result.Blobs, full, relative, job.Namespace, job.ClassName, optionsHash, deps, warnings, projectDir, job.VariantKey);
+        string content = Render(result.Reflection, result.Blobs, full, relative, job.Namespace, job.ClassName, optionsHash, deps, warnings, projectDir, job.VariantKey, job.Internal);
         WriteIfChanged(outputPath, content);
         return outputPath;
     }
@@ -532,10 +541,11 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
         SortedSet<string> deps,
         List<Diagnostic> warnings,
         string projectDir,
-        string variantKey = "")
+        string variantKey = "",
+        bool isInternal = false)
     {
         var sb = new StringBuilder(ReflectionFormat.Write(reflection));
-        sb.Append("generate namespace=").Append(Quote(ns)).Append(" class=").Append(Quote(className)).Append('\n');
+        sb.Append("generate namespace=").Append(Quote(ns)).Append(" class=").Append(Quote(className)).Append(isInternal ? " access=\"internal\"" : "").Append('\n');
         if (variantKey.Length > 0)
         {
             sb.Append("variantof key=").Append(variantKey).Append('\n');
@@ -814,7 +824,8 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
         IReadOnlyList<CompileTarget>? targets = null,
         bool enable16BitTypes = false,
         DebugInfoLevel debugInfo = DebugInfoLevel.None,
-        bool optimize = true)
+        bool optimize = true,
+        bool isInternal = false)
     {
         var sb = new StringBuilder();
 
@@ -855,8 +866,33 @@ public sealed partial class CompileShaders : Task, ICancelableTask, IDisposable
             sb.Append("O0\n");
         }
 
+        if (isInternal)
+        {
+            sb.Append("AI\n");
+        }
+
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
         return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private bool TryAccessibility(ITaskItem item, string full, out bool isInternal)
+    {
+        string text = Meta(item, "Accessibility", DefaultAccessibility).Trim();
+        isInternal = false;
+        if (text.Length == 0 || text.Equals("public", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (text.Equals("internal", StringComparison.OrdinalIgnoreCase))
+        {
+            isInternal = true;
+            return true;
+        }
+
+        string source = item.GetMetadata("Accessibility").Length > 0 ? "the Accessibility metadata of this OneShader item" : "the OneShaderAccessibility property";
+        Log.LogError(null, BadMetadataCode, null, full, 0, 0, 0, 0, "OneShaderAccessibility / Accessibility is '" + text + "' (set by " + source + "). Use public or internal.");
+        return false;
     }
 
     private bool TryEnable16(ITaskItem item, string full, out bool value)

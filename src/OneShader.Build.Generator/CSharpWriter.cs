@@ -266,7 +266,7 @@ internal sealed partial class CSharpWriter
             Line("");
         }
 
-        Line("public static partial class " + Esc(_className));
+        Line((f.Internal ? "internal" : "public") + " static partial class " + Esc(_className));
         Line("{");
         _indent++;
         bool first = true;
