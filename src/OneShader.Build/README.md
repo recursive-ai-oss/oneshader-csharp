@@ -124,8 +124,8 @@ Support types (`ShaderStage`, `ResourceKind`, `VertexFormat`, `VertexAttribute`,
 `ResourceBinding`) come from `RecursiveAI.OneShader`, so a rendering layer in another assembly can
 take them. When only these are used, trimming removes the compiler from a NativeAOT app.
 
-Item metadata: `EntryPoints`, `Defines`, `IncludeDirectories`, `Namespace`, `ClassName`, `Targets`, `Axes`, `MaxVariants`, `DebugInfo`, `Optimize`.
-Properties: `EnableDefaultOneShaderItems`, `OneShaderNamespace`, `OneShaderTargets`, `OneShaderEnable16BitTypes` (item metadata `Enable16BitTypes`),
+Item metadata: `EntryPoints`, `Defines`, `IncludeDirectories`, `Namespace`, `ClassName`, `Accessibility`, `Targets`, `Axes`, `MaxVariants`, `DebugInfo`, `Optimize`.
+Properties: `EnableDefaultOneShaderItems`, `OneShaderNamespace`, `OneShaderAccessibility` (`public` by default; `internal` makes every generated top-level class internal, for libraries that must not expose it; item metadata `Accessibility`; other values are error OSH0901), `OneShaderTargets`, `OneShaderEnable16BitTypes` (item metadata `Enable16BitTypes`),
 `OneShaderDefines`, `OneShaderIncludeDirectories`, `OneShaderMaxVariants`, `OneShaderDebugInfo`, `OneShaderOptimize`. Shaders are recompiled only when they, a file they include, or the
 options change; the output is deterministic.
 

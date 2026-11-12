@@ -468,6 +468,26 @@ public sealed class PackageTests : IClassFixture<PackageFixture>
             .ToList();
 
     [Fact]
+    public void AccessibilityPropertyMakesTheGeneratedClassInternalAndABadValueIsABuildError()
+    {
+        var (blobsPub, csPub) = BuildCopy(CopySprite("access-pub"), Path.Combine(_fx.Root, "art-access-pub"));
+        var (blobsInt, csInt) = BuildCopy(CopySprite("access-int"), Path.Combine(_fx.Root, "art-access-int"), "-p:OneShaderAccessibility=internal");
+        Assert.Equal(Blobs(blobsPub), Blobs(blobsInt));
+        string pub = File.ReadAllText(csPub);
+        Assert.Contains("\npublic static partial class Sprite\n", pub, StringComparison.Ordinal);
+        Assert.Equal(pub.Replace("\npublic static partial class Sprite\n", "\ninternal static partial class Sprite\n", StringComparison.Ordinal), File.ReadAllText(csInt));
+
+        string project = CopySprite("access-bad");
+        string packages = Path.Combine(_fx.Root, "packages");
+        string a = Path.Combine(_fx.Root, "art-access-bad");
+        var restore = PackageFixture.Run(Dotnet, ["restore", "Sprite.csproj", "--source", _fx.Feed, "-v", "quiet"], project, a, packages);
+        Assert.True(restore.Code == 0, restore.Output);
+        var bad = PackageFixture.Run(Dotnet, ["build", "Sprite.csproj", "--no-restore", "-nologo", "-p:OneShaderAccessibility=Private"], project, a, packages);
+        Assert.NotEqual(0, bad.Code);
+        Assert.True(new Regex(@"Sprite\.hlsl : error OSH0901: OneShaderAccessibility / Accessibility is 'Private' \(set by the OneShaderAccessibility property\)\. Use public or internal\.", RegexOptions.None).IsMatch(bad.Output), bad.Output);
+    }
+
+    [Fact]
     public void DebugInfoEmbedsProjectRelativeSourcesAndTheGeneratedCodeOtherwiseStaysTheSame()
     {
         var (blobsA, csA) = BuildCopy(CopySprite("debug-a"), Path.Combine(_fx.Root, "art-debug-a"), "-p:OneShaderDebugInfo=true");

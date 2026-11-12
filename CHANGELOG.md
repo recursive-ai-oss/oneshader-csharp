@@ -5,6 +5,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Build package: the `OneShaderAccessibility` property (`public`, the default, or `internal`) and the `Accessibility` item metadata choose the accessibility of each generated top-level class, so a library can keep generated shader code out of its public API. The default output is byte-for-byte what it was; with `internal`, only that keyword differs. Any other value is error OSH0901 naming where it was set.
+
 ## [1.6.1]
 
 - Fixed: the WGSL output wrote the largest finite float (`FLT_MAX`, from a folded `-3.4028234663852886e38` or `-asfloat(0x7f7fffff)`) as `3.4028235E+38f`, the shortest text that reads back as that float. As a real number that text is above the largest f32, so browsers refused the shader ("value cannot be represented as 'f32'"). It is now written with its exact decimal expansion. Every other float literal is unchanged, and the new `float_extremes` corpus case checks the edge values on Vulkan, naga and in the browser. SPIR-V and MSL were not affected.

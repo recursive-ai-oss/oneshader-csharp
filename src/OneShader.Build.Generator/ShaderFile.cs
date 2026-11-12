@@ -171,6 +171,9 @@ internal sealed class ShaderFile
     public string Source = "";
     public string Namespace = "";
     public string ClassName = "";
+
+    /// <summary>True when the generated top-level type is <c>internal</c> rather than <c>public</c>.</summary>
+    public bool Internal;
     public List<ResourceNode> Resources = new List<ResourceNode>();
     public List<EntryNode> Entries = new List<EntryNode>();
     public List<PushNode> Pushes = new List<PushNode>();
@@ -280,6 +283,7 @@ internal sealed class ShaderFile
                 case "generate":
                     Namespace = Str(r, "namespace");
                     ClassName = Str(r, "class");
+                    Internal = r.Attrs.TryGetValue("access", out string? access) && access == "internal";
                     break;
                 case "targets":
                     foreach (string t in Str(r, "list").Split(','))
