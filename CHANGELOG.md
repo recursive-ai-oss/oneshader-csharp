@@ -5,6 +5,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.7.0]
+
 - Build package: the `OneShaderAccessibility` property (`public`, the default, or `internal`) and the `Accessibility` item metadata choose the accessibility of each generated top-level class, so a library can keep generated shader code out of its public API. The default output is byte-for-byte what it was; with `internal`, only that keyword differs. Any other value is error OSH0901 naming where it was set.
 
 ## [1.6.1]
@@ -122,6 +124,7 @@ First preview.
 - MSBuild integration: `*.hlsl` compiled during `dotnet build`, errors on the HLSL line, embedded SPIR-V and generated C# structs, vertex inputs and binding constants.
 - Known limits: SPIR-V only; single resources only (no resource arrays); no templates, member functions, operator overloads or wave intrinsics yet; `dotnet build` only.
 
+[1.7.0]: https://github.com/recursive-ai-oss/oneshader-csharp/releases/tag/v1.7.0
 [1.6.1]: https://github.com/recursive-ai-oss/oneshader-csharp/releases/tag/v1.6.1
 [1.6.0]: https://github.com/recursive-ai-oss/oneshader-csharp/releases/tag/v1.6.0
 [1.5.0]: https://github.com/recursive-ai-oss/oneshader-csharp/releases/tag/v1.5.0
