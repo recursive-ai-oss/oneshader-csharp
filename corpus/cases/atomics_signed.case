@@ -1,0 +1,10 @@
+# Signed and unsigned atomic min/max and compare-exchange/store on structured buffers, a byte-address buffer and group-shared memory, with and without the original value; 256 invocations contend for the same words, with negative values and negative comparands.
+case atomics_signed
+shader compute/atomics_signed.hlsl
+dispatch CSMain 4 1 1
+storage 0 0 : @u32(5,256)
+storage 0 1 out size=64 : 0x7FFFFFFFu 0x80000000u 0u 0u 0u 0xFFFFFFFBu 0u 0xFFFFFFFFu 0u 0x80000000u 0x7FFFFFFFu 0x7FFFFFFFu 0u
+storage 0 2 out size=64 : 0xFFFFFFFFu 0u 0xFFFFFFFFu 0u 3u 0u 0u 0u 0xFFFFFFFFu
+storage 0 3 out size=32 : 0xFFFFFFFFu 0u 0xFFFFFFFFu 0u 3u 0u 0xFFFFFFFFu 0u
+storage 0 4 out size=256
+expect atomics_signed

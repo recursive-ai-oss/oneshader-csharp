@@ -145,6 +145,12 @@ public sealed class IrBuilder
     {
         var i = Emit(Opcode.CallIntrinsic, resultType, args);
         i.Intrinsic = intrinsic;
+        if (Precise && intrinsic == Intrinsic.Dot && resultType.ScalarElement is { IsFloatingPoint: true })
+        {
+            // A dot product is a chain of multiplies and adds; precise forbids fusing them.
+            i.Precise = true;
+        }
+
         return i;
     }
 

@@ -130,12 +130,26 @@ internal sealed partial class SpirvEmitter
         uint r = Id(i);
         PutResult(op, type, r, operands);
         NameValue(i, r);
-        if (i.Precise && KindOf(i.Type) == NK.Float && op is Op.FAdd or Op.FSub or Op.FMul or Op.FDiv or Op.FNegate or Op.FRem)
+        if (i.Precise)
         {
-            _s.Decorate(r, Dec.NoContraction);
+            MarkPrecise(i, op, r);
         }
 
         return r;
+    }
+
+    /// <summary>
+    /// Decorates the floating-point arithmetic result <paramref name="id"/> of a <c>precise</c> instruction with NoContraction (the SPIR-V
+    /// decoration applies to arithmetic instructions, which include the vector and matrix products and <c>OpDot</c>), so a driver may not fuse
+    /// it with its neighbours. Instructions that are not arithmetic (extended instructions such as <c>Fma</c>, composites) are left alone.
+    /// </summary>
+    private void MarkPrecise(Instruction i, uint op, uint id)
+    {
+        if (KindOf(i.Type) == NK.Float && op is Op.FAdd or Op.FSub or Op.FMul or Op.FDiv or Op.FNegate or Op.FRem
+            or Op.VectorTimesMatrix or Op.MatrixTimesVector or Op.MatrixTimesMatrix or Op.OuterProduct or Op.Dot)
+        {
+            _s.Decorate(id, Dec.NoContraction);
+        }
     }
 
     /// <summary>Records that <paramref name="produced"/> is the value of <paramref name="i"/>, copying only if something already refers to the instruction's own id.</summary>
@@ -1201,6 +1215,10 @@ internal sealed partial class SpirvEmitter
                 uint x = Emit(Op.CompositeExtract, rowType, Id(i.Operands[0]), (uint)r);
                 uint y = Emit(Op.CompositeExtract, rowType, Id(i.Operands[1]), (uint)r);
                 rows[r] = Emit(op, rowType, x, y);
+                if (i.Precise)
+                {
+                    MarkPrecise(i, op, rows[r]);
+                }
             }
 
             Direct(i, Op.CompositeConstruct, TypeId(i.Type), rows);
@@ -1222,6 +1240,10 @@ internal sealed partial class SpirvEmitter
             {
                 uint x = Emit(Op.CompositeExtract, rowType, Id(i.Operands[0]), (uint)r);
                 rows[r] = Emit(op, rowType, x);
+                if (i.Precise)
+                {
+                    MarkPrecise(i, op, rows[r]);
+                }
             }
 
             Direct(i, Op.CompositeConstruct, TypeId(i.Type), rows);

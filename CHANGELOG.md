@@ -5,6 +5,9 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Fixed: WGSL for signed `InterlockedMin`/`InterlockedMax` on a structured or byte-address buffer, and for `InterlockedCompareExchange`/`InterlockedCompareStore` on a buffer, was rejected by naga ("Argument 'p' ... is a pointer of space Storage ... which can't be passed into functions"; the helpers `osh_atomic_min_i32` and `osh_atomic_cas_storage_u32`). WGSL only allows pointer parameters to function and private memory, so the compare-exchange loops are now written out where the atomic is used. Signed comparisons stay signed and a compare-exchange returns the original value and stores only on a match; the new `atomics_signed` corpus case checks both on Vulkan (against DXC and a CPU result), Metal, naga and in the browser. WGSL output changes only for shaders that used these atomics; SPIR-V and MSL were not affected.
+- Fixed: `precise` is now carried by the SPIR-V that computes a vector or matrix product or a dot product: `OpMatrixTimesVector`, `OpVectorTimesMatrix`, `OpMatrixTimesMatrix`, `OpOuterProduct` and `OpDot` get `NoContraction` as DXC emits it, and so does each row operation of a `precise` matrix sum. Before, only scalar and vector add, subtract, multiply, divide and negate were decorated, although docs/spirv-backend.md said `precise` becomes `NoContraction`. A `precise` dot product also now makes MSL switch off fusing for its function and WGSL report OSH5205, as for other precise arithmetic.
+
 ## [1.7.0]
 
 - Build package: the `OneShaderAccessibility` property (`public`, the default, or `internal`) and the `Accessibility` item metadata choose the accessibility of each generated top-level class, so a library can keep generated shader code out of its public API. The default output is byte-for-byte what it was; with `internal`, only that keyword differs. Any other value is error OSH0901 naming where it was set.

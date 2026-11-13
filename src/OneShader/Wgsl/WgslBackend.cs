@@ -727,13 +727,6 @@ internal sealed partial class WgslEmitter
             sb.Append('\n');
         }
 
-        var helperNames = new List<string>(_helperTexts.Keys);
-        helperNames.Sort(StringComparer.Ordinal);
-        foreach (string h in helperNames)
-        {
-            sb.Append(_helperTexts[h]).Append('\n');
-        }
-
         for (int k = 0; k < functionTexts.Count; k++)
         {
             sb.Append(functionTexts[k]);

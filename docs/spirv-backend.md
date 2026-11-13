@@ -47,7 +47,11 @@ options always give the same bytes. Code is in `src/OneShader/SpirV/`.
   block without a terminator becomes `OpUnreachable`.
 - **Discard** is `OpKill`, valid in SPIR-V 1.5; `OpTerminateInvocation` needs a newer environment.
 - **Shifts** mask the count to the operand width, as HLSL does. `Ne` on floats is unordered (true for NaN).
-  `precise` becomes `NoContraction`.
+  The arithmetic that computes a `precise` value carries `NoContraction`: `FAdd`, `FSub`, `FMul`, `FDiv`, `FRem`, `FNegate`, the
+  products (`OpVectorTimesMatrix`, `OpMatrixTimesVector`, `OpMatrixTimesMatrix`, `OpOuterProduct`) and `OpDot`, on the same
+  operations DXC decorates (checked in `PreciseTests`). Matrix arithmetic is decorated on each row operation. Extended instructions
+  (`Fma` from `mad`/`fma`, `FMix` from `lerp`, ...) and composites are not arithmetic instructions and cannot carry it; DXC leaves them
+  undecorated too.
 - **`mad` and `fma` are not guaranteed to be fused.** A floating-point `mad(a, b, c)` or `fma(a, b, c)` becomes
   GLSL.std.450 `Fma` in SPIR-V, `fma` in WGSL and `fma` in MSL. Only Metal defines `fma` as a single rounding.
   Vulkan's precision rules let `Fma` be a multiply and an add, each rounded, and WGSL's accuracy for `fma` is
