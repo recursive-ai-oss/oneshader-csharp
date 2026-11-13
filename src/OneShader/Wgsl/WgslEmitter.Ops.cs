@@ -759,86 +759,72 @@ internal sealed partial class WgslEmitter
             return viaBits ? "bitcast<u32>(" + v + ")" : v;
         }
 
-        string call;
         if (i.Op == Opcode.AtomicCompareExchange)
         {
-            string helper = StrongCompareExchange(storage, signed || !storage && KindOf(i.Type) == NK.SInt);
-            call = helper + "(" + addr + ", " + Operand(1) + ", " + Operand(2) + ")";
+            EmitStrongCompareExchange(i, addr, Operand(1), Operand(2), viaBits);
+            return;
         }
-        else
+
+        var op = (AtomicOp)i.Immediates[0];
+        if (op is AtomicOp.Min or AtomicOp.Max && viaBits)
         {
-            var op = (AtomicOp)i.Immediates[0];
-            if (op is AtomicOp.Min or AtomicOp.Max && viaBits)
-            {
-                call = SignedStorageMinMax(op == AtomicOp.Min) + "(" + addr + ", " + Val(i.Operands[1]) + ")";
-                Define(i, call);
-                return;
-            }
-
-            string fn = op switch
-            {
-                AtomicOp.Add => "atomicAdd",
-                AtomicOp.Min => "atomicMin",
-                AtomicOp.Max => "atomicMax",
-                AtomicOp.And => "atomicAnd",
-                AtomicOp.Or => "atomicOr",
-                AtomicOp.Xor => "atomicXor",
-                _ => "atomicExchange",
-            };
-            call = fn + "(" + addr + ", " + Operand(1) + ")";
+            EmitSignedStorageMinMax(i, addr, Val(i.Operands[1]), op == AtomicOp.Min);
+            return;
         }
 
+        string fn = op switch
+        {
+            AtomicOp.Add => "atomicAdd",
+            AtomicOp.Min => "atomicMin",
+            AtomicOp.Max => "atomicMax",
+            AtomicOp.And => "atomicAnd",
+            AtomicOp.Or => "atomicOr",
+            AtomicOp.Xor => "atomicXor",
+            _ => "atomicExchange",
+        };
+        string call = fn + "(" + addr + ", " + Operand(1) + ")";
         Define(i, viaBits ? "bitcast<i32>(" + call + ")" : call);
     }
 
-    private readonly Dictionary<string, string> _helperTexts = [];
-
-    private void AddHelper(string name, string text)
-    {
-        if (!_helperTexts.ContainsKey(name))
-        {
-            _helperTexts[name] = text;
-        }
-    }
+    // The two loops below are written out at the use site rather than as helper functions: a helper would take a pointer into
+    // a storage buffer, and WGSL only allows pointer parameters to function and private memory unless the optional
+    // unrestricted_pointer_parameters feature is present (WGSL 6.4 / 9.2.3); naga rejects it, so the helper never validated.
 
     /// <summary>
     /// WGSL only has a weak compare-exchange that may fail although the value matched; HLSL callers read the returned
     /// value to learn whether the swap happened, so retry until the outcome is definite.
     /// </summary>
-    private string StrongCompareExchange(bool storage, bool signed)
+    private void EmitStrongCompareExchange(Instruction i, string addr, string compare, string value, bool viaBits)
     {
-        string t = storage ? "u32" : signed ? "i32" : "u32";
-        string ptr = storage ? "ptr<storage, atomic<u32>, read_write>" : "ptr<workgroup, atomic<" + t + ">>";
-        string name = "osh_atomic_cas_" + (storage ? "storage" : "workgroup") + "_" + t;
-        AddHelper(name, "fn " + name + "(p: " + ptr + ", compare: " + t + ", value: " + t + ") -> " + t + " {\n" +
-            "  loop {\n" +
-            "    let r = atomicCompareExchangeWeak(p, compare, value);\n" +
-            "    if (r.exchanged || r.old_value != compare) {\n" +
-            "      return r.old_value;\n" +
-            "    }\n" +
-            "  }\n" +
-            "}\n");
-        _moduleNames.Add(name);
-        return name;
+        string type = viaBits || KindOf(i.Type) != NK.SInt ? "u32" : "i32";
+        string old = NewLocal(null);
+        string r = NewLocal(null);
+        Put("var " + old + ": " + type + ";");
+        Open("loop");
+        Put("let " + r + " = atomicCompareExchangeWeak(" + addr + ", " + compare + ", " + value + ");");
+        Put("if (" + r + ".exchanged || " + r + ".old_value != " + compare + ") {");
+        Put("  " + old + " = " + r + ".old_value;");
+        Put("  break;");
+        Put("}");
+        Close();
+        // Storage words are u32; the HLSL value of a signed exchange is i32.
+        Define(i, viaBits ? "bitcast<i32>(" + old + ")" : old);
     }
 
     /// <summary>Storage words are 32-bit unsigned atomics, so a signed minimum or maximum is a compare-exchange loop.</summary>
-    private string SignedStorageMinMax(bool min)
+    private void EmitSignedStorageMinMax(Instruction i, string addr, string value, bool min)
     {
-        string name = min ? "osh_atomic_min_i32" : "osh_atomic_max_i32";
         string pick = min ? "min" : "max";
-        AddHelper(name, "fn " + name + "(p: ptr<storage, atomic<u32>, read_write>, value: i32) -> i32 {\n" +
-            "  var old = atomicLoad(p);\n" +
-            "  loop {\n" +
-            "    let wanted = bitcast<u32>(" + pick + "(bitcast<i32>(old), value));\n" +
-            "    let r = atomicCompareExchangeWeak(p, old, wanted);\n" +
-            "    if (r.exchanged) {\n" +
-            "      return bitcast<i32>(old);\n" +
-            "    }\n" +
-            "    old = r.old_value;\n" +
-            "  }\n" +
-            "}\n");
-        _moduleNames.Add(name);
-        return name;
+        string old = NewLocal(null);
+        string r = NewLocal(null);
+        Put("var " + old + " = atomicLoad(" + addr + ");");
+        Open("loop");
+        Put("let " + r + " = atomicCompareExchangeWeak(" + addr + ", " + old + ", bitcast<u32>(" + pick + "(bitcast<i32>(" + old + "), " + value + ")));");
+        Put("if (" + r + ".exchanged) {");
+        Put("  break;");
+        Put("}");
+        Put(old + " = " + r + ".old_value;");
+        Close();
+        Define(i, "bitcast<i32>(" + old + ")");
     }
 }

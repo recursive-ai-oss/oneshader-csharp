@@ -52,6 +52,7 @@ with `dxc -spirv -fspv-target-env=vulkan1.2`, and give every resource an explici
 | `compute/shared_rw_entries.hlsl` | Two entry points share a read-write structured buffer and a read-write byte-address buffer; one only reads them (every target must declare them alike in both) | written for this repository | MIT OR Apache-2.0 |
 | `compute/prefix_sum.hlsl` | Block-wise exclusive scan in group-shared memory with barriers | written for this repository | MIT OR Apache-2.0 |
 | `compute/stage_layouts.hlsl` | Constant-buffer `bool` members, `StructuredBuffer<float3>` elements, `f32tof16`/`f16tof32`, `faceforward` and `log10` in one kernel (run with the flags on and off) | written for this repository | MIT OR Apache-2.0 |
+| `compute/atomics_signed.hlsl` | Signed and unsigned `InterlockedMin`/`Max` and `InterlockedCompareExchange`/`CompareStore` on structured buffers, a byte-address buffer and group-shared memory, with and without the original value, under contention with negative values and comparands | written for this repository | MIT OR Apache-2.0 |
 | `compute/histogram.hlsl` | Luminance histogram with group-shared atomics into a read-write buffer | written for this repository | MIT OR Apache-2.0 |
 | `compute/image_filter.hlsl` | Tiled 3x3 sharpen on a `RWTexture2D` through group-shared memory | written for this repository | MIT OR Apache-2.0 |
 | `compute/particles.hlsl` | Per-particle integration over a `RWStructuredBuffer` of structs | written for this repository | MIT OR Apache-2.0 |
@@ -140,6 +141,7 @@ written for this repository and licensed `MIT OR Apache-2.0`.
 | `wave_reduce` | `compute/wave_reduce.hlsl` | dispatch, 4 groups of 256 | buffer exact, CPU result (any subgroup size) |
 | `wave_ballot` | `compute/wave_ballot.hlsl` | dispatch, 4 groups of 256 | totals buffer exact vs CPU (any subgroup size up to 128 lanes); per-lane buffer exact vs DXC on the same device |
 | `quad_ops` | `2d/quad_ops.hlsl` | fullscreen triangle, 64x64 | image, tolerance 2 |
+| `atomics_signed` | `compute/atomics_signed.hlsl` | dispatch, 4 groups of 64 | buffers exact vs DXC and vs the CPU result (order-independent values that differ if a signed compare runs unsigned) |
 | `histogram` | `compute/histogram.hlsl` | dispatch | buffer exact, CPU result |
 | `image_filter` | `compute/image_filter.hlsl` | dispatch | image, CPU result within one 8-bit step |
 | `particles` | `compute/particles.hlsl` | 3 dispatches | buffer bit-exact between compilers, CPU result within 1e-4 relative |

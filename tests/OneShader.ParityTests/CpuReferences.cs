@@ -51,6 +51,7 @@ public static class CpuReferences
         "coop_layouts" => CoopLayouts(model, data),
         "coop_gemm_f32" => CoopGemmF32(model, data),
         "continue_unrolled" => ContinueUnrolled(model, data),
+        "atomics_signed" => AtomicsSigned(model, data),
         _ => throw new ArgumentException($"unknown CPU reference '{name}'"),
     };
 
@@ -167,6 +168,88 @@ public static class CpuReferences
         [
             new Expectation(Key(m, c), Floats(cOut, d.Buffers[c].Length), ExpectKind.FloatRelative, 1e-4),
             new Expectation(Key(m, dd), Floats(dOut, d.Buffers[dd].Length), ExpectKind.FloatRelative, 1e-4),
+        ];
+    }
+
+    // atomics_signed: every result below is independent of the order the invocations run in, and each one would differ if a
+    // signed comparison were done unsigned (or the reverse).
+    private static IReadOnlyList<Expectation> AtomicsSigned(CaseModel m, CaseData d)
+    {
+        int input = Find(m, ResourceKind.Storage, 0, 0);
+        int signed = Find(m, ResourceKind.Storage, 0, 1);
+        int unsigned = Find(m, ResourceKind.Storage, 0, 2);
+        int raw = Find(m, ResourceKind.Storage, 0, 3);
+        int groups = Find(m, ResourceKind.Storage, 0, 4);
+        uint[] w = Words(d.Buffers[input]);
+        const int Count = 256;
+        const int GroupSize = 64;
+        int[] v = new int[Count];
+        for (int i = 0; i < Count; i++)
+        {
+            v[i] = unchecked((int)w[i]);
+        }
+
+        uint[] s = new uint[16];
+        s[0] = unchecked((uint)v.Take(Count).Min());
+        s[1] = unchecked((uint)v.Take(Count).Max());
+        s[2] = 7;
+        s[3] = 1;
+        s[4] = 7 * (Count - 1);
+        s[5] = unchecked((uint)-5);
+        s[6] = unchecked((uint)(-5 * Count));
+        s[7] = unchecked((uint)-2);
+        s[8] = 1;
+        s[9] = int.MaxValue;
+        s[10] = unchecked((uint)int.MinValue);
+        s[11] = s[0];
+        s[12] = 5;
+
+        uint[] u = new uint[16];
+        u[0] = w.Take(Count).Min();
+        u[1] = w.Take(Count).Max();
+        u[2] = 0x80000001u;
+        u[3] = 1;
+        u[4] = 3;
+        u[5] = unchecked(3u * Count);
+        u[6] = 0xFFFFFFF0u;
+        u[8] = 0;
+
+        uint[] r = new uint[8];
+        r[0] = u[0];
+        r[1] = u[1];
+        r[2] = 0x80000001u;
+        r[3] = 1;
+        r[4] = 3;
+        r[5] = unchecked(3u * Count);
+        r[6] = 0;
+        r[7] = 0xFFFFFFF0u;
+
+        uint[] g = new uint[Count / GroupSize * 16];
+        for (int grp = 0; grp < Count / GroupSize; grp++)
+        {
+            var gv = v.Skip(grp * GroupSize).Take(GroupSize).ToArray();
+            var gw = w.Skip(grp * GroupSize).Take(GroupSize).ToArray();
+            int b = grp * 16;
+            g[b + 0] = unchecked((uint)gv.Min());
+            g[b + 1] = unchecked((uint)gv.Max());
+            g[b + 2] = 7;
+            g[b + 3] = unchecked((uint)-2);
+            g[b + 4] = unchecked((uint)int.MinValue);
+            g[b + 5] = 3;
+            g[b + 6] = 7 * (GroupSize - 1);
+            g[b + 7] = 1;
+            g[b + 8] = gw.Min();
+            g[b + 9] = gw.Max();
+            g[b + 10] = 0x80000001u;
+            g[b + 11] = 1;
+        }
+
+        return
+        [
+            new Expectation(Key(m, signed), Bytes(s, d.Buffers[signed].Length), ExpectKind.Exact, 0),
+            new Expectation(Key(m, unsigned), Bytes(u, d.Buffers[unsigned].Length), ExpectKind.Exact, 0),
+            new Expectation(Key(m, raw), Bytes(r, d.Buffers[raw].Length), ExpectKind.Exact, 0),
+            new Expectation(Key(m, groups), Bytes(g, d.Buffers[groups].Length), ExpectKind.Exact, 0),
         ];
     }
 

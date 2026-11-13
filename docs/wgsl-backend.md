@@ -15,7 +15,12 @@ Code is in `src/OneShader/Wgsl/`; naga validates every corpus entry point (`test
   uniform arrays have a 16-byte stride, one vec4 per row); structured and byte-address buffers are `array<u32>`
   (`array<atomic<u32>>` when the entry point uses atomics on them; the access mode follows the HLSL type, see below).
   Every access computes its byte offset from the reflected layout and bitcasts; vectors inside one row are read as a
-  swizzle. Signed atomic min/max on a buffer and compare-exchange use small helper functions.
+  swizzle. Atomics: WGSL has no signed atomics on storage words and only a weak compare-exchange (it may fail although the
+  value matched). A signed `InterlockedMin`/`InterlockedMax` on a buffer is a compare-exchange loop on the `u32` word with the
+  comparison done on `i32`; `InterlockedCompareExchange`/`InterlockedCompareStore` retry until the outcome is definite, so the original
+  value is returned and the store happens only on a match. The loops are written out at each use rather than as helper functions,
+  because a helper would take a pointer into a storage buffer and core WGSL allows pointer parameters only to function and private
+  memory (naga rejects it). Unsigned and group-shared min/max use `atomicMin`/`atomicMax` directly.
   `WgslLayoutTests` checks the word indices of every scalar, vector and matrix in every corpus buffer against the reflected offsets.
 - **Matrices are transposed**, as in SPIR-V: HLSL `floatRxC` is `matRxC<f32>` (R columns of C components), `m[i]` is row i, and
   every `mul` swaps its operands. Matrix products with one-row or one-column matrices are not supported.
