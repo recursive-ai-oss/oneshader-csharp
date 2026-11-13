@@ -49,7 +49,7 @@ f0f3274). A bar to the right is a win for OneShader, a bar to the left is a loss
   bad input yields diagnostics, never an exception or a stack overflow, and
   the front end is fuzzed ([fuzzing](fuzz/README.md)). It contains no
   `unsafe` code, uses no reflection, and is NativeAOT and trim clean.
-- **Fast, with the losses shown.** Measured on version 0.3.0-dev: as a NativeAOT binary it compiles the
+- **Fast, with the losses shown.** Measured on version 0.3.0-dev and not re-measured since 1.0: as a NativeAOT binary it compiles the
   corpus about 2.4 times faster than DXC, warm, and every one of the 68 entry
   points is faster. Run as an ordinary .NET process it is slower than DXC on
   every one of them (about 6 times with ReadyToRun, 14 times with the JIT),
@@ -133,7 +133,7 @@ byte[] spirv = result.Find("PSMain", CompileTarget.SpirV)!.ToArray();
 
 ## Status
 
-**Version 1.6.** Vertex, pixel and compute shaders compile to
+**Version 1.7.** Vertex, pixel and compute shaders compile to
 optimized SPIR-V, Metal Shading Language and WGSL with reflection; the build
 package embeds each selected target next to generated C# bindings (the
 `OneShaderTargets` switch) and compiles shader variants, and the runtime API

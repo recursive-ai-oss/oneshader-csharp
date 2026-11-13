@@ -15,10 +15,10 @@ Reference the `RecursiveAI.OneShader.Build` package. Every `*.hlsl` file in the 
 ```
 
 The package brings `RecursiveAI.OneShader` (the support types) with it. Build with `dotnet build`: the
-task is a .NET task, so Visual Studio's .NET Framework MSBuild cannot run it. Until a package is
-published, `tools/pack-local.sh` packs both packages into a local folder (`.feed` by default);
-`samples/` has projects that restore from it, and one (`samples/LocalSource`) that references the
-repository's projects directly. Only projects that contain shaders reference the build package;
+task is a .NET task, so Visual Studio's .NET Framework MSBuild cannot run it. The packages are on
+nuget.org. To try changes to this repository before they are released, `tools/pack-local.sh` packs
+them into a local folder (`.feed` by default) that the projects in `samples/` can restore from;
+`samples/LocalSource` references the repository's projects directly. Only projects that contain shaders reference the build package;
 it does not flow to their consumers.
 
 Entry points are found from `[shader("vertex")]`, `[shader("pixel")]` and `[shader("compute")]`
@@ -35,7 +35,7 @@ options or the compiler changed.
 Errors and warnings are ordinary MSBuild diagnostics on the HLSL line:
 
 ```
-Shaders/Sprite.hlsl(12,17): error OSH0204: 'Atlass' is not declared. Did you mean 'Atlas'?
+Shaders/Sprite.hlsl(12,17): error OSH0300: 'Atlass' is not declared. Did you mean 'Atlas'?
 ```
 
 ## What is generated

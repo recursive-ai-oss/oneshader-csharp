@@ -4,6 +4,8 @@ OneShader compiles a shader about 2.4 times faster than DXC when both run as nat
 
 Every number comes from the files in [`bench/results/`](../bench/results), measured on version 0.3.0-dev (commit f0f3274, shortly before 0.3.0-preview.1; not re-measured since) on one workstation (see [Method](#method)). Treat them as local measurements, not promises for your hardware.
 
+> **Stale:** these numbers predate 1.0. Every release since then has added language features and optimizer passes, and none has been re-measured, so the ratios to DXC (including "about 2.4 times faster") may no longer hold. They are kept for the method and the shape of the losses; re-run `bench/run.sh` for current figures.
+
 ## Results at a glance
 
 One shader compile per process, for each of the 68 (file, entry point) pairs the repository's execution-parity cases compile (25 2D-renderer, 24 3D, 11 compute, 8 language-feature entry points). DXC is the released binary run with `-spirv`; its default optimization. OneShader is a small command-line wrapper around `ShaderCompiler.CompileFile`, built three ways: as a NativeAOT binary, as a framework-dependent ReadyToRun build, and as a plain framework-dependent (JIT) build. Time is wall-clock from creating the process to its exit, with the blob written to disk. The ratio is DXC's time divided by ours per entry point, summarized by the geometric mean; a time within 5% of DXC's is a tie.
