@@ -5,6 +5,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.7.1]
+
 - Fixed: WGSL for signed `InterlockedMin`/`InterlockedMax` on a structured or byte-address buffer, and for `InterlockedCompareExchange`/`InterlockedCompareStore` on a buffer, was rejected by naga ("Argument 'p' ... is a pointer of space Storage ... which can't be passed into functions"; the helpers `osh_atomic_min_i32` and `osh_atomic_cas_storage_u32`). WGSL only allows pointer parameters to function and private memory, so the compare-exchange loops are now written out where the atomic is used. Signed comparisons stay signed and a compare-exchange returns the original value and stores only on a match; the new `atomics_signed` corpus case checks both on Vulkan (against DXC and a CPU result), Metal, naga and in the browser. WGSL output changes only for shaders that used these atomics; SPIR-V and MSL were not affected.
 - Fixed: `precise` is now carried by the SPIR-V that computes a vector or matrix product or a dot product: `OpMatrixTimesVector`, `OpVectorTimesMatrix`, `OpMatrixTimesMatrix`, `OpOuterProduct` and `OpDot` get `NoContraction` as DXC emits it, and so does each row operation of a `precise` matrix sum. Before, only scalar and vector add, subtract, multiply, divide and negate were decorated, although docs/spirv-backend.md said `precise` becomes `NoContraction`. A `precise` dot product also now makes MSL switch off fusing for its function and WGSL report OSH5205, as for other precise arithmetic.
 
@@ -127,6 +129,7 @@ First preview.
 - MSBuild integration: `*.hlsl` compiled during `dotnet build`, errors on the HLSL line, embedded SPIR-V and generated C# structs, vertex inputs and binding constants.
 - Known limits: SPIR-V only; single resources only (no resource arrays); no templates, member functions, operator overloads or wave intrinsics yet; `dotnet build` only.
 
+[1.7.1]: https://github.com/recursive-ai-oss/oneshader-csharp/releases/tag/v1.7.1
 [1.7.0]: https://github.com/recursive-ai-oss/oneshader-csharp/releases/tag/v1.7.0
 [1.6.1]: https://github.com/recursive-ai-oss/oneshader-csharp/releases/tag/v1.6.1
 [1.6.0]: https://github.com/recursive-ai-oss/oneshader-csharp/releases/tag/v1.6.0
